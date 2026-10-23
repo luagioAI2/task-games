@@ -1,3 +1,10 @@
 node_modules
 dist
 *.zip
+
+# 插件产物：由 `npm run plugin` 现打（5MB）。它随**宿主**仓库发布，
+# 不进这个仓库 —— 这里只留源码和打包脚本。
+dist-plugin
+
+# 走查截图临时目录（要留的图进 screenshots/）
+shots

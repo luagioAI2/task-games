@@ -6,29 +6,75 @@ import { fabricNormal, labelTexture, glossWhite, glassSmudge, backboardPrint, he
 import { THEMES, type Theme, BRAND } from './themes.ts';
 
 const V = (x = 0, y = 0, z = 0) => new THREE.Vector3(x, y, z);
-const whiteMap = glossWhite();
 
-export const M = {
-  body: new THREE.MeshPhysicalMaterial({ color: 0xffffff, map: whiteMap, roughness: 0.22, metalness: 0.05, clearcoat: 0.85, clearcoatRoughness: 0.18 }),
-  accent: new THREE.MeshPhysicalMaterial({ color: THEMES[0].accent, roughness: 0.28, metalness: 0.08, clearcoat: 0.7, clearcoatRoughness: 0.25 }),
-  accentSoft: new THREE.MeshStandardMaterial({ color: THEMES[0].accentSoft, roughness: 0.45 }),
-  alu: new THREE.MeshStandardMaterial({ color: 0xc8ccd0, roughness: 0.28, metalness: 0.95 }),
-  chrome: new THREE.MeshStandardMaterial({ color: 0xe0e2e6, roughness: 0.18, metalness: 1 }),
-  steel: new THREE.MeshStandardMaterial({ color: 0x9a9ea4, roughness: 0.35, metalness: 0.92 }),
-  blackPlastic: new THREE.MeshStandardMaterial({ color: 0x222226, roughness: 0.55 }),
-  dark: new THREE.MeshStandardMaterial({ color: 0x0e0e12, roughness: 0.9 }),
-  rubber: new THREE.MeshStandardMaterial({ color: 0x8a2a24, roughness: 0.7 }),
-  ballRed: new THREE.MeshPhysicalMaterial({ color: 0xd62828, roughness: 0.28, clearcoat: 0.7, clearcoatRoughness: 0.35 }),
-  buttonRed: new THREE.MeshPhysicalMaterial({ color: 0xe03030, roughness: 0.25, clearcoat: 0.75, clearcoatRoughness: 0.3 }),
-  glassTint: new THREE.MeshStandardMaterial({ color: 0xe8f2f0, roughness: 0.08, metalness: 0, transparent: true, opacity: 0.04, depthWrite: false, side: THREE.DoubleSide }),
-  glassRefl: new THREE.MeshPhysicalMaterial({ color: 0x000000, roughness: 0.03, metalness: 0, envMapIntensity: 3.8, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, clearcoat: 1, clearcoatRoughness: 0.02 }),
-  acrylic: new THREE.MeshStandardMaterial({ color: 0xd0e4ea, roughness: 0.12, transparent: true, opacity: 0.2, depthWrite: false, side: THREE.DoubleSide }),
-  smoked: new THREE.MeshStandardMaterial({ color: 0x1a1a20, roughness: 0.25, transparent: true, opacity: 0.45, depthWrite: false, side: THREE.DoubleSide }),
-  tube: new THREE.MeshStandardMaterial({ color: 0x000000, emissive: 0xf5f8ff, emissiveIntensity: 2.8 }),
-  doorLamp: new THREE.MeshStandardMaterial({ color: 0x222, emissive: THEMES[0].led, emissiveIntensity: 0.15 }),
-  ledStrip: new THREE.MeshStandardMaterial({ color: 0x111, emissive: THEMES[0].led, emissiveIntensity: 1.8 }),
-  wheel: new THREE.MeshStandardMaterial({ color: 0x1a1a1e, roughness: 0.7 }),
-};
+/**
+ * 机台材质表 —— **每次挂载换一套**，不再是模块级常量。
+ *
+ * ## 为什么改（2026-10-23，两个都是真问题）
+ *
+ * ① **模块求值就 `document.createElement('canvas')`**（`glossWhite()` 里）。
+ *    宿主用 `check-plugin.mjs` 验包时会在 **Node** 里真 `import()` 一次
+ *    （它靠这个看导出形状），于是直接抛 `document is not defined` ——
+ *    而报错长得像"插件包坏了"。同理，任何想在不带 DOM 的环境里碰一下
+ *    这个包的地方都会炸。
+ *
+ * ② **插件会被反复挂载**（孩子切 tab）。材质是单例的话，第一次 `unmount`
+ *    把它们 `dispose()` 之后，第二次挂载拿到的是**已销毁的材质** ——
+ *    症状是黑屏或纯白，**不报错**。`unmount` 里该释放的必须释放，
+ *    所以只能每次重建。
+ *
+ * ## 为什么用 Proxy，而不是把 50 处 `M.xxx` 改成 `M().xxx`
+ *
+ * 改调用点是 50 次机会去漏一处，而漏掉的那处会在运行时变成
+ * `undefined is not a function`。Proxy 把"懒建 + 可重置"藏在属性读取后面，
+ * 调用点一个字都不用动。
+ */
+function buildMaterials() {
+  const whiteMap = glossWhite();
+  return {
+    body: new THREE.MeshPhysicalMaterial({ color: 0xffffff, map: whiteMap, roughness: 0.22, metalness: 0.05, clearcoat: 0.85, clearcoatRoughness: 0.18 }),
+    accent: new THREE.MeshPhysicalMaterial({ color: THEMES[0].accent, roughness: 0.28, metalness: 0.08, clearcoat: 0.7, clearcoatRoughness: 0.25 }),
+    accentSoft: new THREE.MeshStandardMaterial({ color: THEMES[0].accentSoft, roughness: 0.45 }),
+    alu: new THREE.MeshStandardMaterial({ color: 0xc8ccd0, roughness: 0.28, metalness: 0.95 }),
+    chrome: new THREE.MeshStandardMaterial({ color: 0xe0e2e6, roughness: 0.18, metalness: 1 }),
+    steel: new THREE.MeshStandardMaterial({ color: 0x9a9ea4, roughness: 0.35, metalness: 0.92 }),
+    blackPlastic: new THREE.MeshStandardMaterial({ color: 0x222226, roughness: 0.55 }),
+    dark: new THREE.MeshStandardMaterial({ color: 0x0e0e12, roughness: 0.9 }),
+    rubber: new THREE.MeshStandardMaterial({ color: 0x8a2a24, roughness: 0.7 }),
+    ballRed: new THREE.MeshPhysicalMaterial({ color: 0xd62828, roughness: 0.28, clearcoat: 0.7, clearcoatRoughness: 0.35 }),
+    buttonRed: new THREE.MeshPhysicalMaterial({ color: 0xe03030, roughness: 0.25, clearcoat: 0.75, clearcoatRoughness: 0.3 }),
+    glassTint: new THREE.MeshStandardMaterial({ color: 0xe8f2f0, roughness: 0.08, metalness: 0, transparent: true, opacity: 0.04, depthWrite: false, side: THREE.DoubleSide }),
+    glassRefl: new THREE.MeshPhysicalMaterial({ color: 0x000000, roughness: 0.03, metalness: 0, envMapIntensity: 3.8, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, clearcoat: 1, clearcoatRoughness: 0.02 }),
+    acrylic: new THREE.MeshStandardMaterial({ color: 0xd0e4ea, roughness: 0.12, transparent: true, opacity: 0.2, depthWrite: false, side: THREE.DoubleSide }),
+    smoked: new THREE.MeshStandardMaterial({ color: 0x1a1a20, roughness: 0.25, transparent: true, opacity: 0.45, depthWrite: false, side: THREE.DoubleSide }),
+    tube: new THREE.MeshStandardMaterial({ color: 0x000000, emissive: 0xf5f8ff, emissiveIntensity: 2.8 }),
+    doorLamp: new THREE.MeshStandardMaterial({ color: 0x222, emissive: THEMES[0].led, emissiveIntensity: 0.15 }),
+    ledStrip: new THREE.MeshStandardMaterial({ color: 0x111, emissive: THEMES[0].led, emissiveIntensity: 1.8 }),
+    wheel: new THREE.MeshStandardMaterial({ color: 0x1a1a1e, roughness: 0.7 }),
+  };
+}
+
+export type Materials = ReturnType<typeof buildMaterials>;
+
+let current: Materials | null = null;
+
+/** 换一套全新的材质。**每次挂载都要调**（旧的已经在卸载时 dispose 了）。 */
+export function useFreshMaterials(): Materials {
+  current = buildMaterials();
+  return current;
+}
+
+export const M: Materials = new Proxy({} as Materials, {
+  get(_t, k) {
+    if (!current) current = buildMaterials();
+    return (current as unknown as Record<string | symbol, unknown>)[k];
+  },
+  set(_t, k, v) {
+    if (!current) current = buildMaterials();
+    (current as unknown as Record<string | symbol, unknown>)[k] = v;
+    return true;
+  },
+});
 
 function mesh(geo: THREE.BufferGeometry, mat: THREE.Material, x: number, y: number, z: number, parent: THREE.Object3D, shadow = true) {
   const m = new THREE.Mesh(geo, mat); m.position.set(x, y, z); m.castShadow = shadow; m.receiveShadow = true; parent.add(m); return m;

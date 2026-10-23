@@ -392,9 +392,19 @@ export class ClawGame {
   }
 
   removePrize(p: Prize) {
+    /*
+     * ⚠️ 先判「还在不在」，再删。
+     *
+     * `splice(indexOf(p), 1)` 在 `indexOf` 返回 **-1** 时是
+     * `splice(-1, 1)` —— 删掉**数组最后一个**，而不是什么都不做。
+     * 也就是说「重复删同一个奖品」会**悄悄删掉另一个奖品**，
+     * 而它的刚体还活着（于是它永远留在场上，玩家能看见却抓不到判定）。
+     */
+    const at = this.prizes.indexOf(p)
+    if (at < 0) return
     for (let i = 0; i < p.body.numColliders(); i++) this.colliderPrize.delete(p.body.collider(i).handle);
     this.world.removeRigidBody(p.body);
-    this.prizes.splice(this.prizes.indexOf(p), 1);
+    this.prizes.splice(at, 1);
     this.emit({ type: 'remove', prize: p });
   }
 
@@ -417,6 +427,17 @@ export class ClawGame {
 
   private checkPrizes() {
     for (const p of [...this.prizes]) {
+      /*
+       * ★ 必须重新确认「它还在」。
+       *
+       * 循环遍历的是 `[...this.prizes]` 的**快照**，而循环体里会调
+       * `removePrize()` —— 其中「垃圾箱里超过 3 个就回收最老的那个」删的是
+       * **另一个**奖品，它可能还没轮到，但仍在这份快照里。
+       * 再去 `p.body.translation()` 就是访问**已经释放的 wasm 刚体**，
+       * 报的是 `RuntimeError: unreachable`，堆栈指不到这一行
+       * （`test/sim.ts` 跑 7 轮、攒到第 4 个中奖就必崩，就是这么发现的）。
+       */
+      if (!this.prizes.includes(p)) continue
       const t = p.body.translation();
       if (!p.won && t.y < -0.12 && t.x < HOLE.x1 + 0.02 && t.z > HOLE.z0 - 0.02) {
         p.won = true; p.wonAt = this.time; this.roundWins++;
@@ -426,6 +447,8 @@ export class ClawGame {
         if (binned.length > 3) this.removePrize(binned[0]);
       } else if (t.y < -2 || Math.abs(t.x) > 1 || Math.abs(t.z) > 1 || t.y > 2) {
         this.removePrize(p); this.pendingSpawns.push(this.time + 0.5);
+        // ★ 刚体已经释放，下面那几行（linvel / impact）不能再碰它
+        continue;
       }
       // soft-body feel: detect impacts (sudden velocity change)
       const v = p.body.linvel(); const sp = Math.hypot(v.x, v.y, v.z);
