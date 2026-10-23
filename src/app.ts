@@ -57,7 +57,7 @@ import {
   ClawGame, CARRIAGE_Y, HUB_HH, HOLE, BIN_FLOOR_Y, PRIZE_TYPES,
   type Prize, type ClawState, type ContactPt, type GameEvent,
 } from './physics.ts'
-import { buildMachine, buildRoom, buildEnvScene, applyTheme, M, useFreshMaterials } from './models.ts'
+import { buildMachine, buildRoom, buildEnvScene, applyTheme, machineExtent, M, useFreshMaterials } from './models.ts'
 import { THEMES } from './themes.ts'
 import { buildPrize, disposePlush, setFurShells, type PlushModel } from './plush.ts'
 import { Sfx, vibrate } from './audio.ts'
@@ -227,10 +227,11 @@ export async function createClawApp(opts: ClawAppOptions): Promise<ClawApp> {
   scene.environment = envTex
   scene.environmentIntensity = 0.65
 
-  const camera = new THREE.PerspectiveCamera(45, 1, 0.05, 30)
+  const camera = new THREE.PerspectiveCamera(45, 1, 0.05, 60)
   const controls = new OrbitControls(camera, canvas)
   controls.enablePan = false; controls.enableDamping = true; controls.dampingFactor = 0.08
-  controls.minAzimuthAngle = -1.0; controls.maxAzimuthAngle = 1.0
+  // 方位角的上下限**不能写死**：得由 CAM_SPEC 里最侧的那一档推出来，
+  // 否则侧面（1.40）超出上限，会被 controls.update() 悄悄夹回去 —— 见下面 AZ_LIMIT。
   controls.minPolarAngle = 0.55; controls.maxPolarAngle = 1.62; controls.rotateSpeed = 0.55
   controls.touches = { ONE: THREE.TOUCH.ROTATE, TWO: THREE.TOUCH.DOLLY_ROTATE }
   controls.enabled = false
@@ -293,6 +294,8 @@ export async function createClawApp(opts: ClawAppOptions): Promise<ClawApp> {
   }
   machine.root.traverse((o) => { o.castShadow = false })
   for (const o of [machine.beam, machine.carriage, machine.hub, machine.cable, ...machine.prongs]) o.traverse((c) => { c.castShadow = true })
+  // 取景按「机台实际占多大」算，不手写数字（爪子会动，所以不含吊爪 —— 见 machineExtent）
+  const ext = machineExtent(machine)
 
   /* ---------------- win: prize drops into the pickup window, lamp blinks, a plain card ---------------- */
 
@@ -341,7 +344,7 @@ export async function createClawApp(opts: ClawAppOptions): Promise<ClawApp> {
     prev.r.render(prev.s, prev.c)
   }
 
-  function hideWin() { prevOn = false; $('win').classList.remove('show'); if (viewIdx < 0) { doorCam = 0; goView(0) } }
+  function hideWin() { prevOn = false; $('win').classList.remove('show'); if (doorView) { doorCam = 0; goView(camMode) } }
 
   // taking prizes out of the pickup window: the toy slides out through the flap and disappears
   const taking = new Map<number, { m: PlushModel; t: number; p0: THREE.Vector3; s0: number }>()
@@ -427,16 +430,80 @@ export async function createClawApp(opts: ClawAppOptions): Promise<ClawApp> {
   /* ---------------- camera framing ---------------- */
 
   const target = new THREE.Vector3(0, 0.6, 0)
-  let views: { az: number; pol: number; dist: number }[] = []
-  let viewIdx = 0
+  /*
+   * 机位只有两个：正面、侧面。
+   *
+   * 以前是三个（正面 / 斜侧 / 俯视）靠一个 📷 按钮循环切换。循环切换的问题是
+   * 「按两次才知道自己在哪」，而且斜侧那档既看不清左右也看不清前后。
+   * 玩家真正要判断的只有一件事 —— 爪子到底在不在娃娃正上方：
+   * 正面看**左右**，侧面看**前后**。所以只留这两档，一个机位一个按钮，点哪档就是哪档。
+   *
+   * 侧面**不是正 90°**：留了 10° 的偏角（az = 1.40 ≈ 80°），还能看见一点柜门和取物口。
+   * 纯 90° 时机台只剩一个方盒子，认不出是哪一面。prize-park 也是这么摆的（`outPos.set(d, y, 0.5)`）。
+   */
+  type CamMode = 'front' | 'side'
+  const CAM_MODES: CamMode[] = ['front', 'side']
+  /**
+   * 两档的定义。**框取尺寸全部由 `ext` 现算**（机台实际包围盒），不写死 ——
+   * 写死过的后果：正面按「半宽 0.62」算，而机台加控制台实际半宽 0.65，
+   * 于是左右各出画一点、上下被底栏压住 40~160px，画面看着只是「机台有点大」。
+   */
+  const CAM_SPEC: Record<CamMode, { az: number; polWide: number; polNarrow: number; k: number }> = {
+    // pol* 是宽 / 窄屏的俯角；k 是**整条距离**的缩放，不是屏占比 ——
+    // 屏占比会让两个轴一起缩，反而把本来贴边的那条轴顶出去
+    front: { az: 0, polWide: 1.30, polNarrow: 1.26, k: 1.05 },
+    /*
+     * 侧面不是正 90°：留 10° 偏角（az = 1.40 ≈ 80°），还能看见一点柜门和取物口。
+     * 纯 90° 时机台只剩一个方盒子，认不出这是哪一面。
+     * prize-park 那边也不在正轴上（`outPos.set(d, y, 0.5)`）。
+     */
+    side: { az: 1.40, polWide: 1.26, polNarrow: 1.22, k: 1.02 },
+  }
+  /*
+   * 自由旋转的方位角上限跟着机位走。
+   *
+   * 踩过：这里原来写死 ±1.0，而新的「侧面」是 1.40 —— 点下去相机只转到 57°（正好 1.0 rad）
+   * 就停住，看着像按钮没生效。原因是 OrbitControls.update() 每帧都会把 theta 夹进
+   * [minAzimuthAngle, maxAzimuthAngle]，**不报错、不提示**，只是到不了位。
+   */
+  const AZ_LIMIT = Math.max(...CAM_MODES.map((m) => Math.abs(CAM_SPEC[m].az))) + 0.05
+  controls.minAzimuthAngle = -AZ_LIMIT; controls.maxAzimuthAngle = AZ_LIMIT
+  let camMode: CamMode = 'front'
+  /** 出奖时蹲下去看取物口 —— 那不是机位，所以两档都不亮；关掉后回到原来那档 */
+  let doorView = false
   let camAnim: { p0: THREE.Vector3; t0: THREE.Vector3; p1: THREE.Vector3; t1: THREE.Vector3; t: number; dur: number } | null = null
   let visFrac = 1, hFrac = 1, wideLayout = false
 
-  function fitDist() {
+  /**
+   * 某一档要**框住的那块**在垂直于视线方向上的半宽 / 半高（世界单位）。
+   *
+   * 正面看的是宽度 → 用 hx；侧面看的是进深 → 用 hz（控制台前探的 0.19 也算进去，
+   * 不然侧视角会把控制台切掉）。高度两档都要框（灯箱顶到轮子）。
+   * 半高按「离瞄准点最远的一侧」算，不是包围盒高的一半 —— 相机瞄的是 target.y=0.6，
+   * 而机台中心在 0.25 附近，上下不对称，取半高会让灯箱顶出画。
+   */
+  function frameOf(mode: CamMode) {
+    const halfW = (mode === 'front' ? ext.hx : ext.hz) * 1.02
+    const halfH = Math.max(Math.abs(ext.yMax - target.y), Math.abs(ext.yMin - target.y)) * 1.02
+    return { halfW, halfH }
+  }
+
+  /**
+   * 站多远。
+   *
+   * 两个约束取大：① 横向塞得下（含屏形 / 侧边栏占掉的宽度）② 纵向塞得下（含顶栏和
+   * 控制台占掉的高度）。**不能只看横向** —— 竖屏时纵向可视区只有 439px（667 屏里
+   * 顶栏 56 + 控制台 172 都吃掉），只按宽度算距离会让机台高度溢出 1.5 倍。
+   */
+  function fitDist(mode: CamMode) {
+    const s = CAM_SPEC[mode]
+    const { halfW, halfH } = frameOf(mode)
     const vt = Math.tan(THREE.MathUtils.degToRad(camera.fov / 2))
-    return wideLayout
-      ? Math.max(0.72 / (vt * camera.aspect * hFrac), 1.22 / (vt * visFrac))
-      : Math.max(0.62 / (vt * camera.aspect), 0.95 / (vt * visFrac))
+    const pol = wideLayout ? s.polWide : s.polNarrow
+    const dW = halfW / (vt * camera.aspect * hFrac)
+    // 1.06 是「顶栏 56 + 控制台 172 之外再留一点」—— 机台贴边看着像被切掉了
+    const dH = (halfH * 1.16) / (vt * visFrac)
+    return Math.max(dW, dH) * s.k
   }
 
   function resize() {
@@ -459,12 +526,8 @@ export async function createClawApp(opts: ClawAppOptions): Promise<ClawApp> {
     camera.updateProjectionMatrix()
     renderer.setSize(w, h, false)
     composer?.setSize(w, h)
-    const d = fitDist()
-    views = [
-      { az: 0, pol: wideLayout ? 1.32 : 1.28, dist: d },
-      { az: -0.55, pol: 1.28, dist: d * 1.05 },
-      { az: 0.0, pol: 0.7, dist: d * 0.92 },
-    ]
+    // 距离不预存：切机位时按当前屏形现算，避免「竖屏切横屏后还按旧屏形站」
+    const d = fitDist(camMode)
     controls.minDistance = d * 0.5; controls.maxDistance = d * 1.3
   }
 
@@ -472,16 +535,31 @@ export async function createClawApp(opts: ClawAppOptions): Promise<ClawApp> {
     camAnim = { p0: camera.position.clone(), t0: controls.target.clone(), p1, t1, t: 0, dur }
   }
 
-  function goView(i: number, instant = false) {
-    viewIdx = i; const v = views[i]
-    const p = new THREE.Vector3().setFromSpherical(new THREE.Spherical(v.dist, v.pol, v.az)).add(target)
+  function goView(mode: CamMode, instant = false) {
+    camMode = mode; doorView = false
+    const s = CAM_SPEC[mode]
+    const d = fitDist(mode)
+    const pol = wideLayout ? s.polWide : s.polNarrow
+    const p = new THREE.Vector3().setFromSpherical(new THREE.Spherical(d, pol, s.az)).add(target)
+    // 两档站的距离不一样，缩放范围要跟着换；不换的话切到侧面后 pinch 会「卡住不动」
+    controls.minDistance = d * 0.5; controls.maxDistance = d * 1.3
+    syncCamChips()
     if (instant) { controls.target.copy(target); camera.position.copy(p); camera.lookAt(target); controls.update(); return }
     animCam(p, target.clone())
   }
 
+  /** 机位按钮的高亮跟着 camMode 走；蹲下看取物口时两档都不亮 */
+  function syncCamChips() {
+    root.querySelectorAll<HTMLElement>('#views [data-cam]').forEach((b) => {
+      const on = b.dataset.cam === camMode && !doorView
+      b.classList.toggle('on', on)
+      b.setAttribute('aria-pressed', on ? 'true' : 'false')
+    })
+  }
+
   /** crouch a little and look at the pickup window */
   function goDoor() {
-    viewIdx = -1
+    doorView = true; syncCamChips()
     const t = new THREE.Vector3(machine.doorPos.x + 0.08, -0.52, 0.36)
     const vt = Math.tan(THREE.MathUtils.degToRad(camera.fov / 2))
     const d = Math.max(0.32 / (vt * camera.aspect * hFrac), 0.34 / (vt * visFrac))
@@ -495,7 +573,7 @@ export async function createClawApp(opts: ClawAppOptions): Promise<ClawApp> {
     resizeRaf = requestAnimationFrame(() => {
       if (disposed) return
       resize()
-      if (!intro && viewIdx >= 0 && !closeup) goView(viewIdx)
+      if (!intro && !doorView && !closeup) goView(camMode)
     })
   }
 
@@ -686,8 +764,8 @@ export async function createClawApp(opts: ClawAppOptions): Promise<ClawApp> {
     if (ke.repeat) { if (ke.code.startsWith('Arrow') || ke.code === 'Space') ke.preventDefault(); return }
     if (ke.code === 'Space') { ke.preventDefault(); if (game.state === 'idle') void insertCoin(); else doGrab() }
     else if (ke.code === 'Enter' || ke.code === 'NumpadEnter' || ke.code === 'KeyC') void insertCoin()
-    else if (ke.code === 'KeyV') { sfx.click(); goView((Math.max(0, viewIdx) + 1) % views.length) }
-    else if (/^(Digit|Numpad)[123]$/.test(ke.code)) { sfx.click(); goView(Number(ke.code.slice(-1)) - 1) }
+    else if (ke.code === 'KeyV') { sfx.click(); goView(camMode === 'front' ? 'side' : 'front') }
+    else if (/^(Digit|Numpad)[12]$/.test(ke.code)) { sfx.click(); goView(CAM_MODES[Number(ke.code.slice(-1)) - 1]) }
     else if (ke.code === 'KeyM') $('snd').click()
     else if (ke.code === 'KeyF') toggleFullscreen()
     else if (ke.code === 'Escape') {
@@ -726,7 +804,7 @@ export async function createClawApp(opts: ClawAppOptions): Promise<ClawApp> {
       if (!intro) {
         if (edge(0)) { if (game.state === 'idle') void insertCoin(); else doGrab() }
         if (edge(2) || edge(9)) void insertCoin()
-        if (edge(3)) goView((Math.max(0, viewIdx) + 1) % views.length)
+        if (edge(3)) goView(camMode === 'front' ? 'side' : 'front')
       }
       gp.buttons.forEach((_, i) => (padPrev[i] = b(i)))
       break
@@ -824,7 +902,14 @@ export async function createClawApp(opts: ClawAppOptions): Promise<ClawApp> {
     if (b && !b.classList.contains('disabled')) vibrate(6)
   }, { passive: true })
 
-  $('cam').addEventListener('click', () => { sfx.click(); goView((viewIdx + 1) % views.length) })
+  // 机位：一个按钮管一档，点哪档就是哪档（不再是「循环切换」）
+  root.querySelectorAll<HTMLElement>('#views [data-cam]').forEach((b) => {
+    b.addEventListener('click', () => {
+      const m = b.dataset.cam as CamMode
+      if (m === camMode && !doorView) return
+      sfx.click(); goView(m)
+    })
+  })
 
   $('bag').addEventListener('click', () => {
     const list = $('bagList'); list.innerHTML = ''
@@ -1022,8 +1107,8 @@ export async function createClawApp(opts: ClawAppOptions): Promise<ClawApp> {
     else sfx.motorLevel(Math.min(1, spd / 0.18), 0.8 + spd * 2.2)
     // camera
     if (intro) {
-      const v = views[0]; const tt = now / 1000
-      camera.position.setFromSpherical(new THREE.Spherical(v.dist * 1.12, 1.36 + Math.sin(tt * 0.27) * 0.025, Math.sin(tt * 0.19) * 0.22)).add(target)
+      const d0 = fitDist('front'); const tt = now / 1000
+      camera.position.setFromSpherical(new THREE.Spherical(d0 * 1.12, 1.36 + Math.sin(tt * 0.27) * 0.025, Math.sin(tt * 0.19) * 0.22)).add(target)
       camera.lookAt(target)
     } else if (camAnim) {
       camAnim.t = Math.min(1, camAnim.t + dt / camAnim.dur); const k = camAnim.t * camAnim.t * (3 - 2 * camAnim.t)
@@ -1031,7 +1116,7 @@ export async function createClawApp(opts: ClawAppOptions): Promise<ClawApp> {
       camera.lookAt(controls.target)
       if (camAnim.t >= 1) camAnim = null
     }
-    if (doorCam > 0 && !camAnim) { doorCam -= dt; if (doorCam <= 0 && viewIdx < 0) goView(0) }
+    if (doorCam > 0 && !camAnim) { doorCam -= dt; if (doorCam <= 0 && doorView) goView(camMode) }
     if (!intro && !closeup && !camAnim) controls.update()
     // slight handheld sway (a person standing, not a tripod); undone after rendering
     const tt = now / 1000
@@ -1048,9 +1133,18 @@ export async function createClawApp(opts: ClawAppOptions): Promise<ClawApp> {
     perf.calls = renderer.info.render.calls; perf.tris = renderer.info.render.triangles
     perf.geo = renderer.info.memory.geometries; perf.tex = renderer.info.memory.textures
     camera.position.x -= sx; camera.position.y -= sy
-    if (autoQ && playStart && now - playStart > 1500) {
+    /*
+     * 自动降画质：**开局后 4 秒才开始采样**。
+     *
+     * 原先从开局 +1.5s 起采，而开局这 1.5 秒正好是「镜头推近 + 材质 / 着色器首次编译」，
+     * 软件渲染（SwiftShader、老安卓）在这段必然掉到 40 fps 以下 ⇒ **每次开局都把画质
+     * 降一档**，玩家没做任何操作就看到「画质已调整为「低」」。实测 390×844 走查里
+     * 3 个视口全部被降到「低」，画面比手选「高」糊一圈。
+     * 真要保流畅，等首帧稳定再判断；也顺手把「用户手动选过画质」当刹车（autoQ=false）。
+     */
+    if (autoQ && playStart && now - playStart > 4000) {
       fpsAcc += dt; fpsN++
-      if (fpsAcc > 3) {
+      if (fpsAcc > 4) {
         const fps = fpsN / fpsAcc; fpsAcc = 0; fpsN = 0
         if (fps < 42 && quality > 0) { quality--; applyQuality(); toast(`画质已调整为「${QUALITY[quality]}」`, 'info', '保持流畅运行', 1.6) }
         else autoQ = false
@@ -1064,7 +1158,7 @@ export async function createClawApp(opts: ClawAppOptions): Promise<ClawApp> {
   const bar = $('bar'), txt = $('loadTxt')
 
   applyQuality()
-  goView(0, true)
+  goView('front', true)
   bar.style.width = '15%'; txt.textContent = '正在加载物理引擎…'
   await RAPIER.init()
   if (disposed) return makeHandle()
@@ -1089,7 +1183,7 @@ export async function createClawApp(opts: ClawAppOptions): Promise<ClawApp> {
     if (disposed) return
     sfx.unlock(); sfx.click(); vibrate(20)
     $('start').classList.add('hide'); playStart = performance.now()
-    intro = false; controls.enabled = true; root.classList.remove('intro'); goView(0)
+    intro = false; controls.enabled = true; root.classList.remove('intro'); goView('front')
     if (!raw.guide && !params.has('noguide')) later(() => { showGuide(0); openModal('onboard') }, 650)
     refreshUI()
   })
@@ -1106,11 +1200,16 @@ export async function createClawApp(opts: ClawAppOptions): Promise<ClawApp> {
     game: { get: () => game, enumerable: true },
     state: { get: () => game?.state ?? 'idle', enumerable: true },
     intro: { get: () => intro, enumerable: true },
+    camMode: { get: () => camMode, enumerable: true },
     bag: { get: () => ({ ...bag }), enumerable: true },
   })
   Object.assign(debug, {
     perf, renderer, scene, camera, joy, toast, openModal, closeModal, showGuide,
-    insertCoin, doGrab, showWin, goDoor, setTheme, wallet,
+    insertCoin, doGrab, showWin, goDoor, goView, setTheme, wallet,
+    /** 走查脚本量「机台占了多少画面」用 —— 探针里不方便再 import three */
+    machineRoot: machine.root,
+    camInfo: () => ({ mode: camMode, door: doorView, d: +fitDist(camMode).toFixed(3), ext, visFrac: +visFrac.toFixed(3), hFrac: +hFrac.toFixed(3), wide: wideLayout, fov: camera.fov }),
+    bboxOf: (o: THREE.Object3D) => { o.updateWorldMatrix(true, true); const b = new THREE.Box3().setFromObject(o); return { min: b.min.toArray(), max: b.max.toArray() } },
     setQuality: (q: number) => { quality = q; applyQuality() },
     camBusy: () => !!camAnim || doorCam > 0,
     camAnimating: () => !!camAnim,

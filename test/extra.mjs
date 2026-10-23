@@ -34,7 +34,7 @@ console.log(JSON.stringify({ binY, afterTake }));
 if (process.env.WINONLY) { console.log(JSON.stringify(errors)); await browser.close(); process.exit(0); }
 await page.waitForTimeout(800);
 await page.waitForFunction(() => !window.__claw.camBusy());
-await page.tap('#cam', { force: true });
+await page.tap('#views [data-cam="side"]', { force: true });
 await page.waitForTimeout(500);
 await page.waitForFunction(() => !window.__claw.camBusy());
 await page.waitForTimeout(1500);

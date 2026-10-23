@@ -8,3 +8,6 @@ dist-plugin
 
 # 走查截图临时目录（要留的图进 screenshots/）
 shots
+
+# tsc 增量构建缓存（`tsc -b` 会写出来）
+*.tsbuildinfo

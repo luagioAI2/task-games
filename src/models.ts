@@ -296,59 +296,53 @@ export function buildMachine(theme: Theme = THEMES[0]): MachineParts {
   };
 }
 
+/**
+ * 机台「要框住的那些东西」的包围盒 —— 取景距离**按它算**，不手写数字。
+ *
+ * 不直接对 `root` 求包围盒：root 底下挂着整个吊爪（`hub`/`prongs`/`cable`），
+ * 爪子会随游戏上下移动，包围盒跟着抖 —— 相机会在游戏过程中自己推拉，
+ * 而且「爪子在最下面」时框出来的机台明显更小（实测正面 wFill 1.008 / hFill 1.543，
+ * 高度溢出 1.5 倍，机台整个被裁掉一半，但**画面看着只是「有点挤」**）。
+ *
+ * 所以只框**静止的那部分**：柜体 + 灯箱 + 控制台 + 吊臂轨道。
+ * 爪子本来就在玻璃罩里面，罩住罩子就一定罩住爪子。
+ */
+export function machineExtent(parts: MachineParts): { hx: number; yMin: number; yMax: number; hz: number } {
+  const moving = new Set<THREE.Object3D>([parts.hub, parts.cable, ...parts.prongs])
+  const b = new THREE.Box3()
+  const v = new THREE.Vector3()
+  parts.root.updateWorldMatrix(true, true)
+  parts.root.traverse((o) => {
+    for (let p: THREE.Object3D | null = o; p; p = p.parent) if (moving.has(p)) return
+    const m = o as THREE.Mesh
+    if (!m.isMesh || !m.geometry) return
+    if (!m.geometry.boundingBox) m.geometry.computeBoundingBox()
+    const gb = m.geometry.boundingBox!
+    for (const x of [gb.min.x, gb.max.x]) for (const y of [gb.min.y, gb.max.y]) for (const z of [gb.min.z, gb.max.z]) {
+      b.expandByPoint(v.set(x, y, z).applyMatrix4(m.matrixWorld))
+    }
+  })
+  // hz 用「x/z 平面里离轴最远的那个」—— 侧面机位要框的就是进深，控制台往前探的部分也算进去
+  return { hx: Math.max(-b.min.x, b.max.x), yMin: b.min.y, yMax: b.max.y, hz: Math.max(-b.min.z, b.max.z) }
+}
+
 export function buildRoom(): THREE.Group {
   const room = new THREE.Group();
   const floor = new THREE.Mesh(new THREE.PlaneGeometry(16, 16), new THREE.MeshStandardMaterial({ map: floorTiles(), roughness: 0.4, metalness: 0.05 }));
   floor.rotation.x = -Math.PI / 2; floor.position.y = -1.0; floor.receiveShadow = true; room.add(floor);
   const wall = new THREE.Mesh(new THREE.PlaneGeometry(18, 6), new THREE.MeshStandardMaterial({ color: 0xf0eeea, roughness: 0.92 })); wall.position.set(0, 2, -1.6); room.add(wall);
 
-  const accents = [0xf47aa8, 0xf5c52a, 0x3ec8d8, 0xf47aa8, 0xf5c52a, 0x3ec8d8];
-  const labels = ['爪爪乐', '爪爪乐', '爪爪乐', '爪爪乐', '爪爪乐', '爪爪乐'];
-  [-1.3, 1.3, -2.62, 2.62, -3.95, 3.95].forEach((x, i) => room.add(neighbourCabinet(accents[i], labels[i], x, (i - 2.5) * 0.04)));
+  /*
+   * 只摆一台机子 —— **没有邻居**。
+   *
+   * 这里原来左右各排 3 台一模一样的柜子当背景（x = ±1.3 / ±2.62 / ±3.95）。
+   * 它们把侧面机位堵死了：柜子之间的空隙只有 0.14，侧视相机（x ≈ 3.3）正好落在
+   * 第三台柜子**内部**，屏幕上就是一整块粉色塑料。
+   * prize-park 那边侧视能用，是因为它的邻居是**透明亚克力**，从里面还能看穿；
+   * 这台机子的邻居是实心白漆，看不过去。所以按「只保留一个机位」把整排撤掉，
+   * 侧面才立得住。
+   */
   return room;
-}
-
-const nbGeo = {
-  body: new RoundedBoxGeometry(1.16, 1.0, 1.0, 3, 0.02),
-  post: new THREE.BoxGeometry(0.04, 1.22, 0.04),
-  head: new RoundedBoxGeometry(1.16, 0.3, 0.96, 3, 0.02),
-  glass: new THREE.PlaneGeometry(1.0, 1.2),
-  lump: new THREE.SphereGeometry(0.042, 10, 8),
-};
-const lumpCols = [0xf2a7c0, 0xfff1d6, 0xf5d36a, 0x9fd8e8, 0xb9a6e8, 0xffffff, 0xf7b98a];
-const lumpMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.95 });
-
-function neighbourCabinet(accent: number, sign: string, x: number, ry: number) {
-  const g = new THREE.Group(); g.position.set(x, 0, -0.02 + Math.abs(x) * 0.02); g.rotation.y = ry;
-  const paint = new THREE.MeshPhysicalMaterial({ color: 0xffffff, roughness: 0.25, clearcoat: 0.7, clearcoatRoughness: 0.2 });
-  const acc = new THREE.MeshPhysicalMaterial({ color: accent, roughness: 0.3, clearcoat: 0.6 });
-  const b = new THREE.Mesh(nbGeo.body, paint); b.position.y = -0.5; b.receiveShadow = true; g.add(b);
-  const h = new THREE.Mesh(nbGeo.head, paint); h.position.y = 1.35; g.add(h);
-  // LED rim
-  const led = new THREE.MeshStandardMaterial({ color: 0x111, emissive: accent, emissiveIntensity: 1.4 });
-  { const lg = mergeGeometries([new THREE.BoxGeometry(0.01, 1.15, 0.01).translate(-0.5, 0.6, 0.41), new THREE.BoxGeometry(0.01, 1.15, 0.01).translate(0.5, 0.6, 0.41)]); g.add(new THREE.Mesh(lg, led)); }
-  const st = labelTexture(sign, '#fff', '#' + accent.toString(16).padStart(6, '0'), 512, 128, 'bold 84px "PingFang SC","Microsoft YaHei",sans-serif');
-  const sm = new THREE.Mesh(new THREE.PlaneGeometry(1.0, 0.25), new THREE.MeshStandardMaterial({ map: st, emissive: 0xffffff, emissiveMap: st, emissiveIntensity: 0.85 })); sm.position.set(0, 1.36, 0.485); g.add(sm);
-  const back = new THREE.Mesh(nbGeo.glass, new THREE.MeshStandardMaterial({ color: 0x000000, emissive: accent, emissiveIntensity: 0.25 })); back.position.set(0, 0.6, -0.4); g.add(back);
-  // background toys: one instanced draw per cabinet
-  const lumps = new THREE.InstancedMesh(nbGeo.lump, lumpMat, 28); const o = new THREE.Object3D(); const col = new THREE.Color();
-  for (let i = 0; i < 28; i++) {
-    const r = Math.sin(i * 12.9898 + x) * 43758.5453; const fr = r - Math.floor(r);
-    o.position.set(-0.4 + fr * 0.8, 0.04 + (i % 3) * 0.045 + fr * 0.03, -0.32 + ((i * 0.618) % 1) * 0.6);
-    o.scale.set(1 + (i % 3) * 0.2, 0.85 + (i % 2) * 0.25, 1 + fr * 0.3); o.updateMatrix();
-    lumps.setMatrixAt(i, o.matrix); lumps.setColorAt(i, col.setHex(lumpCols[i % lumpCols.length]));
-  }
-  g.add(lumps);
-  const posts = new THREE.InstancedMesh(nbGeo.post, M.alu, 4); let k = 0;
-  for (const sx of [-1, 1]) for (const sz of [-1, 1]) { o.position.set(sx * 0.525, 0.6, sz * 0.425); o.scale.set(1, 1, 1); o.updateMatrix(); posts.setMatrixAt(k++, o.matrix); }
-  g.add(posts);
-  const fl = new THREE.Mesh(new THREE.PlaneGeometry(1.0, 0.8), new THREE.MeshStandardMaterial({ color: 0x3a4a62, roughness: 1 })); fl.rotation.x = -Math.PI / 2; fl.position.y = 0.002; g.add(fl);
-  const tube = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.012, 0.012), M.tube); tube.position.set(0, 1.17, 0.36); g.add(tube);
-  const gl = new THREE.Mesh(nbGeo.glass, M.glassRefl); gl.position.set(0, 0.6, 0.41); gl.renderOrder = 4; g.add(gl);
-  const ledge = new THREE.Mesh(new RoundedBoxGeometry(0.8, 0.07, 0.18, 2, 0.02), acc); ledge.position.set(0, -0.02, 0.56); g.add(ledge);
-  // prize ring
-  const ring = new THREE.Mesh(new THREE.TorusGeometry(0.12, 0.015, 10, 32), led); ring.position.set(-0.28, -0.55, 0.51); g.add(ring);
-  return g;
 }
 
 export function buildEnvScene(): THREE.Scene {

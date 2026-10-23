@@ -4,9 +4,10 @@ A mobile-first 3D claw machine in the browser, styled after current Chinese mall
 
 ![idle](screenshots/1-idle.png)
 
-- **Look:** procedural Gen-2 cabinet — white clearcoat body, pink/yellow/cyan accent themes (chip on the HUD), aluminium frame, breathing LED edge strips, backlit “爪爪乐 / PAW PLAY” lightbox, cute geometric backboard with an original blob mascot (not a licensed IP), circular illuminated 取物口, caster wheels. Neighbouring machines share the same language. Soft glass UI cards replace the old retro LED board.
+- **Look:** procedural Gen-2 cabinet — white clearcoat body, pink/yellow/cyan accent themes (chip on the HUD), aluminium frame, breathing LED edge strips, backlit “爪爪乐 / PAW PLAY” lightbox, cute geometric backboard with an original blob mascot (not a licensed IP), circular illuminated 取物口, caster wheels. Soft glass UI cards replace the old retro LED board.
 - **Physics:** Rapier3D (WASM, `-compat` build — wasm inlined). Pendulum claw, motorized prongs, random grip, chute → pickup window, take-out animation.
 - **Desktop & mobile:** portrait deck / landscape side columns, keyboard + mouse + touch + gamepad, theme chips, fullscreen, safe-area insets.
+- **One cabinet, no neighbours.** The row of neighbouring machines was removed with the move to a single set of camera positions — they physically blocked the side view (gaps of only 0.14 between cabinets). See [机位](#机位cameras).
 
 ## Two ways to run it
 
@@ -60,6 +61,7 @@ npm run build      # 独立版；base /claw-machine/，VITE_BASE=./ for other ho
 npm test           # 无头物理模拟（test/sim.ts）—— 不需要浏览器
 
 npm run smoke        # 独立版冒烟（要先 build + vite preview）
+node scripts/probe-fit.mjs http://localhost:4394/claw-machine/   # 取景占用率（3 视口 × 2 机位）
 npm run plugin       # 打单文件插件包 → dist-plugin/claw3d.plugin.mjs
 npm run plugin:check # 只自检已有产物
 npm run plugin:deploy# 打包 + 拷进 ../kid-quest-farm-2d + 重算 sha256
@@ -73,6 +75,35 @@ npm run lint && npm run build
 npx vite preview --port 4396 --strictPort
 node scripts/e2e-plugin-claw3d.mjs http://127.0.0.1:4396/
 ```
+
+## 机位（cameras）
+
+只有**一台**机器、**两个**机位，胶囊按钮切（`#views`，就在顶栏下面一行；宽屏挂右上角）。
+`V` 键切换，`1` / `2` 直接选。取奖窗那个蹲下视角（`goDoor`）不算机位，回来时回到原机位。
+
+| 机位 | 方位角 | 看到什么 |
+| --- | --- | --- |
+| 正面 `front` | `0` | 灯箱招牌 + 取物口 + 娃娃堆，玩起来的主视角 |
+| 侧面 `side` | `1.40 rad`（≈80°） | 从右侧看柜体厚度、吊爪吊绳、投递轨道，像站在机器旁边 |
+
+改这里之前值得知道的四件事（都是踩出来的）：
+
+1. **机台宽度是量出来的，不是写死的。** `models.ts` 的 `machineExtent()` 对**静态**几何求包围盒，
+   `app.ts` 的 `frameOf()` / `fitDist()` 按它算距离。原来写死 `halfWide: 0.72 / halfNarrow: 0.62`，
+   比真机（`hx 0.582` + 台面深度 `hz 0.70`）小 ⇒ 机台溢出画面（实测 `hFill 1.543`）。
+   ⚠️ 包围盒**必须排除** `hub` / `cable` / `prongs` —— 它们每帧在动，算进去会让相机每帧推拉。
+2. **`OrbitControls` 会静默把方位角夹回去。** `minAzimuthAngle` / `maxAzimuthAngle` 原来写死 ±1.0，
+   而侧面是 1.40 ⇒ 按下按钮只转到 57° 就不动了，**看起来像按钮没生效**。
+   现在 `AZ_LIMIT` 由 `CAM_SPEC` 推出来。`smoke.mjs` 用 `atan2(x, z)` 钉住这条。
+3. **`camera.far` 太小会裁成一块白。** 曾经是 `30`，取景距离算到 16.7 之后相机落在 z≈18，
+   机台整个被远平面切掉，截图里只剩一个小白块 —— 而 `Vector3.project()` 给出的坐标**完全正常**，
+   所以「投影对不对」说明不了「画面对不对」。现在是 `60`。
+4. **画质自动降档要避开启动那几秒。** 判定窗口原来从 `playStart` 起 1.5 秒就开始采样，
+   正好压在着色器编译上 ⇒ 每次都掉到「低」。现在 `+4s` 才开始、窗口 4 秒。
+
+验收：`node scripts/probe-fit.mjs <url>` 量机台在画面里的宽/高占用和四条边距；
+`npm run smoke` 里的 `framing()` 对两个机位断言「机台完整在可视区内、高度占满 > 0.5」。
+插件版在真宿主里的取景见 `kid-quest-farm-2d/scripts/_shoot-cam.mjs`（宿主 TabBar 在插件外面，插件自己量不到）。
 
 ## UI / hints
 - One toast at a time, top-centre under the HUD (icon + title + detail), 200 ms fade/slide: 投币成功 · 请先投币 · 剩余 5 秒 · 抓住了！· 差一点 / 滑掉了 / 没抓住 (classified from what the claw actually carried)

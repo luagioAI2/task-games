@@ -53,6 +53,26 @@ body.intro #hud > * { pointer-events: none; }
 .tool svg { width: 20px; height: 20px; }
 .tool:active { transform: scale(.92); }
 .tool.on { background: var(--ink); color: #fff; }
+
+/* ---------- 机位（正面 / 侧面） ----------
+   为什么不塞进顶栏：量过，375 宽时顶栏已经占满（.stats 206 + .tools 136 + 间隙 + 内边距 = 374/375），
+   再塞两个按钮必然把全屏键挤出屏幕。这块是画布**上方**的空白，白捡的，
+   而且正好在 prize-park 放机位按钮的位置（顶栏下面一行）。 */
+#views { position: absolute; z-index: 3; left: calc(env(safe-area-inset-left) + 12px);
+  top: calc(env(safe-area-inset-top) + var(--top, 56px) + 8px);
+  display: flex; gap: 4px; padding: 3px; border-radius: 13px;
+  background: var(--glass); backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
+  border: 1px solid rgba(255,255,255,.7); box-shadow: var(--shadow-1); }
+#views .vw { height: 26px; padding: 0 11px; border-radius: 10px; font-size: 12px; font-weight: 700;
+  color: var(--ink-2); transition: background .15s, color .15s, transform .12s var(--ease); }
+#views .vw.on { background: var(--ink); color: #fff; }
+#views .vw:active { transform: scale(.94); }
+body.fine #views .vw:hover { color: var(--accent-dark); }
+body.fine #views .vw.on:hover { color: #fff; }
+/* 宽屏左侧是键盘说明面板（内容在顶部），机位改挂右上角 —— 右面板上半部是空的 */
+body.wide #views { left: auto; right: calc(env(safe-area-inset-right) + 12px); top: calc(env(safe-area-inset-top) + var(--top, 56px) + 12px); }
+/* 宽屏机位在右上、吐司居中，互不干扰，吐司回到原位 */
+body.wide #toasts { top: calc(var(--top, 56px) + 8px); }
 #fs.hidden { display: none; }
 body.fine .tool:hover { color: var(--accent-dark); }
 
@@ -82,7 +102,8 @@ body.fine .tool:hover { color: var(--accent-dark); }
 body:not(.fine) .fine-only, body:not(.wide) .fine-only { display: none; }
 
 /* ---------- toasts ---------- */
-#toasts { position: absolute; left: 0; right: 0; top: calc(var(--top, 56px) + 8px); display: grid; justify-items: center; z-index: 4; }
+/* 竖屏时机位按钮就在左上角这一行，吐司往下让一格（宽屏机位在右上，吐司居中，不冲突） */
+#toasts { position: absolute; left: 0; right: 0; top: calc(var(--top, 56px) + 46px); display: grid; justify-items: center; z-index: 4; }
 .toast { grid-area: 1 / 1; display: flex; align-items: center; gap: 12px; max-width: min(86vw, 340px); padding: 10px 18px 10px 10px;
   background: var(--card); backdrop-filter: blur(18px); -webkit-backdrop-filter: blur(18px); border-radius: 18px; box-shadow: var(--shadow-2);
   opacity: 0; transform: translateY(-10px) scale(.96); transition: opacity .2s var(--ease), transform .2s var(--ease); }
