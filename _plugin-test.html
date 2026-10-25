@@ -1,0 +1,235 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>云边小农场 · 插件加载测试（blob URL）</title>
+<style>
+  html,body{margin:0;background:#101014;color:#cfe;font:12px/1.5 ui-monospace,monospace}
+  #host{position:relative;width:390px;height:780px;overflow:hidden;margin:8px;background:#000}
+  /* 对照组：**宿主自己的**这些类名。插件的样式表里有同名选择器，
+     没做作用域就会盖掉宿主（unlayered 胜 @layer）——症状是「切走以后农场页变形」。 */
+  .row{display:flex}
+  .grid{overflow:visible;cursor:default;touch-action:auto}
+  .item{padding:0}
+  .btn{background:none;color:inherit}
+  .modal{display:none}
+</style>
+</head>
+<body>
+<!-- 对照组元素：挂载后它们的 computed style 必须**没变** -->
+<div id="ctlRow" class="row" style="width:120px"><span class="item">对照 row</span></div>
+<div id="ctlGrid" class="grid" style="width:120px">对照 grid</div>
+<div id="ctlBtn" class="btn">对照 btn</div>
+<div id="host"></div>
+<script type="module">
+// 故意**不**放 importmap：宿主页面也不会有。插件包必须自带一切。
+const data = {};
+/** 兑换券账本（只记增量之和，和宿主 `harvestLedger` 同口径） */
+const vouchers = [];
+/** 宿主积分账本。**插件不应该碰它** —— 下面会断言它一直是 0 笔。 */
+const pointsLedger = [];
+const voucherBalance = () => vouchers.reduce((a, r) => a + r.delta, 0);
+const pointsBalance = () => 100 + pointsLedger.reduce((a, r) => a + r.delta, 0);
+
+/**
+ * 假宿主。**必须真的记账**，不能只做空壳 ——
+ * 否则「券到底有没有进账本」这件事永远测不到，而那正是最容易写错的地方
+ * （比如插件自己拿 localStorage 记、没走宿主，页面上看起来一切正常）。
+ */
+const host = {
+  storage: {
+    async get(k) { return data[k]; },
+    async set(k, v) {
+      // 照宿主的规矩：`__` 开头是保留键，会抛
+      if (String(k).startsWith('__')) throw new Error('保留键 ' + k);
+      data[k] = v;
+    },
+    async list() { return { ...data }; },
+  },
+  balance: () => pointsBalance(),
+
+  async spendPoints(n) {
+    if (pointsBalance() < n) return false;
+    pointsLedger.push({ delta: -Math.round(n), memo: 'spend' });
+    return true;
+  },
+  // 本作**不该**调这两个 —— 记下来，测试断言它们是空的
+  async mintGameCoin(n) { pointsLedger.push({ delta: 0, memo: 'MINT-COIN-SHOULD-NOT-HAPPEN:' + n }); },
+  async spendGameCoin() { return false; },
+  async buyGameCoin() { return false; },
+  async gameCoinBalance() { return 0; },
+  async redeemGameCoin() { return 0; },
+
+  /** HOST_API 4：收成 → 兑换券。这是本作唯一的产出出口。 */
+  async mintVoucher(count, memo) {
+    const n = Math.round(count);
+    if (!(n > 0)) return 0;
+    vouchers.push({ delta: n, memo });
+    return n;
+  },
+  pushToast(t) { (window.__toasts ||= []).push(t); },
+  haptic() { (window.__haptics ||= 0), window.__haptics++; },
+  tone() {},
+};
+
+window.__hostData = data;
+window.__vouchers = vouchers;
+window.__pointsLedger = pointsLedger;
+window.__ledger = () => ({
+  vouchers: voucherBalance(),
+  voucherRows: vouchers.length,
+  points: pointsBalance(),
+  pointsRows: pointsLedger.length,
+  // 这两笔如果非零就说明插件绕过守卫自己发钱/发币了
+  illegal: pointsLedger.filter(r => r.memo.startsWith('MINT-COIN-SHOULD-NOT-HAPPEN')).length,
+});
+/** 这个假宿主实现了第几代契约。插件声明的 minHostApi 不能超过它。 */
+window.__HOST_API = 4;
+
+let unmount = null;
+const hostEl = document.getElementById('host');
+const origin = location.origin + '/';
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+window.__t = {
+  /**
+   * 完全照宿主 `loader.ts` 的路子：
+   *   fetch 文本 → Blob → createObjectURL → import() → 校验 → mount
+   */
+  async loadAndMount() {
+    const res = await fetch('/dist-plugin/cloudfarm.plugin.mjs');
+    if (!res.ok) throw new Error('取包失败 ' + res.status);
+    const code = await res.text();
+    const url = URL.createObjectURL(new Blob([code], { type: 'text/javascript' }));
+    let mod;
+    try {
+      mod = await import(url);
+    } finally {
+      // 已经拿到模块命名空间，可以回收了
+      URL.revokeObjectURL(url);
+    }
+    // 照宿主 `validateBundle` 的口径
+    if (!mod.manifest || typeof mod.manifest.id !== 'string') throw new Error('包里没有 manifest');
+    if (typeof mod.mount !== 'function') throw new Error('包里没有 mount');
+
+    /*
+     * ★ 照 `mountBundle` 的样子调：**不先 await**，而是看返回值是什么。
+     *   写 `unmount = await mod.mount(...)` 的话，「宿主拿到 Promise 就当没有
+     *   卸载函数」这个真 bug 在结构上照不出来。
+     */
+    const ctx = {
+      assetBase: origin + 'dist-plugin/',
+      assetUrl: (rel) => origin + 'dist-plugin/' + String(rel).replace(/^\.\//, ''),
+      locale: 'zh',
+    };
+    const r = mod.mount(hostEl, host, ctx);
+    const unmountFn = typeof r === 'function' ? r : await r;
+    if (typeof unmountFn !== 'function') throw new Error('mount 没有返回卸载函数');
+    unmount = unmountFn;
+
+    return {
+      id: mod.manifest.id,
+      name: mod.manifest.name,
+      tabLabel: mod.manifest.tabLabel,
+      emoji: mod.manifest.emoji,
+      minHostApi: mod.manifest.minHostApi,
+      coin: mod.manifest.coin,
+      economy: mod.manifest.economy,
+      mountKind: typeof r === 'function' ? 'sync' : 'promise',
+      keys: Object.keys(mod).sort(),
+    };
+  },
+
+  async unmountIt() {
+    if (!unmount) throw new Error('没挂载');
+    await unmount();
+    unmount = null;
+    return true;
+  },
+
+  /** 宿主自己的类名有没有被插件的样式表污染 */
+  control() {
+    const cs = (id) => getComputedStyle(document.getElementById(id));
+    const row = cs('ctlRow'), grid = cs('ctlGrid'), btn = cs('ctlBtn');
+    return {
+      rowDisplay: row.display,
+      gridOverflowY: grid.overflowY,
+      gridCursor: grid.cursor,
+      gridTouchAction: grid.touchAction,
+      btnDisplay: btn.display,
+      btnBackground: btn.backgroundColor,
+    };
+  },
+
+  state() {
+    const cv = hostEl.querySelector('canvas');
+    const uiRoot = hostEl.querySelector('#ui');
+    const r = (el) => (el ? { w: Math.round(el.clientWidth), h: Math.round(el.clientHeight) } : null);
+    return {
+      playable: window.__gpPlayable === true,
+      canvases: hostEl.querySelectorAll('canvas').length,
+      children: hostEl.childElementCount,
+      hostEl: r(hostEl),
+      canvasCss: cv ? { w: Math.round(cv.getBoundingClientRect().width), h: Math.round(cv.getBoundingClientRect().height) } : null,
+      canvasBuf: cv ? { w: cv.width, h: cv.height } : null,
+      // ★ UI 层必须在**容器里面**（插件形态），不能挂到 document.body
+      uiInside: !!uiRoot,
+      uiPos: uiRoot ? getComputedStyle(uiRoot).position : null,
+      // #ui 在 body 上意味着有人漏了 mountTo
+      uiOnBody: !!document.body.querySelector(':scope > #ui'),
+      styleCount: document.querySelectorAll('style').length,
+      // 插件注入的样式表在不在（按内容特征找，不靠 id）
+      pluginStyle: [...document.querySelectorAll('style')].some(s => s.textContent.includes('#ui')),
+      dpr: devicePixelRatio,
+      win: { w: innerWidth, h: innerHeight },
+    };
+  },
+
+  /** 交付断言：券账本、时间桥快照 */
+  ledger() { return window.__ledger(); },
+  econ() { return window.__econSnapshot || null; },
+
+  /**
+   * 收成 → 券的整条链。
+   *
+   * 走真实路径：`window.__gp` 是游戏暴露的调试钩子，里面的 `farm` 是真
+   * `Farm` 实例。这里只做「把一块地种上 + 推到成熟」，收成本身仍然走
+   * `farm.harvest()` —— 也就是玩家点「收」时跑的那个函数，
+   * 而经济结算挂在它 emit 出来的 `harvested` 事件上。
+   */
+  async growAndHarvest(rounds = 1, crop = 'cotton') {
+    // `window.__farm` 是 game.js:641 暴露的 `game` 对象（`{ farm, view, app, fx, tex }`）。
+    const g = window.__farm;
+    if (!g) throw new Error('没有 window.__farm');
+    const farm = g.farm;
+    if (!farm) throw new Error('game.farm 不存在');
+    let harvested = 0;
+    for (let k = 0; k < rounds; k++) {
+      // 种子钱不够就先垫 —— 这是为了**让收成发生**，不是被测行为。
+      // ⚠️ 用 `wallet.grant()`（只在本地加调试额度，不写宿主账本），
+      //    不能用已经删掉的 `addPoints()` —— 那等于让测试自己印钱，
+      //    下面「pointsLedger 只有真实扣款」的断言就失去意义了。
+      if (!farm.wallet.canAfford(600)) farm.wallet.grant(4999);
+      for (let i = 0; i < 12; i++) {
+        const plot = farm.s.plots[i];
+        if (!plot.unlocked || plot.crop) continue;
+        if (!farm.plant(i, crop)) continue;
+        // 推到成熟：把 readyAt 拉到过去（等效于「等它长完」，不改产出数量）
+        plot.crop.readyAt = farm.now() - 1;
+      }
+      for (let i = 0; i < 12; i++) {
+        const r = farm.harvest(i, 'store');
+        if (r && r.amount > 0) harvested++;
+      }
+      await sleep(150);
+    }
+    // 等发券链跑完（pay 是串行 promise 链）
+    await sleep(600);
+    return { harvested, ledger: window.__ledger() };
+  },
+};
+window.__ready = true;
+</script>
+</body>
+</html>
