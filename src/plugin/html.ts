@@ -117,7 +117,7 @@ export const HTML = `<svg width="0" height="0" style="position:absolute" aria-hi
 
   <div id="start">
     <div class="sheet">
-      <div class="brand"><span class="blob"><i></i><i></i></span><div><h1>爪爪乐</h1><p class="en">PAW PLAY · 线上娃娃机</p></div></div>
+      <div class="brand"><span class="blob"><i></i><i></i></span><div><h1>抓娃娃</h1><p class="en">PAW PLAY · 线上娃娃机</p></div></div>
       <div class="offer"><svg class="ic"><use href="#i-gift"/></svg><span id="offerTxt">新玩家赠送 <b>10</b> 币 · 1 币 1 局</span></div>
       <div class="loading"><div class="bar"><div id="bar"></div></div><p id="loadTxt">正在加载…</p></div>
       <button class="primary btn big" id="go" disabled>开始游戏</button>

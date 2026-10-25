@@ -127,7 +127,7 @@ export function headerSign(accentHex: string, softHex: string) {
   g.fillStyle = accentHex; g.fillRect(0, 0, W, 10); g.fillRect(0, H - 10, W, 10);
   for (let i = 0; i < 14; i++) { g.fillStyle = i % 2 ? accentHex : '#ffffff'; g.fillRect(i * 18, 14, 16, 18); g.fillRect(i * 18, H - 32, 16, 18); }
   drawMascot(g, 150, H / 2 + 4, 1.35, accentHex, softHex);
-  g.fillStyle = accentHex; g.font = `900 96px ${FONT}`; g.textBaseline = 'middle'; g.fillText('爪爪乐', 260, H / 2 - 6);
+  g.fillStyle = accentHex; g.font = `900 96px ${FONT}`; g.textBaseline = 'middle'; g.fillText('抓娃娃', 260, H / 2 - 6);
   g.fillStyle = '#3a3a40'; g.font = `bold 28px ${FONT}`; g.fillText('PAW PLAY', 270, H / 2 + 46);
   g.fillStyle = accentHex; g.font = `bold 22px ${FONT}`; g.fillText('HAPPY GAMES', 480, H / 2 + 46);
   return tex(c);
@@ -162,7 +162,7 @@ export function backboardPrint(accentHex: string, softHex: string) {
   g.textAlign = 'left';
   // brand strip
   g.fillStyle = accentHex; g.fillRect(0, H - 56, W, 56);
-  g.fillStyle = '#fff'; g.font = `bold 28px ${FONT}`; g.fillText('爪爪乐  ·  PAW PLAY', 24, H - 28);
+  g.fillStyle = '#fff'; g.font = `bold 28px ${FONT}`; g.fillText('抓娃娃  ·  PAW PLAY', 24, H - 28);
   return tex(c);
 }
 
@@ -182,7 +182,7 @@ export function ledgeLabel(accentHex: string) {
   const W = 512, H = 96; const { c, g } = canvas(W, H);
   g.fillStyle = accentHex; g.fillRect(0, 0, W, H);
   g.fillStyle = '#fff'; g.font = `900 44px ${FONT}`; g.textAlign = 'center'; g.textBaseline = 'middle';
-  g.fillText('爪爪乐  PAW PLAY', W / 2, H / 2);
+  g.fillText('抓娃娃  PAW PLAY', W / 2, H / 2);
   return tex(c);
 }
 
@@ -191,7 +191,7 @@ export function doorSticker(accentHex: string, softHex: string) {
   g.fillStyle = '#ffffff'; g.fillRect(0, 0, W, H);
   g.strokeStyle = accentHex; g.lineWidth = 10; g.strokeRect(5, 5, W - 10, H - 10);
   drawMascot(g, W / 2, H * 0.42, 2.0, accentHex, softHex);
-  g.fillStyle = accentHex; g.font = `bold 26px ${FONT}`; g.textAlign = 'center'; g.fillText('爪爪乐', W / 2, H * 0.82);
+  g.fillStyle = accentHex; g.font = `bold 26px ${FONT}`; g.textAlign = 'center'; g.fillText('抓娃娃', W / 2, H * 0.82);
   return tex(c);
 }
 

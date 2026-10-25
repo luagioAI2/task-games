@@ -1,5 +1,5 @@
 /**
- * 把爪爪乐打成**单文件 ESM 插件包**（宿主是用 `blob:` URL `import()` 的）。
+ * 把抓娃娃打成**单文件 ESM 插件包**（宿主是用 `blob:` URL `import()` 的）。
  *
  * ```bash
  * node scripts/build-plugin.mjs          # 打包 + 自检
@@ -15,7 +15,7 @@
  * ## 为什么借宿主那份 vite
  *
  * 本机没有全局打包器，而 `kid-quest-farm-2d` 里已经装了 vite 8（rolldown）。
- * 直接用它的 JS API，不额外装依赖、不污染两个项目 —— 和奖品公园那边同一套做法。
+ * 直接用它的 JS API，不额外装依赖、不污染两个项目 —— 和抓奖乐园那边同一套做法。
  *
  * ⚠️ `minify` **不能写 `'esbuild'`**：宿主没装 esbuild（vite 8 已把它变成可选
  * 依赖），写了会在 `build()` 里抛「找不到 esbuild」，而报错指向插件项目，

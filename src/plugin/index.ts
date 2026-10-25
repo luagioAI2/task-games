@@ -1,5 +1,5 @@
 /**
- * 爪爪乐 · 宿主插件入口（kid-quest-farm-2d 的 `GameBundle` 契约 v4）。
+ * 抓娃娃 · 宿主插件入口（kid-quest-farm-2d 的 `GameBundle` 契约 v4）。
  *
  * 宿主怎么用它：把这一整份包 `import()` 进来（`blob:` URL），读 `manifest`
  * 校验形状与经济闸门，然后 `mount(container, host, ctx)` 拿卸载函数。
@@ -33,7 +33,7 @@ import { scopeCss } from './scope-css.ts'
 
 /* ============================ 经济参数 ============================ */
 
-/** 多少积分买 1 个币。和奖品公园、以及当年那台内置娃娃机同口径（1:1）。 */
+/** 多少积分买 1 个币。和抓奖乐园、以及当年那台内置娃娃机同口径（1:1）。 */
 const POINTS_PER_COIN = 1
 /** 一次最多买几个（防手滑连点买空积分） */
 const MAX_BUY = 20
@@ -71,15 +71,15 @@ const VOUCHERS_PER_PRIZE = 1
  * ## `coin.emoji` 不能撞
  *
  * 🪙（积分）/ 🎟️（兑换券）/ 💎（钻石）/ 🕹️（当年内置那台，已移除但别再捡回来）
- * 都被占过；奖品公园用 🧸。四个币会同屏出现在钱包行里，图标重了
+ * 都被占过；抓奖乐园的**币**用 🧸。四个币会同屏出现在钱包行里，图标重了
  * 就看不出在扣哪一个 —— `currency.ts` 记过这次事故。
  */
 export const manifest: GameManifestV2 = {
   id: 'claw3d',
-  name: '爪爪乐',
-  emoji: '🎪',
-  tabLabel: '爪爪乐',
-  version: '1.0.0',
+  name: '抓娃娃',
+  emoji: '🧸',
+  tabLabel: '抓娃娃',
+  version: '1.0.1',
   /*
    * 4 = 宿主有 `mintVoucher`（抓到奖品直接发券，不经过币）。
    * 在 3 的宿主上 `host.mintVoucher` 是 undefined → TypeError，
@@ -102,7 +102,7 @@ const clamp = (n: number) => Math.max(0, Math.round(Number.isFinite(n) ? n : 0))
 /**
  * 把宿主的四扇门包成游戏要的同步语义。
  *
- * 和奖品公园 `wallet.js` 同一个套路，理由也一样：`refreshUI()` 在游戏里
+ * 和抓奖乐园 `wallet.js` 同一个套路，理由也一样：`refreshUI()` 在游戏里
  * 被同步调了几十次，全部改成 `await` 会牵动几十个调用点，而每一处都是
  * 一个独立的机会去写错「await 期间玩家又点了一次」。
  *
@@ -180,7 +180,7 @@ function makeWallet(host: HostApi, initial: { coins: number; points: number }): 
       return serial(async () => {
         if (coins < n) return false
         try {
-          const ok = await host.spendGameCoin(n, '玩一局爪爪乐')
+          const ok = await host.spendGameCoin(n, '玩一局抓娃娃')
           if (!ok) { await resync(); return false }
         } catch (e) {
           console.warn('[claw] 扣币失败', e)

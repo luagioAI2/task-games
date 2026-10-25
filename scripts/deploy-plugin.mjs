@@ -1,5 +1,5 @@
 /**
- * 一条命令把爪爪乐**部署进宿主**（kid-quest-farm-2d）。
+ * 一条命令把抓娃娃**部署进宿主**（kid-quest-farm-2d）。
  *
  * ```bash
  * node scripts/deploy-plugin.mjs
@@ -59,7 +59,7 @@ const index = JSON.parse(fs.readFileSync(indexPath, 'utf8'))
 const pluginSrc = fs.readFileSync(path.join(ROOT, 'src', 'plugin', 'index.ts'), 'utf8')
 const version = pluginSrc.match(/version:\s*'([^']+)'/)?.[1]
 if (!version) throw new Error('在 src/plugin/index.ts 里找不到 version')
-const name = pluginSrc.match(/name:\s*'([^']+)'/)?.[1] ?? '爪爪乐'
+const name = pluginSrc.match(/name:\s*'([^']+)'/)?.[1] ?? '抓娃娃'
 
 const row = { id: GAME_ID, name, version, file: `${GAME_ID}/${OUT_NAME}`, assetBase: `${GAME_ID}/` }
 const at = index.games.findIndex((g) => g.id === GAME_ID)

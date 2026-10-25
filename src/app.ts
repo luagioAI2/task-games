@@ -1,5 +1,5 @@
 /**
- * 爪爪乐的**引擎本体** —— 一个可以挂载 / 卸载的工厂，不再自己启动。
+ * 抓娃娃的**引擎本体** —— 一个可以挂载 / 卸载的工厂，不再自己启动。
  *
  * ## 为什么从 `main.ts` 拆出来
  *
@@ -90,7 +90,7 @@ export interface ClawRecharge {
  * 钱。**所有方法都可能失败**，调用方必须看返回值 —— 不能假定「调了就等于成了」。
  *
  * 为什么是同步的 `coins` 而不是 `async coins()`：`refreshUI()` 在 3000 行里
- * 被同步调了几十次。做法和奖品公园一致：**挂载前**把余额读成快照，
+ * 被同步调了几十次。做法和抓奖乐园一致：**挂载前**把余额读成快照，
  * 之后内存里这份就是界面读的那份，**每次变动 await 成功才改内存**
  * （先改内存再补账 = 允许"余额不够也开局"）。
  */
@@ -694,7 +694,7 @@ export async function createClawApp(opts: ClawAppOptions): Promise<ClawApp> {
    *
    * `paying` 那道闸不是为了性能：`await wallet.pay()` 期间有 1~2 帧，
    * 连点两下会两次都通过上面那句 `game.state !== 'idle'` —— 于是扣两次钱
-   * 只玩一局（或者反过来）。这和奖品公园 `wallet.js` 里 `serial()` 是同一个理由。
+   * 只玩一局（或者反过来）。这和抓奖乐园 `wallet.js` 里 `serial()` 是同一个理由。
    */
   let paying = false
   async function insertCoin() {
