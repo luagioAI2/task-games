@@ -6,3 +6,6 @@ dist-plugin/
 
 node_modules/
 *.log
+
+# smoke.mjs 的调试截图（临时，别当商城截图用）
+shots/smoke-*.png
