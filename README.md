@@ -1,4 +1,18 @@
-# 爪爪乐 · PAW PLAY
+# 爪爪乐 · PAW PLAY（宿主里的名字：抓娃娃）
+
+## 接入信息
+
+| 项 | 值 |
+| --- | --- |
+| 插件 id | `claw3d`（⚠️ 目录名是 `claw-machine`，不是 id） |
+| 商城名 | 抓娃娃（`tabLabel` 也是这三个字） |
+| 版本 | 1.0.1（`src/plugin/index.ts` 的 manifest，与宿主 `public/games/index.json` 必须一致） |
+| 来源 | **自研**（three + Rapier），不是扒的 |
+| 经济形态 | 积分 → 币 → 玩一局；抓到当场 `mintVoucher` 发券 |
+| 宿主清单 | `kid-quest-farm-2d/public/games/index.json` → 自动生成 `src/games/localGames.ts` |
+| 商城详情 | `kid-quest-farm-2d/src/games/storefront.ts` → `id: 'claw3d'` |
+| 商城截图 | `shots/smoke-*.png` → `public/store/claw3d/*.webp`（`npm run smoke` 拍的是当前构建） |
+| 打包 / 部署 | `npm run plugin` / `npm run plugin:deploy` |
 
 A mobile-first 3D claw machine in the browser, styled after current Chinese mall Gen-2 cabinets (white glossy body, bright accent, LED rims, circular PRIZE OUT). **Play: https://hejuntt1014.github.io/claw-machine/**
 

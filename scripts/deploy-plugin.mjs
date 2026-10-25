@@ -28,7 +28,7 @@ import fs from 'node:fs'
 
 const HERE = path.dirname(fileURLToPath(import.meta.url))
 const ROOT = path.dirname(HERE)
-const HOST = path.resolve(ROOT, '..', 'kid-quest-farm-2d')
+const HOST = path.resolve(ROOT, '..', '..', 'kid-quest-farm-2d')
 
 const GAME_ID = 'claw3d'
 const OUT_NAME = 'claw3d.plugin.mjs'

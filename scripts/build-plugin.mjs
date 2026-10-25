@@ -27,7 +27,7 @@ import fs from 'node:fs'
 
 const HERE = path.dirname(fileURLToPath(import.meta.url))
 const ROOT = path.dirname(HERE)
-const HOST = path.resolve(ROOT, '..', 'kid-quest-farm-2d')
+const HOST = path.resolve(ROOT, '..', '..', 'kid-quest-farm-2d')
 const VITE_ENTRY = path.join(HOST, 'node_modules', 'vite', 'dist', 'node', 'index.js')
 
 const OUT_DIR = path.join(ROOT, 'dist-plugin')

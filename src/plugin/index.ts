@@ -25,7 +25,7 @@
  * 游戏本体一行没改 —— 它是 `src/app.ts` 里的 `createClawApp()`。
  */
 
-import type { GameManifestV2, HostApi, MountContext, Unmount } from '../../../kid-quest-farm-2d/src/games/plugin.ts'
+import type { GameManifestV2, HostApi, MountContext, Unmount } from '../../../../kid-quest-farm-2d/src/games/plugin.ts'
 import { createClawApp, type ClawKv, type ClawWallet } from '../app.ts'
 import { HTML } from './html.ts'
 import { CSS_RAW } from './css.ts'
