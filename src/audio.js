@@ -1,4 +1,5 @@
 // WebAudio 管理：fetch+decode 预载，首次手势解锁，BGM 循环 + 暂停低通
+import { LS } from './host.js';
 const SFX_GAIN = 0.8;
 const BGM_GAIN = 0.55;
 
@@ -16,10 +17,34 @@ export class AudioMan {
           loading                                     = null;
 
   constructor() {
-    this.musicOn = localStorage.getItem('tz_music') !== '0';
-    this.sfxOn = localStorage.getItem('tz_sfx') !== '0';
-    const v = parseFloat(localStorage.getItem('tz_sfxvol') || '1');
+    this.musicOn = LS.getItem('tz_music') !== '0';
+    this.sfxOn = LS.getItem('tz_sfx') !== '0';
+    const v = parseFloat(LS.getItem('tz_sfxvol') || '1');
     this.sfxVol = Number.isFinite(v) ? Math.max(0, Math.min(1, v)) : 1;
+  }
+
+  /** 宿主注入之后重读偏好（构造函数跑在模块顶层，那时还读不到宿主的存档） */
+  reloadPrefs()       {
+    this.musicOn = LS.getItem('tz_music') !== '0';
+    this.sfxOn = LS.getItem('tz_sfx') !== '0';
+    const v = parseFloat(LS.getItem('tz_sfxvol') || '1');
+    this.sfxVol = Number.isFinite(v) ? Math.max(0, Math.min(1, v)) : 1;
+  }
+
+  /** 卸载：停 BGM、关 AudioContext。不关的话切几次 tab 会攒一堆 ctx。 */
+  dispose()       {
+    try { this.bgmSrc?.stop(); } catch { /* 已停 */ }
+    this.bgmSrc = null;
+    try { void this.ctx?.close(); } catch { /* 已关 */ }
+    this.ctx = null;
+    this.sfxBus = null;
+    this.bgmBus = null;
+    this.bgmFilter = null;
+    this.buffers.clear();
+    // ★ 必须清 loading：不清的话第二次挂载 load() 直接返回**旧 promise**，
+    //   音频永远不重载（症状是「切回来之后没声音」，且没有任何报错）。
+    this.loading = null;
+    this.unlocked = false;
   }
 
   async load(list                               )                {
@@ -95,7 +120,7 @@ export class AudioMan {
 
   setMusicOn(on         )       {
     this.musicOn = on;
-    localStorage.setItem('tz_music', on ? '1' : '0');
+    LS.setItem('tz_music', on ? '1' : '0');
     if (this.bgmBus && this.ctx) this.bgmBus.gain.setTargetAtTime(on ? BGM_GAIN : 0, this.ctx.currentTime, 0.1);
   }
 
@@ -105,14 +130,14 @@ export class AudioMan {
 
   setSfxVol(v        )       {
     this.sfxVol = Math.max(0, Math.min(1, v));
-    localStorage.setItem('tz_sfxvol', String(this.sfxVol));
+    LS.setItem('tz_sfxvol', String(this.sfxVol));
     if (this.sfxBus && this.ctx)
       this.sfxBus.gain.setTargetAtTime(this.sfxOn ? SFX_GAIN * this.sfxVol : 0, this.ctx.currentTime, 0.05);
   }
 
   setSfxOn(on         )       {
     this.sfxOn = on;
-    localStorage.setItem('tz_sfx', on ? '1' : '0');
+    LS.setItem('tz_sfx', on ? '1' : '0');
     if (this.sfxBus && this.ctx) this.sfxBus.gain.setTargetAtTime(on ? SFX_GAIN * this.sfxVol : 0, this.ctx.currentTime, 0.05);
   }
 

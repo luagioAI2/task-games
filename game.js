@@ -4,6 +4,7 @@ import { Board, BOARD_W, BOARD_H } from './src/board.js';
                                            
 import { sched, EaseOutQuad, EaseInQuad, EaseOutBack } from './src/tween.js';
 import { AudioMan } from './src/audio.js';
+import { LS, asset, installHost } from './src/host.js';
 
 // ---------- 常量（色板见 ART_DIRECTION.md） ----------
 const W = 420;
@@ -46,7 +47,8 @@ const TYPE = { R: 0, B: 1, G: 2, Y: 3, H: 4 }         ;
 const PHASE = { Title: 0, Idle: 1, Drag: 2, Busy: 3, Over: 4 }         ;
 
 // ---------- 多语言（中/英/日/韩） ----------
-let LANG         = localStorage.getItem('tz_lang') || '';
+// start() 里从 LS 重读 —— 模块顶层跑在 installHost() 之前，那时读不到宿主的存档
+let LANG         = '';
 const S                                         = {
   sub: { zh: '甜点魔法学院 · 放学补考', en: 'Sweet Magic Academy · After-School Exam', ja: 'スイーツ魔法学園・放課後の追試', ko: '디저트 마법학원 · 방과 후 시험' },
   tip: { zh: '按住糖珠自由拖动，5 秒排出三连\n三色 ×1.5 · 四色 ×1.8 · 五色彩虹圣代 ×2.2', en: 'Hold & drag an orb freely — match 3+ in 5 seconds!\n3 colors ×1.5 · 4 colors ×1.8 · 5-color Rainbow ×2.2', ja: 'ドロップを自由に動かして5秒で3つ揃え！\n3色×1.5・4色×1.8・5色レインボー×2.2', ko: '구슬을 자유롭게 드래그해 5초 안에 3개!\n3색 ×1.5 · 4색 ×1.8 · 5색 무지개 ×2.2' },
@@ -401,7 +403,7 @@ function normalizeLeaderboardEntry(raw                            )             
 
 function loadLeaderboard()                                   {
   try {
-    const parsed = JSON.parse(localStorage.getItem(LEADERBOARD_KEY) || '[]');
+    const parsed = JSON.parse(LS.getItem(LEADERBOARD_KEY) || '[]');
     if (!Array.isArray(parsed)) return [];
     return parsed.map(normalizeLeaderboardEntry).filter(Boolean).sort(compareLeaderboard).slice(0, LEADERBOARD_LIMIT);
   } catch {
@@ -426,7 +428,7 @@ function recordLeaderboard(complete         , rank         , time        )      
   entry.score = leaderboardScore(entry);
   const entries = [...loadLeaderboard(), entry].sort(compareLeaderboard).slice(0, LEADERBOARD_LIMIT);
   try {
-    localStorage.setItem(LEADERBOARD_KEY, JSON.stringify(entries));
+    LS.setItem(LEADERBOARD_KEY, JSON.stringify(entries));
   } catch {
     // 排行榜是增强功能；存储失败不阻塞结算。
   }
@@ -575,8 +577,8 @@ const CHAR_NAME_KEYS = ['nameOrange', 'nameBlue', 'nameGreen', 'nameYellow', 'na
 
 function loadGrowthState() {
   try {
-    const savedStages = JSON.parse(localStorage.getItem('tz_party_stages') || 'null');
-    const savedExp = localStorage.getItem('tz_evolution_exp');
+    const savedStages = JSON.parse(LS.getItem('tz_party_stages') || 'null');
+    const savedExp = LS.getItem('tz_evolution_exp');
     if (Array.isArray(savedStages) && savedExp !== null) {
       return {
         stages: Array.from({ length: 5 }, (_, i) => Math.max(0, Math.min(2, Math.floor(Number(savedStages[i]) || 0)))),
@@ -585,13 +587,13 @@ function loadGrowthState() {
     }
 
     // v12 旧存档迁移：保留已经解锁的形态，未用于形态门槛的经验汇入共享钱包。
-    const legacy = JSON.parse(localStorage.getItem('tz_party_xp') || '[]');
+    const legacy = JSON.parse(LS.getItem('tz_party_xp') || '[]');
     const oldXp = Array.from({ length: 5 }, (_, i) => Math.max(0, Math.floor(Number(legacy[i]) || 0)));
     const stages = oldXp.map((xp) => xp >= 180 ? 2 : xp >= 60 ? 1 : 0);
     const exp = oldXp.reduce((sum, xp, i) => sum + Math.max(0, xp - (stages[i] === 2 ? 180 : stages[i] === 1 ? 60 : 0)), 0);
     if (legacy.length) {
-      localStorage.setItem('tz_party_stages', JSON.stringify(stages));
-      localStorage.setItem('tz_evolution_exp', String(exp));
+      LS.setItem('tz_party_stages', JSON.stringify(stages));
+      LS.setItem('tz_evolution_exp', String(exp));
     }
     return { stages, exp };
   } catch {
@@ -599,7 +601,8 @@ function loadGrowthState() {
   }
 }
 
-const growthState = loadGrowthState();
+// start() 里重读（同上：顶层读会在注入之前）
+let growthState = { stages: [0, 0, 0, 0, 0], exp: 0 };
 let partyStages = growthState.stages;
 let evolutionExp = growthState.exp;
 const EVOLUTION_NOTICE_KEY = 'tz_evolution_ready_notice';
@@ -613,8 +616,8 @@ function charTextureKey(i, stage = evolutionStage(i)) {
 }
 
 function saveGrowthState() {
-  localStorage.setItem('tz_party_stages', JSON.stringify(partyStages));
-  localStorage.setItem('tz_evolution_exp', String(evolutionExp));
+  LS.setItem('tz_party_stages', JSON.stringify(partyStages));
+  LS.setItem('tz_evolution_exp', String(evolutionExp));
 }
 
 function gainEvolutionExp(amount) {
@@ -622,7 +625,7 @@ function gainEvolutionExp(amount) {
   const wasReady = canAnyHeroEvolve();
   evolutionExp += Math.round(amount);
   const isReady = canAnyHeroEvolve();
-  if (!wasReady && isReady && localStorage.getItem(EVOLUTION_NOTICE_KEY) !== '1') {
+  if (!wasReady && isReady && LS.getItem(EVOLUTION_NOTICE_KEY) !== '1') {
     evolutionReadyNoticePending = true;
   }
   saveGrowthState();
@@ -643,7 +646,7 @@ function canAnyHeroEvolve() {
   return partyStages.some((_, i) => canEvolve(i));
 }
 
-let evolutionReadyNoticePending = canAnyHeroEvolve() && localStorage.getItem(EVOLUTION_NOTICE_KEY) !== '1';
+let evolutionReadyNoticePending = false; // start() 里算
 
 function totalHp()         {
   return hp.reduce((a, b) => a + b, 0);
@@ -744,18 +747,20 @@ function mkBrandText(text        , size        , color        )       {
 }
 
 // ---------- 启动 ----------
-async function boot()                {
+async function boot(mountTo        )                 {
   app = new Application();
   // UI screenshots and modern phones commonly render above 2× DPR. Capping at
   // 2 made the entire Pixi canvas get browser-upscaled, blurring text and art.
-  await app.init({ resizeTo: window, background: 0xfdf3e7, antialias: true, resolution: Math.min(window.devicePixelRatio || 1, 3), autoDensity: true });
-  document.getElementById('app')?.appendChild(app.canvas);
+  // resizeTo 必须是**容器**，不是 window：宿主里容器比窗口小（底下有 tab 栏），
+  // 按 window 铺会画到 tab 栏底下、被裁掉一截。
+  await app.init({ resizeTo: mountTo, background: 0xfdf3e7, antialias: true, resolution: Math.min(window.devicePixelRatio || 1, 3), autoDensity: true });
+  mountTo.appendChild(app.canvas);
 
   // 字体与图片并行加载，避免 1.1 MB 字体串行阻塞主资源。
   const fontPromise = (async () => {
     try {
       const fonts = [
-        new FontFace('SmileySans', "url('assets/lib/smiley-sans/SmileySans-Oblique.woff2')"),
+        new FontFace('SmileySans', `url('${asset('assets/lib/smiley-sans/SmileySans-Oblique.woff2')}')`),
       ];
       const loadedFonts = await Promise.all(fonts.map((font) => font.load()));
       loadedFonts.forEach((font) => document.fonts.add(font));
@@ -764,7 +769,7 @@ async function boot()                {
     }
   })();
   const aliases = Object.keys(IMG);
-  aliases.forEach((a) => Assets.add({ alias: a, src: IMG[a] }));
+  aliases.forEach((a) => Assets.add({ alias: a, src: asset(IMG[a]) }));
   const [, loaded] = await Promise.all([fontPromise, Assets.load(aliases)])                           ;
   for (const a of aliases) TEX[a] = loaded[a];
   // Local-only visual QA route: ?qaStage=1 or ?qaStage=2 previews all forms
@@ -774,8 +779,8 @@ async function boot()                {
     const qaStage = Number(qaParams.get('qaStage'));
     if (qaStage === 1 || qaStage === 2) partyStages = Array(5).fill(qaStage);
     if (qaParams.has('qaExp')) evolutionExp = Math.max(0, Number(qaParams.get('qaExp')) || 0);
-    if (qaParams.get('qaNotice') === '1') localStorage.removeItem(EVOLUTION_NOTICE_KEY);
-    evolutionReadyNoticePending = canAnyHeroEvolve() && localStorage.getItem(EVOLUTION_NOTICE_KEY) !== '1';
+    if (qaParams.get('qaNotice') === '1') LS.removeItem(EVOLUTION_NOTICE_KEY);
+    evolutionReadyNoticePending = canAnyHeroEvolve() && LS.getItem(EVOLUTION_NOTICE_KEY) !== '1';
     localQaScreen = qaParams.get('qaScreen') || '';
     if (qaParams.has('qaHps')) {
       const values = (qaParams.get('qaHps') || '').split(',').map((value) => Number(value));
@@ -787,7 +792,16 @@ async function boot()                {
   buildScene();
   if (localQaHps) localQaHps.forEach((value, i) => { hp[i] = value; });
   layout();
-  window.addEventListener('resize', layout);
+  onResize = layout;
+  window.addEventListener('resize', onResize);
+  // 宿主切 tab / 旋转屏幕时窗口未必触发 resize，但容器一定变 —— 只靠 window 会漏。
+  if (typeof ResizeObserver !== 'undefined') {
+    ro = new ResizeObserver(() => {
+      if (disposed || !app) return;
+      try { app.resize(); layout(); } catch { /* 正在销毁 */ }
+    });
+    ro.observe(mountTo);
+  }
 
   app.ticker.add((t) => {
     const dt = Math.min(t.deltaMS / 1000, 0.05);
@@ -813,7 +827,7 @@ async function boot()                {
   } else if (LANG) showTitle();
   else showLangPicker('boot');
   // 音频是增强项，不应阻塞首屏交互与 gp:ready。
-  void audio.load(SND).catch((e) => console.warn('audio init failed', e));
+  void audio.load(SND.map((s) => ({ ...s, url: asset(s.url) }))).catch((e) => console.warn('audio init failed', e));
   window.__gpReady = true;
 }
 
@@ -840,7 +854,50 @@ function layout()       {
 }
 
 // ---------- 场景 ----------
+/**
+ * 清掉上一次挂载留下的场景引用。
+ *
+ * ★ 宿主里**模块实例是复用的**（blob 模块只 import 一次），所以这些模块级数组
+ *   会跨挂载累积：第一次 unmount 销毁了 app，数组里留着的还是那批**已销毁**的
+ *   Graphics；第二次 buildScene 再 push 一批新的，`tick()` 遍历到旧的就
+ *   `Cannot read properties of null (reading 'set')`。
+ *   崩在**第二帧**而不是挂载时，所以看起来像「进游戏一会儿就白屏」。
+ *
+ * ★ 清在这里而不是 unmount 里：挂载中途抛异常时 unmount 不一定跑得到。
+ */
+function clearSceneState()       {
+  enemies = [];
+  badges = [];
+  portraits = [];
+  portraitFaces = [];
+  hpBars = [];
+  hpNums = [];
+  stageLabels = [];
+  portraitGlows = [];
+  portraitAuras = [];
+  portraitStars = [];
+  portraitStarBase = [];
+  lowerBokeh = [];
+  bottomSparkles = [];
+  bottomLightDots = [];
+  evolutionReadySparkles = [];
+  badgeFaces = [];
+  menuHeroActors = [];
+  menuHeroFx = [];
+  activeOverlay = null;
+  activeBubble = null;
+  bubbleTimer = 0;
+  evolutionTabOpen = false;
+  standalonePageOpen = false;
+  menuHeroGroup = null;
+  menuHeroFxLayer = null;
+  menuHeroIdleReady = false;
+  paused = false;
+  for (const k of Object.keys(bubbleShown)) delete bubbleShown[k];
+}
+
 function buildScene()       {
+  clearSceneState();
   frameLayer = new Graphics();
   app.stage.addChild(frameLayer);
   gameRoot = new Container();
@@ -1034,14 +1091,15 @@ function buildScene()       {
   app.stage.on('pointerup', () => board.pointerUp());
   app.stage.on('pointerupoutside', () => board.pointerUp());
   app.stage.on('pointercancel', () => board.pointerUp());
-  window.addEventListener('keydown', (e) => {
+  onKeydown = (e) => {
     if (e.key === 'Escape' && evolutionTabOpen) {
       closeEvolutionTab(evolutionTabOrigin);
       return;
     }
     if (e.key === 'Escape' && standalonePageOpen) return;
     if (e.key === 'Escape' && phase !== PHASE.Title && phase !== PHASE.Over) togglePause(!paused);
-  });
+  };
+  window.addEventListener('keydown', onKeydown);
 
   board.reset(FIXED_BOARD);
   spawnFloor(0, true);
@@ -2152,7 +2210,7 @@ let mapPulse                   = null;
 
 function starsOf(floorIdx        )         {
   try {
-    return ((JSON.parse(localStorage.getItem('tz_stars') || '{}')                          )[floorIdx] || 0)          ;
+    return ((JSON.parse(LS.getItem('tz_stars') || '{}')                          )[floorIdx] || 0)          ;
   } catch {
     return 0;
   }
@@ -2161,13 +2219,13 @@ function starsOf(floorIdx        )         {
 function saveStars(floorIdx        , s        )       {
   let m                         = {};
   try {
-    m = JSON.parse(localStorage.getItem('tz_stars') || '{}')                          ;
+    m = JSON.parse(LS.getItem('tz_stars') || '{}')                          ;
   } catch {
     m = {};
   }
   if ((m[floorIdx] || 0) < s) {
     m[floorIdx] = s;
-    localStorage.setItem('tz_stars', JSON.stringify(m));
+    LS.setItem('tz_stars', JSON.stringify(m));
   }
 }
 
@@ -2346,20 +2404,24 @@ function showFloorMap(cleared        , newStars        , fromMenu = false)      
       node.cursor = 'pointer';
       node.on('pointertap', () => {
         audio.play('orb-step', 1.1);
-        mapPulse = null;
-        clearOverlay();
-        spawnFloor(i);
-        showFloorIntro(i);
+        gateRun(() => {
+          mapPulse = null;
+          clearOverlay();
+          spawnFloor(i);
+          showFloorIntro(i);
+        });
       });
     }
     ov.addChild(node);
   });
 
   const continueBtn = mkPageButton(t('continueBtn'), 286, 54, () => {
-    mapPulse = null;
-    clearOverlay();
-    spawnFloor(nextIndex);
-    showFloorIntro(nextIndex);
+    gateRun(() => {
+      mapPulse = null;
+      clearOverlay();
+      spawnFloor(nextIndex);
+      showFloorIntro(nextIndex);
+    });
   }, PAL.blue, true, 18);
   continueBtn.position.set(W / 2, 718);
   ov.addChild(continueBtn);
@@ -2676,13 +2738,13 @@ async function victory()                {
   // 本地最佳
   let best                                        = null;
   try {
-    best = JSON.parse(localStorage.getItem('tz_best') || 'null')                                         ;
+    best = JSON.parse(LS.getItem('tz_best') || 'null')                                         ;
   } catch {
     best = null;
   }
   const order = (r        ) => (r === 'S' ? 3 : r === 'A' ? 2 : 1);
   const isBest = !best || order(rank) > order(best.rank) || (order(rank) === order(best.rank) && time < best.time);
-  if (isBest) localStorage.setItem('tz_best', JSON.stringify({ rank, time }));
+  if (isBest) LS.setItem('tz_best', JSON.stringify({ rank, time }));
   const leaderboardResult = recordLeaderboard(true, rank, time);
   showResult(rank, time, isBest, best, leaderboardResult);
 }
@@ -2743,9 +2805,9 @@ function updateGrowthHud()       {
 }
 
 function showEvolutionReadyNotice()       {
-  if (!evolutionReadyNoticePending || localStorage.getItem(EVOLUTION_NOTICE_KEY) === '1') return;
+  if (!evolutionReadyNoticePending || LS.getItem(EVOLUTION_NOTICE_KEY) === '1') return;
   evolutionReadyNoticePending = false;
-  localStorage.setItem(EVOLUTION_NOTICE_KEY, '1');
+  LS.setItem(EVOLUTION_NOTICE_KEY, '1');
   paused = true;
   audio.play('floor-bell', 1.16, 0.48);
   clearOverlay();
@@ -3466,10 +3528,10 @@ function showStory()       {
     panel++;
     if (panel >= 4) {
       storyBadges.forEach((b) => b.destroy());
-      localStorage.setItem('tz_story', '1');
+      LS.setItem('tz_story', '1');
       clearOverlay();
       setStandalonePage(false);
-      if (localStorage.getItem('tz_tut')) phase = PHASE.Idle;
+      if (LS.getItem('tz_tut')) phase = PHASE.Idle;
       else startTutorial();
       return;
     }
@@ -3600,7 +3662,7 @@ function advanceTutorial()       {
 
 function finishTutorial()       {
   tutActive = false;
-  localStorage.setItem('tz_tut', '1');
+  LS.setItem('tz_tut', '1');
   if (tutHint) {
     tutHint.destroy();
     tutHint = null;
@@ -4080,7 +4142,7 @@ function mkLangRow(y        , onPick            )            {
       36,
       () => {
         LANG = l.key;
-        localStorage.setItem('tz_lang', l.key);
+        LS.setItem('tz_lang', l.key);
         applyLang();
         onPick();
       },
@@ -4117,7 +4179,7 @@ function showLangPicker(origin        )       {
   langs.forEach((l, i) => {
     const btn = mkPageButton(l.label, 200, 56, () => {
       LANG = l.key;
-      localStorage.setItem('tz_lang', l.key);
+      LS.setItem('tz_lang', l.key);
       applyLang();
       if (origin === 'pause') {
         paused = false;
@@ -4273,14 +4335,17 @@ function showTitle()       {
   ov.addChild(menuHeroFxLayer);
 
   const start = mkOrnateButton(t('startGame'), 276, 66, () => {
-    clearOverlay();
-    setStandalonePage(false);
-    if (localStorage.getItem('tz_story')) {
-      if (localStorage.getItem('tz_tut')) phase = PHASE.Idle;
-      else startTutorial();
-    } else {
-      showStory();
-    }
+    // 先收费再动画面：付费没成功就停在标题页（清掉遮罩会露出空白棋盘）
+    gateRun(() => {
+      clearOverlay();
+      setStandalonePage(false);
+      if (LS.getItem('tz_story')) {
+        if (LS.getItem('tz_tut')) phase = PHASE.Idle;
+        else startTutorial();
+      } else {
+        showStory();
+      }
+    });
   }, PAL.red, true, 24);
   start.position.set(W / 2, 532);
 
@@ -4444,7 +4509,7 @@ function mkDelButton(x        , y        , w        , h        , fontSize       
       label.text = t('delConfirm');
       return;
     }
-    ['tz_best', 'tz_stars', 'tz_tut', 'tz_story', 'tz_lang', 'tz_party_xp', 'tz_party_stages', 'tz_evolution_exp', LEADERBOARD_KEY, EVOLUTION_NOTICE_KEY].forEach((k) => localStorage.removeItem(k));
+    ['tz_best', 'tz_stars', 'tz_tut', 'tz_story', 'tz_lang', 'tz_party_xp', 'tz_party_stages', 'tz_evolution_exp', LEADERBOARD_KEY, EVOLUTION_NOTICE_KEY].forEach((k) => LS.removeItem(k));
     resetGameToFresh();
   });
   return btn;
@@ -5044,7 +5109,50 @@ function tick(dt        )       {
    
  
 
-boot().then(() => {
+// ---------- 宿主注入用的可变句柄 ----------
+let chargePlay         = null;  // (opts.chargePlay) 开局收费，插件形态才有
+let gatePending = false;
+
+/**
+ * 开局收费闸门。
+ *
+ * 没有 `chargePlay`（独立网页）⇒ 直接放行，行为跟改造前一模一样。
+ * `gatePending` 防连点：两次快速点击只扣一次 —— 否则孩子点两下就白丢 40 积分，
+ * 而且**不会报错**（两笔 spendPoints 都合法）。
+ */
+function gateRun(go         )       {
+  if (!chargePlay) { go(); return; }
+  if (gatePending) return;
+  gatePending = true;
+  void chargePlay().then(
+    (ok         ) => { gatePending = false; if (ok) go(); },
+    () => { gatePending = false; },
+  );
+}
+let onResize         = null;
+let onKeydown         = null;
+let ro         = null;
+let disposed = false;
+
+/**
+ * 挂载入口（独立网页也走它 —— `index.html` 里是 `start({ mountTo: #app })`）。
+ *
+ * 顺序不能改：**先装宿主，再读存档**。反过来的话 `LANG` / 成长存档 /
+ * 音频偏好读到的全是默认值（模块顶层已经读过一次空存档了）。
+ */
+export async function start(opts         = {})                 {
+  disposed = false;
+  installHost({ asset: opts.asset, store: opts.store });
+  LANG = LS.getItem('tz_lang') || '';
+  growthState = loadGrowthState();
+  partyStages = growthState.stages;
+  evolutionExp = growthState.exp;
+  evolutionReadyNoticePending = canAnyHeroEvolve() && LS.getItem(EVOLUTION_NOTICE_KEY) !== '1';
+  audio.reloadPrefs();
+  chargePlay = typeof opts.chargePlay === 'function' ? opts.chargePlay : null;
+
+  await boot(opts.mountTo);
+
   window.__debug = {
     state: () => ({
       phase,
@@ -5125,4 +5233,36 @@ boot().then(() => {
     fxCount: () => fxLayer.children.length,
     lang: () => LANG,
   };
-});
+
+  return unmount;
+}
+
+/**
+ * 卸载。**幂等**（孩子秒切 tab 时宿主会在 mount 落地的同一拍调它）。
+ *
+ * WebGL context 不会自己释放：不销毁的话切几次 tab 就把浏览器的
+ * context 配额（通常 8~16 个）耗光，之后整个 App 白屏而且**不报错**。
+ *
+ * 顺序：先摘监听 → 停 ticker → 关音频 → 销毁 renderer。
+ */
+async function unmount()                {
+  if (disposed) return;
+  disposed = true;
+  try { if (onKeydown) window.removeEventListener('keydown', onKeydown); } catch { /* 已摘 */ }
+  try { if (onResize) window.removeEventListener('resize', onResize); } catch { /* 已摘 */ }
+  try { ro?.disconnect(); } catch { /* 已断 */ }
+  ro = null;
+  onKeydown = null;
+  onResize = null;
+  try { app?.ticker?.stop(); } catch { /* 已停 */ }
+  try { audio.dispose(); } catch { /* 已关 */ }
+  try {
+    // 不销毁贴图：模块实例在宿主里是复用的，Assets 缓存里还是这批 Texture，
+    // 销毁了第二次挂载就会拿到「已销毁的纹理」（画面全白，且不报错）。
+    app?.destroy({ removeView: true }, { children: true, texture: false, textureSource: false });
+  } catch { /* 已销毁 */ }
+  // ★ 调试钩子必须摘。留着的话外部判不出「卸载到底跑没跑」：
+  //   `window.__gpReady` 仍是 true ⇒ 第二次挂载的任何「等它就绪」判据立刻假通过。
+  try { delete window.__gpReady; } catch { /* 只读 */ }
+  try { delete window.__debug; } catch { /* 只读 */ }
+}
