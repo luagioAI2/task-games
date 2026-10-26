@@ -1,0 +1,508 @@
+/* ABYSS MINE：和风现代 UI —— 和纸底色 + 藏青 / 朱红 / 金的点缀，青海波纹样做面板头。颜色以 ui-tokens.js 为准。 */
+@font-face { font-family: "Baloo 2"; font-weight: 400 800; font-display: swap; src: url("assets/fonts/baloo2-latin.woff2") format("woff2"); }
+:root {
+  --washi: #fbf4e6; --washi-d: #f1e4ca; --ink: #2a2140; --sub: #6b5a72; --indigo: #26356b; --indigo-d: #18224a; --indigo-l: #3d4f8f;
+  --vermilion: #d2463a; --vermilion-d: #9e2f26; --gold: #f2c95c; --gold-d: #b8862a; --matcha: #3f9a46; --matcha-d: #276a2d;
+  --cn: "PingFang SC", "Hiragino Sans", "Hiragino Sans GB", "Microsoft YaHei UI", "Microsoft YaHei", "Yu Gothic UI", "Meiryo", "Noto Sans CJK SC", "Noto Sans SC", "Noto Sans JP", system-ui, sans-serif;
+  --num: "Baloo 2", var(--cn);
+  --seigaiha: radial-gradient(circle at 50% 100%, transparent 5px, rgba(255,255,255,.13) 6px 7.5px, transparent 8.5px 11px, rgba(255,255,255,.13) 12px 13.5px, transparent 14.5px);
+  --dock: calc(72px + var(--safe-b));
+  --safe-t: env(safe-area-inset-top, 0px); --safe-r: env(safe-area-inset-right, 0px); --safe-b: env(safe-area-inset-bottom, 0px); --safe-l: env(safe-area-inset-left, 0px);
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; overflow: hidden; background: #1b2340; -webkit-user-select: none; user-select: none; -webkit-tap-highlight-color: transparent; overscroll-behavior: none; }
+body { font-family: var(--cn); color: var(--ink); }
+#app { position: fixed; inset: 0; outline: none; touch-action: none; overflow: hidden; }
+/* 画布铺满舞台：绝对定位 + 裁切，旋转屏幕时即使画布晚一帧才重设尺寸，也不会把页面撑出滚动 */
+#stage { position: absolute; inset: 0; touch-action: none; overflow: hidden; }
+#stage canvas { position: absolute; left: 0; top: 0; display: block; width: 100% !important; height: 100% !important; }
+button { font: inherit; cursor: pointer; touch-action: manipulation; }
+button:focus-visible { outline: 3px solid #ffffff; outline-offset: 2px; box-shadow: 0 0 0 6px var(--indigo); }
+[hidden] { display: none !important; }
+.num { font-family: var(--num); }
+/* 所有会变化的数字：等宽数字，位数不变时宽度也不变 */
+.num, .stats td, .big, .c-foot b, .hud-cash small, .skill-t { font-variant-numeric: tabular-nums; }
+
+/* ── HUD ── */
+#hud { position: fixed; inset: 0; z-index: 8; pointer-events: none; }
+#hud.under { visibility: hidden; }   /* 打开面板时收起 HUD（面板里另显示持有现金）*/
+.hud-top { position: absolute; top: calc(var(--safe-t) + 10px); left: calc(var(--safe-l) + 10px); right: calc(var(--safe-r) + 10px); display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; }
+.hud-left { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; min-width: 0; }
+.hud-cash { position: relative; display: flex; align-items: center; gap: 10px; padding: 4px 18px 4px 6px; border-radius: 999px; background: linear-gradient(180deg, var(--indigo-l), var(--indigo) 55%, var(--indigo-d)); border: 2.5px solid var(--gold); box-shadow: 0 3px 0 rgba(0, 0, 0, .35), inset 0 1px 0 rgba(255, 255, 255, .2); color: #fff; max-width: calc(100vw - 196px); }
+.coin { width: 38px; height: 38px; border-radius: 50%; background: radial-gradient(circle at 34% 30%, #fff8c0, #f2c95c 45%, #c58a22 80%); border: 2.5px solid #7a4a10; flex: none; position: relative; }
+.coin::after { content: ""; position: absolute; inset: 9px; border-radius: 3px; border: 2.5px solid rgba(122, 74, 16, .75); transform: rotate(45deg); }
+.cash-txt { min-width: 0; }
+.hud-cash b { display: block; font-family: var(--num); font-size: 26px; line-height: 1.2; font-weight: 800; color: #fff; text-shadow: 0 2px 0 rgba(0, 0, 0, .35); white-space: nowrap; font-variant-numeric: tabular-nums; min-width: 6.6ch; }
+.hud-cash small { display: block; font-size: 12px; line-height: 1.35; color: var(--gold); font-weight: 700; white-space: normal; overflow-wrap: anywhere; max-width: 100%; }
+@media (max-width: 420px) { .hud-cash small { font-size: 11px; } }
+.hud-depth { display: flex; align-items: baseline; gap: 6px; padding: 3px 12px 3px 8px; border-radius: 10px; background: rgba(251, 244, 230, .94); border: 2px solid var(--indigo); line-height: 1.45; box-shadow: 0 2px 0 rgba(0, 0, 0, .25); max-width: calc(100vw - 196px); }
+.d-mark { width: 8px; height: 14px; border-radius: 3px; background: var(--vermilion); align-self: center; flex: none; }
+.hud-depth[data-layer="1"] .d-mark { background: #e2a52c; } .hud-depth[data-layer="2"] .d-mark { background: #4aa8d8; } .hud-depth[data-layer="town"] .d-mark { background: var(--matcha); }
+.hud-depth b { font-size: 14px; white-space: nowrap; } .hud-depth small { font-size: 12px; color: var(--sub); font-weight: 700; white-space: nowrap; }
+.hud-btns { display: flex; gap: 8px; }
+.ibtn { pointer-events: auto; position: relative; width: 50px; height: 50px; border-radius: 16px; display: grid; place-items: center; padding: 0; background: linear-gradient(180deg, var(--indigo-l), var(--indigo)); border: 2.5px solid var(--gold); box-shadow: 0 3px 0 var(--indigo-d), 0 5px 8px rgba(0, 0, 0, .25); }
+.ibtn svg { width: 24px; height: 24px; fill: var(--washi); }
+.ibtn:active { transform: translateY(2px); box-shadow: 0 1px 0 var(--indigo-d); }
+.badge { position: absolute; top: -7px; right: -7px; min-width: 22px; height: 22px; padding: 0 5px; border-radius: 11px; background: var(--vermilion); border: 2px solid #fff; color: #fff; font-size: 12px; font-weight: 800; line-height: 18px; }
+.hud-cam { position: absolute; left: calc(var(--safe-l) + 16px); bottom: calc(var(--safe-b) + 18px); display: flex; flex-direction: column; gap: 10px; }
+.hud-toast { position: absolute; left: 50%; top: calc(var(--safe-t) + 128px); transform: translateX(-50%); max-width: min(520px, 90vw); padding: 9px 20px; border-radius: 14px; background: var(--indigo); color: #fff; border: 2.5px solid var(--gold); font-weight: 800; font-size: 16px; line-height: 1.5; text-align: center; box-shadow: 0 4px 0 var(--indigo-d), 0 8px 16px rgba(0, 0, 0, .3); }
+.hud-toast.go { animation: toast 2.6s ease-out both; }
+@keyframes toast { 0% { opacity: 0; transform: translate(-50%, -10px); } 10% { opacity: 1; transform: translate(-50%, 0); } 80% { opacity: 1; } 100% { opacity: 0; } }
+.guide { position: absolute; left: 50%; bottom: calc(var(--safe-b) + 16px); transform: translateX(-50%); width: min(580px, calc(100vw - 100px)); margin-left: 30px; display: flex; align-items: flex-end; gap: 6px; pointer-events: none; }
+.g-face { width: 72px; height: 72px; flex: none; filter: drop-shadow(0 3px 0 rgba(0, 0, 0, .3)); }
+.g-bubble { position: relative; flex: 1; padding: 12px 14px 10px; border-radius: 16px; background: var(--washi); border: 2.5px solid var(--indigo); box-shadow: 0 4px 0 rgba(0, 0, 0, .28); }
+.g-bubble b { position: absolute; top: -12px; left: 12px; padding: 0 10px; border-radius: 999px; background: var(--vermilion); color: #fff; font-size: 12px; line-height: 20px; }
+.g-bubble p { margin: 2px 0 0; font-size: 15px; font-weight: 700; line-height: 1.55; }
+
+/* ── 面板 ── */
+.overlay { position: fixed; inset: 0; z-index: 20; display: grid; place-items: center; background: rgba(14, 16, 34, .55); padding: 16px; }
+.card { position: relative; width: min(460px, 94vw); max-height: calc(100vh - 32px); overflow: auto; padding: 0 18px 16px; border-radius: 22px; background: var(--washi); border: 3px solid var(--indigo-d); box-shadow: 0 8px 0 rgba(0, 0, 0, .35), 0 16px 40px rgba(0, 0, 0, .35); animation: cardin .25s cubic-bezier(.2, .9, .3, 1.15) both; scrollbar-width: none; }
+.card::-webkit-scrollbar { display: none; }
+@keyframes cardin { from { transform: scale(.88); opacity: 0; } to { transform: none; opacity: 1; } }
+.c-band { position: absolute; left: 0; right: 0; top: 0; height: 84px; background: var(--seigaiha) 0 0 / 28px 14px, linear-gradient(180deg, var(--indigo-l), var(--indigo)); border-bottom: 3px solid var(--gold); }
+.card[data-tone="vermilion"] .c-band { background: var(--seigaiha) 0 0 / 28px 14px, linear-gradient(180deg, #e2604f, var(--vermilion-d)); }
+.card[data-tone="gold"] .c-band { background: var(--seigaiha) 0 0 / 28px 14px, linear-gradient(180deg, #d9a640, #9a6a1a); }
+.close { position: absolute; z-index: 2; top: 18px; right: 12px; width: 48px; height: 48px; border-radius: 50%; border: 2.5px solid #fff; background: rgba(0, 0, 0, .22); font-size: 26px; font-weight: 900; line-height: 1; color: #fff; }
+.close:active { transform: scale(.94); }
+.c-head { position: relative; display: flex; align-items: center; gap: 12px; padding: 12px 56px 0 0; min-height: 84px; margin-bottom: 14px; }
+.c-icon { width: 76px; height: 76px; flex: none; margin-bottom: -22px; border-radius: 50%; background: var(--washi); border: 3px solid var(--gold); box-shadow: 0 3px 0 rgba(0, 0, 0, .25); }
+.c-title { margin: 0; font-size: 20px; line-height: 1.4; color: #fff; text-shadow: 0 2px 0 rgba(0, 0, 0, .3); } .c-sub { margin: 0; font-size: 13px; line-height: 1.5; color: #ffe9b0; font-weight: 700; }
+.c-body { font-size: 15px; line-height: 1.6; padding-top: 6px; }
+.c-body p { margin: 0 0 10px; } .c-body .note { font-size: 14px; color: var(--sub); }
+.lvchip { display: flex; align-items: center; justify-content: center; gap: 10px; margin: 0 0 10px; font-family: var(--num); font-weight: 800; font-size: 18px; }
+.lvchip span { color: var(--sub); } .lvchip i { color: var(--gold-d); font-style: normal; } .lvchip b { color: var(--matcha-d); }
+.stats { width: 100%; border-collapse: separate; border-spacing: 0; margin-bottom: 10px; background: var(--washi-d); border-radius: 14px; overflow: hidden; border: 2px solid #e2d0ab; }
+.stats tr:nth-child(even) td { background: rgba(255, 255, 255, .4); }
+.stats td { padding: 5px 10px; } .stats td:first-child { color: var(--sub); font-weight: 700; font-size: 14px; } .stats td.v { text-align: right; font-family: var(--num); font-weight: 800; }
+.stats td.n { text-align: right; color: var(--matcha-d); font-family: var(--num); font-weight: 800; white-space: nowrap; }
+.mile { margin: 0 0 10px; font-size: 13px; color: var(--sub); font-weight: 700; text-align: center; }
+.bulk { display: flex; gap: 6px; margin-bottom: 12px; padding: 4px; border-radius: 14px; background: var(--washi-d); }
+.bulk button { flex: 1; min-height: 44px; border-radius: 10px; border: 0; background: transparent; font-weight: 800; font-family: var(--num); font-size: 16px; color: var(--indigo); }
+.bulk button[aria-pressed="true"] { background: var(--indigo); color: #fff; box-shadow: 0 2px 0 var(--indigo-d); }
+.btn { width: 100%; min-height: 54px; border-radius: 16px; border: 2.5px solid var(--matcha-d); background: linear-gradient(180deg, #55b55c, var(--matcha)); color: #fff; font-size: 18px; font-weight: 800; box-shadow: 0 4px 0 var(--matcha-d); line-height: 1.3; text-shadow: 0 1px 0 rgba(0, 0, 0, .25); padding: 6px 12px; }
+.btn small { display: block; font-size: 14px; line-height: 1.5; font-family: var(--num); }
+.btn:disabled, .btn[aria-disabled="true"], .btn.alt[aria-disabled="true"] { background: #8a8494; border-color: #5e5866; box-shadow: 0 4px 0 #5e5866; color: #f4f0f8; cursor: default; text-shadow: none; }
+.btn.alt { background: #fffaf0; color: var(--indigo); border-color: var(--indigo); box-shadow: 0 4px 0 var(--indigo); text-shadow: none; font-size: 16px; }
+.btn.alt.off { color: var(--sub); border-color: #9a90a4; box-shadow: 0 4px 0 #9a90a4; background: #eee6da; }
+.btn.alt.danger { color: var(--vermilion-d); border-color: var(--vermilion); box-shadow: 0 4px 0 var(--vermilion-d); }
+.btn.warn { background: linear-gradient(180deg, #e2604f, var(--vermilion)); border-color: var(--vermilion-d); box-shadow: 0 4px 0 var(--vermilion-d); }
+.btn:active:not(:disabled):not([aria-disabled="true"]) { box-shadow: 0 2px 0 var(--matcha-d); }
+.c-foot { display: flex; flex-direction: column; gap: 9px; }
+.row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.hold { margin: 0; text-align: center; font-size: 14px; font-weight: 800; color: var(--sub); line-height: 1.5; } .hold b { font-family: var(--num); color: var(--ink); }
+.lang { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 10px; }
+.lang > span { font-weight: 800; font-size: 14px; color: var(--sub); }
+.seg { display: flex; gap: 4px; padding: 4px; border-radius: 14px; background: var(--washi-d); flex: 1; }
+.seg button { flex: 1; min-height: 44px; border: 0; border-radius: 10px; background: transparent; font-weight: 800; color: var(--indigo); font-size: 15px; }
+.seg button:lang(zh), .seg button[data-lang="zh"] { font-family: "PingFang SC", "Microsoft YaHei", "Noto Sans SC", sans-serif; }
+.seg button[data-lang="ja"] { font-family: "Hiragino Sans", "Yu Gothic UI", "Meiryo", "Noto Sans JP", sans-serif; }
+.seg button[aria-pressed="true"] { background: var(--indigo); color: #fff; box-shadow: 0 2px 0 var(--indigo-d); }
+/* 管理员卡片：头像 + 等级 / 效果 / 技能；可培训时上下两张卡之间一个箭头；未到等级时显示进度条 */
+.mcard { display: flex; align-items: center; gap: 12px; padding: 8px 12px; border-radius: 14px; background: var(--washi-d); border: 2px solid #e2d0ab; margin-bottom: 8px; }
+.m-face { width: 58px; height: 58px; flex: none; }
+.mcard b { display: block; font-size: 17px; line-height: 1.45; color: var(--indigo); } .mcard small { display: block; font-size: 13px; line-height: 1.5; color: var(--sub); font-weight: 700; }
+.arrow { text-align: center; color: var(--matcha); font-size: 18px; line-height: 1.4; margin: -6px 0 2px; }
+.nextup { padding: 8px 12px; border-radius: 14px; background: #e8f0dc; border: 2px solid #c8dab0; margin-bottom: 8px; }
+.nextup b { display: block; font-size: 14px; line-height: 1.5; } .nextup small { display: flex; justify-content: space-between; font-size: 13px; font-weight: 800; color: var(--sub); line-height: 1.5; }
+.bar { height: 14px; border-radius: 7px; background: var(--indigo-d); overflow: hidden; margin: 4px 0; } .bar i { display: block; height: 100%; background: linear-gradient(90deg, var(--gold-d), var(--gold)); }
+.big { font-family: var(--num); font-size: 36px; font-weight: 800; color: var(--matcha-d); text-align: center; line-height: 1.5; margin: 2px 0 6px; }
+
+/* ── 加载画面 ── */
+/* ══ 加载画面：竖井剖面 ══
+   两侧岩层（上暖下深的和风矿脉色）+ 中间吊绳吊着升降篮，篮子随真实加载进度下降；绞盘轮一直在转、碎石一直在落、
+   底部矿车沿轨道前进、小提示每 3.6 秒换一条 — 进度条之外始终有东西在动。 */
+#loading { position: fixed; inset: 0; z-index: 30; display: grid; place-items: center; --p: 0;
+  background: var(--seigaiha) 0 0 / 40px 20px, radial-gradient(ellipse at 50% 26%, #34477f, #18224a 68%, #0e1430); color: var(--washi); transition: opacity .45s ease; }
+#loading.done { opacity: 0; pointer-events: none; }
+.ld-box { width: min(360px, 84vw); text-align: center; }
+.ld-title { font-family: "Baloo 2", sans-serif; font-weight: 800; font-size: clamp(32px, 8.6vw, 50px); letter-spacing: .06em; color: var(--gold); text-shadow: 0 3px 0 #7a4a10, 0 8px 20px rgba(0, 0, 0, .45); line-height: 1.15; }
+.ld-sub { margin: 2px 0 12px; font-size: 12px; font-weight: 700; letter-spacing: .16em; color: #b9c6ee; }
+/* 竖井 */
+.ld-shaft { position: relative; height: clamp(140px, 27vh, 220px); margin: 0 auto 10px; border-radius: 6px; overflow: hidden; background: linear-gradient(180deg, #6b4a2e, #2e5a44 46%, #1b2b52 100%); box-shadow: inset 0 0 30px rgba(0, 0, 0, .55); }
+.ld-wall { position: absolute; top: 0; bottom: 0; width: 16%; background: repeating-linear-gradient(180deg, rgba(255, 255, 255, .07) 0 2px, rgba(0, 0, 0, .22) 2px 7px), linear-gradient(180deg, rgba(0, 0, 0, .1), rgba(0, 0, 0, .5)); }
+.ld-wall.l { left: 0; border-right: 2px solid rgba(0, 0, 0, .35); }
+.ld-wall.r { right: 0; border-left: 2px solid rgba(0, 0, 0, .35); }
+.ld-rope { position: absolute; left: 50%; top: 0; width: 3px; margin-left: -1.5px; height: calc(var(--p) * 100% + 30px); background: repeating-linear-gradient(180deg, #e8d9a8 0 3px, #a8905a 3px 6px); opacity: .9; transition: height .35s ease; }
+.ld-cage { position: absolute; left: 50%; top: calc(var(--p) * (100% - 44px) + 6px); width: 52px; height: 40px; transform: translateX(-50%); transition: top .35s ease; }
+.ld-basket { position: absolute; inset: 0; border-radius: 4px 4px 10px 10px; background: linear-gradient(180deg, #a87848, #6b4626); border: 2px solid #3a2412; }
+.ld-ore { position: absolute; left: 8px; right: 8px; bottom: 6px; height: calc(6px + var(--p) * 16px); border-radius: 6px 6px 3px 3px; background: linear-gradient(180deg, #ffe9a0, #f2b632 60%, #b8862a); box-shadow: 0 0 10px rgba(255, 200, 80, .45); }
+.ld-glow { position: absolute; left: 50%; bottom: -6px; width: 60px; height: 18px; margin-left: -30px; border-radius: 50%; background: radial-gradient(ellipse, rgba(255, 224, 130, .5), transparent 70%); animation: ldGlow 2.2s ease-in-out infinite; }
+.ld-dust { position: absolute; width: 3px; height: 3px; border-radius: 1px; background: #e8d9a8; opacity: .55; animation: ldFall 2.6s linear infinite; }
+.ld-dust.d1 { left: 24%; animation-delay: 0s; } .ld-dust.d2 { left: 38%; animation-delay: .5s; }
+.ld-dust.d3 { left: 58%; animation-delay: 1.1s; } .ld-dust.d4 { left: 72%; animation-delay: 1.7s; }
+.ld-dust.d5 { left: 48%; animation-delay: 2.2s; }
+.ld-wheel { position: absolute; left: 50%; top: -2px; width: 26px; height: 26px; margin-left: -13px; border-radius: 50%; background: #5a3a1e; border: 2px solid #3a2412; animation: ldSpin 2.4s linear infinite; }
+.ld-wheel i { position: absolute; inset: 5px; border-radius: 50%; background: #8a6238; box-shadow: inset 0 0 0 2px #3a2412; }
+.ld-wheel i::before, .ld-wheel i::after { content: ""; position: absolute; left: 50%; top: -5px; width: 2px; height: 100%; margin-left: -1px; background: #3a2412; }
+.ld-wheel i::after { transform: rotate(90deg); }
+@keyframes ldSpin { to { transform: rotate(360deg); } }
+@keyframes ldFall { 0% { top: 4%; opacity: 0; } 12% { opacity: .6; } 100% { top: 96%; opacity: 0; } }
+@keyframes ldGlow { 0%, 100% { opacity: .5; } 50% { opacity: .95; } }
+/* 轨道 + 矿车 */
+.ld-rail { position: relative; height: 14px; margin: 0 2px 12px; border-bottom: 3px solid rgba(255, 255, 255, .18); }
+.ld-rail > i { position: absolute; left: 0; bottom: 0; height: 3px; width: calc(var(--p) * 100%); background: linear-gradient(90deg, var(--gold-d), var(--gold)); transition: width .35s ease; }
+.ld-cart { position: absolute; bottom: 2px; left: calc(var(--p) * (100% - 26px)); width: 26px; height: 15px; border-radius: 3px 3px 5px 5px; background: linear-gradient(180deg, #a87848, #6b4626); border: 2px solid #3a2412; transition: left .35s ease; }
+.ld-cart::before, .ld-cart::after { content: ""; position: absolute; bottom: -5px; width: 6px; height: 6px; border-radius: 50%; background: #3a2412; }
+.ld-cart::before { left: 3px; } .ld-cart::after { right: 3px; }
+.ld-text { margin: 0; font-size: 15px; font-weight: 700; color: #e8ddff; }
+.ld-pct { display: inline-block; min-width: 3.4em; text-align: right; margin-right: 8px; font-variant-numeric: tabular-nums; color: var(--gold); }
+.ld-msg { opacity: .9; }
+.ld-tip { margin: 10px 0 0; min-height: 2.6em; font-size: 12.5px; line-height: 1.5; font-weight: 600; color: #a8b6e0; }
+.ld-tip.pop { animation: ldTip .5s ease; }
+@keyframes ldTip { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: reduce) { .ld-wheel, .ld-dust, .ld-glow { animation: none; } }
+#boot-error { position: fixed; left: 16px; right: 16px; bottom: 16px; z-index: 40; padding: 12px; border-radius: 10px; background: #a02020; color: #fff; }
+
+@media (max-height: 520px) and (orientation: landscape) {
+  .card { padding: 0 14px 10px; } .c-band { height: 64px; } .c-head { min-height: 64px; padding-top: 6px; margin-bottom: 8px; } .close { top: 8px; }
+  .c-icon { width: 54px; height: 54px; margin-bottom: -12px; } .c-title { font-size: 17px; } .c-sub { font-size: 12px; }
+  .stats td { padding: 1px 10px; font-size: 14px; } .mile { font-size: 12px; margin-bottom: 4px; } .bulk { margin-bottom: 6px; } .bulk button { min-height: 44px; } .btn { min-height: 48px; }
+  .lvchip { margin-bottom: 4px; font-size: 16px; }
+  .guide .g-bubble p { font-size: 14px; } .guide .g-facebtn { width: 56px; height: 56px; }
+  .card:has(.mpair) { width: min(700px, 94vw); } .mpair { display: grid; grid-template-columns: 1fr 22px 1fr; align-items: stretch; gap: 4px; } .mpair .arrow { align-self: center; margin: 0; transform: rotate(-90deg); }
+  .mcard { padding: 4px 8px; margin-bottom: 4px; } .m-face { width: 44px; height: 44px; } .mcard b { font-size: 15px; } .mcard small { font-size: 12px; } .nextup { padding: 4px 8px; margin-bottom: 4px; } .big { font-size: 30px; }
+}
+@media (max-width: 420px) { .hud-cash b { font-size: 22px; } .coin { width: 32px; height: 32px; } .coin::after { inset: 7px; } .guide { width: calc(100vw - 92px); margin-left: 34px; } .g-bubble p { font-size: 14px; } }
+
+/* ── 全服排行榜 ── */
+.rk-mine { margin: 0 0 4px; font-weight: 800; color: var(--indigo); font-variant-numeric: tabular-nums; }
+.rk-best { margin: 0 0 8px; font-weight: 800; color: var(--vermilion-d); font-variant-numeric: tabular-nums; }
+.rk-list { list-style: none; margin: 6px 0 10px; padding: 0; display: flex; flex-direction: column; gap: 5px; }
+.rk-list li { display: grid; grid-template-columns: 30px 36px minmax(0, 1fr) auto; align-items: center; gap: 8px; padding: 5px 10px 5px 6px; border-radius: 12px; background: var(--washi-d); border: 2px solid #e2d0ab; }
+.rk-list li.me { background: #fff1c4; border-color: var(--gold); box-shadow: 0 0 0 2px rgba(242, 201, 92, .35); }
+.rk-n { font-family: var(--num); font-size: 16px; text-align: center; color: var(--sub); }
+.rk-list li.top1 .rk-n { color: #c8901a; font-size: 19px; } .rk-list li.top2 .rk-n { color: #8a94a8; font-size: 18px; } .rk-list li.top3 .rk-n { color: #b06a3a; font-size: 17px; }
+.rk-av { width: 36px; height: 36px; border-radius: 50%; object-fit: cover; display: grid; place-items: center; background: var(--indigo-l); color: #fff; font-style: normal; font-weight: 800; border: 2px solid #fff; box-shadow: 0 1px 0 rgba(0, 0, 0, .2); }
+.rk-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 700; }
+.rk-name em { font-style: normal; font-size: 11px; padding: 1px 6px; border-radius: 999px; background: var(--vermilion); color: #fff; vertical-align: 2px; }
+.rk-v { font-weight: 800; color: var(--indigo); font-variant-numeric: tabular-nums; white-space: nowrap; }
+
+/* ── 向导气泡（逐字显示 / 可收起 / 教程进度 / 夸奖）── */
+.guide .g-facebtn { pointer-events: auto; position: relative; flex: none; padding: 0; border: 0; background: none; cursor: pointer; width: 72px; height: 72px; border-radius: 50%; touch-action: manipulation; }
+.guide .g-facebtn .g-face { width: 100%; height: 100%; display: block; }
+.guide .g-bubble { pointer-events: auto; cursor: pointer; transform-origin: 0% 100%; touch-action: manipulation; }
+.guide .g-bubble::before { content: ""; position: absolute; left: -10px; bottom: 16px; width: 14px; height: 14px; background: var(--washi); border-left: 2.5px solid var(--indigo); border-bottom: 2.5px solid var(--indigo); transform: rotate(45deg); }
+.g-step { position: absolute; top: -11px; right: 12px; padding: 0 9px; border-radius: 999px; background: var(--indigo); color: var(--gold); font-size: 11px; font-weight: 800; line-height: 19px; font-variant-numeric: tabular-nums; }
+.g-ghost { opacity: 0; }
+.guide[data-kind="tip"] .g-bubble { border-color: var(--gold-d); background: #fff8e2; }
+.guide[data-kind="tip"] .g-bubble::before { background: #fff8e2; border-color: var(--gold-d); }
+.guide[data-kind="tip"] .g-step { background: var(--gold-d); color: #fff; }
+.guide[data-kind="praise"] .g-bubble { border-color: var(--matcha-d); background: #effbe6; }
+.guide[data-kind="praise"] .g-bubble::before { background: #effbe6; border-color: var(--matcha-d); }
+.guide[data-kind="praise"] .g-bubble p { color: var(--matcha-d); font-size: 18px; }
+.guide.pop .g-bubble { animation: gpop .32s cubic-bezier(.2, .9, .3, 1.3) both; }
+.guide.pop .g-facebtn { animation: gface .5s ease-out both; }
+@keyframes gpop { 0% { transform: scale(.85); opacity: .4; } 100% { transform: scale(1); opacity: 1; } }
+@keyframes gface { 0% { transform: translateY(0); } 35% { transform: translateY(-9px); } 70% { transform: translateY(1px); } 100% { transform: translateY(0); } }
+/* 收起：只留头像，靠左下；有新话时头像上亮红点 */
+.guide.min { left: calc(var(--safe-l, 0px) + 16px); transform: none; width: auto; margin-left: 0; }
+.guide.min .g-bubble { display: none; }
+.guide.min .g-facebtn { width: 60px; height: 60px; background: var(--washi); border: 2.5px solid var(--indigo); box-shadow: 0 3px 0 rgba(0, 0, 0, .28); }
+.g-new { display: none; position: absolute; top: 0; right: 0; width: 16px; height: 16px; border-radius: 50%; background: var(--vermilion); border: 2px solid #fff; }
+.guide.min.new .g-new { display: block; animation: gdot 1s ease-in-out infinite; }
+@keyframes gdot { 50% { transform: scale(1.25); } }
+/* 提示里说到的 HUD 按钮 */
+.ibtn.hl { animation: hl 1.1s ease-in-out infinite; }
+@keyframes hl { 0%, 100% { box-shadow: 0 3px 0 var(--indigo-d), 0 0 0 0 rgba(242, 201, 92, .9); } 50% { box-shadow: 0 3px 0 var(--indigo-d), 0 0 0 7px rgba(242, 201, 92, .25); } }
+@media (max-width: 420px) { .guide .g-facebtn { width: 60px; height: 60px; } .guide.min .g-facebtn { width: 54px; height: 54px; } }
+@media (prefers-reduced-motion: reduce) { .guide.pop .g-bubble, .guide.pop .g-facebtn, .ibtn.hl, .guide.min.new .g-new { animation: none; } }
+
+/* ══ 手机竖屏（窄竖窗）══
+   · 底部操作栏：上移 / 下移在左，投资人 / 排行 / 设置在右，图标 + 文字，全在拇指够得到的地方；
+   · 顶部只留现金和深度，现金条拉满宽度；
+   · 面板改成从底部滑上来的抽屉：顶部有拖动条（下拉关闭），操作按钮钉在抽屉底部，内容区单独滚动。 */
+.ib-l, .hud-dock, .c-grip { display: none; }
+@media (orientation: portrait) and (max-width: 640px) {
+  .hud-top { top: calc(var(--safe-t) + 8px); left: calc(var(--safe-l) + 8px); right: calc(var(--safe-r) + 8px); }
+  .hud-left { width: 100%; gap: 5px; }
+  .hud-cash { max-width: 100%; padding: 3px 16px 3px 5px; gap: 8px; }
+  .hud-depth { max-width: 100%; padding: 2px 10px 2px 7px; }
+  .hud-dock { display: block; position: absolute; left: 0; right: 0; bottom: 0; height: var(--dock); pointer-events: auto;
+    background: var(--seigaiha) 0 0 / 28px 14px, linear-gradient(180deg, rgba(38, 53, 107, .97), rgba(24, 34, 74, .99)); border-top: 2.5px solid var(--gold); box-shadow: 0 -4px 14px rgba(0, 0, 0, .3); }
+  .hud-cam, .hud-btns { position: fixed; bottom: calc(var(--safe-b) + 8px); display: flex; flex-direction: row; gap: 4px; z-index: 1; }
+  .hud-cam { left: calc(var(--safe-l) + 8px); }
+  .hud-btns { right: calc(var(--safe-r) + 8px); }
+  .hud-dock ~ .hud-cam .ibtn, .hud-btns .ibtn { width: 58px; height: 56px; border-radius: 14px; border-width: 0; background: transparent; box-shadow: none; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; }
+  .hud-cam .ibtn:active, .hud-btns .ibtn:active { transform: translateY(1px); background: rgba(255, 255, 255, .12); box-shadow: none; }
+  .hud-cam .ibtn svg, .hud-btns .ibtn svg { width: 26px; height: 26px; fill: var(--gold); }
+  .ib-l { display: block; font-size: 11px; line-height: 1.3; font-weight: 800; color: var(--washi); white-space: nowrap; max-width: 58px; overflow: hidden; text-overflow: ellipsis; }
+  .badge { top: 0; right: 4px; }
+  .ibtn.hl { background: rgba(242, 201, 92, .22); }
+  .hud-toast { top: calc(var(--safe-t) + 112px); max-width: calc(100vw - 32px); font-size: 15px; }
+  .guide { bottom: calc(var(--dock) + 10px); width: calc(100vw - 24px); margin-left: 0; max-height: calc(100vh - var(--dock) - 130px); }
+  .guide.min { left: calc(var(--safe-l) + 12px); bottom: calc(var(--dock) + 10px); }
+  .guide .g-bubble { max-height: calc(100vh - var(--dock) - 150px); overflow-y: auto; }
+
+  /* 底部抽屉 */
+  .overlay { place-items: end center; padding: calc(var(--safe-t) + 24px) 0 0; }
+  .card { width: min(560px, 100vw); max-height: 100%; border-radius: 24px 24px 0 0; border-bottom: 0; padding: 0 16px 0; display: flex; flex-direction: column; overflow-x: hidden; overflow-y: auto;
+    box-shadow: 0 -6px 24px rgba(0, 0, 0, .35); animation: sheetin .28s cubic-bezier(.2, .9, .3, 1.05) both; touch-action: pan-y; }
+  .card.drag { animation: none; transition: none; }
+  .card.back { transition: transform .2s ease; }
+  @keyframes sheetin { from { transform: translateY(100%); } to { transform: none; } }
+  .c-grip { display: block; position: absolute; z-index: 3; top: 7px; left: 50%; width: 44px; height: 5px; margin-left: -22px; border-radius: 3px; background: rgba(255, 255, 255, .7); }
+  .c-head { flex: none; padding-top: 16px; }
+  .c-body:empty { display: none; }
+  .c-body { flex: 1 1 auto; min-height: 72px; overflow-y: auto; overscroll-behavior: contain; margin: 0 -16px; padding: 6px 16px 8px; scrollbar-width: none; touch-action: pan-y; }
+  .c-body::-webkit-scrollbar { display: none; }
+  .c-foot { flex: none; margin: 0 -16px; padding: 10px 16px calc(var(--safe-b) + 14px); background: var(--washi); border-top: 2px solid #e8d8b6; }
+  .c-foot:empty { padding: 0 0 calc(var(--safe-b) + 6px); border-top: 0; }
+  .btn { min-height: 56px; }
+}
+@media (orientation: portrait) and (max-width: 360px) {
+  .hud-dock ~ .hud-cam .ibtn, .hud-btns .ibtn { width: 52px; } .ib-l { font-size: 10px; max-width: 52px; }
+}
+@media (prefers-reduced-motion: reduce) { .card { animation: none !important; } }
+
+/* 升级面板里的“造型档次”提示（换档时高亮） */
+.lvchip.tier { border-style: dashed; }
+.note.tierup { color: var(--vermilion-d); font-weight: 800; min-height: 1.6em; }
+/* 不跨档时只是隐藏（仍占位），跨档时淡入，布局不动 */
+.note.tierup.idle { visibility: hidden; }
+.note.tierup:not(.idle) { animation: tierin .25s ease-out; }
+@keyframes tierin { from { opacity: 0; transform: translateY(3px); } to { opacity: 1; transform: none; } }
+
+/* ══ 首次进入：深度牌下面一行小语言切换 ══ 和 HUD 同一套和纸小牌子，当前语言朱红高亮；点世界或选过就淡出。 */
+.hud-lang { pointer-events: auto; display: flex; flex-wrap: wrap; gap: 4px; padding: 3px; border-radius: 12px; background: rgba(24, 34, 74, .78); border: 1.5px solid rgba(242, 201, 92, .55); transition: opacity .25s, transform .25s; animation: lang-in .35s ease-out; }
+.hud-lang.out { opacity: 0; transform: translateY(-6px); }
+.hud-lang button { min-width: 48px; min-height: 48px; padding: 0 12px; border-radius: 9px; border: 0; font-size: 15px; font-weight: 800; color: var(--washi); background: transparent; }
+.hud-lang button.on { color: #fff; background: var(--vermilion); box-shadow: inset 0 -2px 0 var(--vermilion-d); }
+.hud-lang button:active { transform: translateY(1px); }
+@keyframes lang-in { from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; transform: none; } }
+@media (orientation: portrait) and (max-width: 640px) { .hud-lang button { flex: 1 1 0; } }
+
+/* ══ 按钮反馈：按下去有手感，生效了有回应 ══
+   .press 从指尖扩散的水波 + 轻微下沉；.done 生效瞬间绿光一闪；.pfloat 面板正中升腾的文字。 */
+/* 全局：所有 <button> 按下都有反馈（由 ui.js 的 UI.wirePress 统一加 .press + 水波）。
+   :where() 零优先级，不会盖掉关闭按钮之类自己定位的按钮；水波在单独的裁切层里，角标不会被裁掉。 */
+:where(button) { position: relative; -webkit-tap-highlight-color: transparent; }
+.rip-wrap { position: absolute; inset: 0; border-radius: inherit; overflow: hidden; pointer-events: none; z-index: 0; }
+.ripple { position: absolute; width: 16px; height: 16px; margin: -8px 0 0 -8px; border-radius: 50%; background: rgba(255, 255, 255, .9); pointer-events: none; animation: btnripple .6s ease-out forwards; }
+.btn.alt .ripple, .bulk .ripple, .seg .ripple, .hud-lang .ripple { background: rgba(38, 53, 107, .45); }
+.bulk button[aria-pressed="true"] .ripple, .seg button[aria-pressed="true"] .ripple, .hud-lang button.on .ripple { background: rgba(255, 255, 255, .6); }
+@keyframes btnripple { from { transform: scale(1); opacity: 1; } to { transform: scale(30); opacity: 0; } }
+/* 按下：明显地压扁 + 变亮，再弹过头一点回来（0.34 秒） */
+button.press { animation: btnpress .34s cubic-bezier(.3, .7, .4, 1); }
+@keyframes btnpress {
+  0% { transform: scale(1); filter: brightness(1); }
+  28% { transform: scale(.86, .82); filter: brightness(1.3); }
+  62% { transform: scale(1.09, 1.07); filter: brightness(1.12); }
+  82% { transform: scale(.98); }
+  100% { transform: scale(1); filter: brightness(1); }
+}
+/* 手指按住不放时保持压下去的样子 */
+button:not([aria-disabled="true"]):not(:disabled):active { transform: scale(.9); filter: brightness(1.18); }
+/* 按下时从按钮边缘向外扩一圈光环（画在页面最上层，不会被面板裁掉） */
+.fx-ring { position: fixed; z-index: 60; pointer-events: none; border: 3px solid var(--ring, #fff3a0); box-shadow: 0 0 12px var(--ring, #fff3a0); animation: fxring .45s ease-out forwards; }
+@keyframes fxring { from { transform: scale(1); opacity: .95; } to { transform: scale(1.28, 1.6); opacity: 0; } }
+/* 成功时从按钮四周迸出的小星星 */
+.fx-spark { position: fixed; z-index: 61; width: 10px; height: 10px; margin: -5px 0 0 -5px; pointer-events: none; background: var(--c, #fff3a0); clip-path: polygon(50% 0, 62% 38%, 100% 50%, 62% 62%, 50% 100%, 38% 62%, 0 50%, 38% 38%); animation: fxspark .6s cubic-bezier(.2, .7, .3, 1) forwards; }
+@keyframes fxspark { 0% { transform: translate(0, 0) scale(.4) rotate(0); opacity: 1; } 70% { opacity: 1; } 100% { transform: translate(var(--dx), var(--dy)) scale(1.3) rotate(180deg); opacity: 0; } }
+.btn { overflow: hidden; }
+.btn .bl { position: relative; z-index: 1; }
+.btn small { position: relative; z-index: 1; }
+/* 生效：绿光从按钮边缘扩散 + 亮一下 + 轻弹 */
+button.done { animation: btndone .55s cubic-bezier(.3, .7, .4, 1); }
+@keyframes btndone {
+  0% { transform: scale(1); filter: brightness(1); box-shadow: 0 0 0 0 rgba(122, 255, 122, 1), 0 4px 0 var(--matcha-d); }
+  25% { transform: scale(1.12); filter: brightness(1.6) saturate(1.3); }
+  55% { transform: scale(.97); }
+  100% { transform: scale(1); filter: brightness(1); box-shadow: 0 0 0 26px rgba(122, 255, 122, 0), 0 4px 0 var(--matcha-d); }
+}
+.btn.alt.done { animation-name: btndone; }
+/* 钱不够 / 需要再确认：左右晃一下 */
+button.shake { animation: btnshake .42s ease-in-out; }
+@keyframes btnshake { 0%, 100% { transform: translateX(0); filter: none; } 15% { transform: translateX(-10px) rotate(-2deg); filter: brightness(.85) sepia(.4) hue-rotate(-30deg) saturate(2); } 35% { transform: translateX(9px) rotate(2deg); } 55% { transform: translateX(-6px) rotate(-1deg); } 75% { transform: translateX(3px); } }
+/* 不可点的按钮也接受点击（不然没钱时点完没有任何回应） */
+@media (prefers-reduced-motion: reduce) { button.press, button.done, button.shake { animation: none; } .ripple, .fx-ring, .fx-spark { display: none; } }
+.lvchip.bump { animation: chipbump .35s ease-out; }
+@keyframes chipbump { 0% { transform: scale(1); } 35% { transform: scale(1.06); } 100% { transform: scale(1); } }
+.pfloat { position: absolute; left: 50%; top: 42%; transform: translateX(-50%); z-index: 5; pointer-events: none; font-family: var(--num); font-weight: 800; font-size: 30px; color: var(--matcha-d); text-shadow: 0 2px 0 #fff, 0 4px 10px rgba(0, 0, 0, .25); animation: pfloat 1s ease-out forwards; }
+.pfloat.tier { top: 32%; font-size: 20px; color: var(--vermilion-d); }
+@keyframes pfloat { 0% { opacity: 0; transform: translate(-50%, 12px) scale(.8); } 20% { opacity: 1; transform: translate(-50%, 0) scale(1); } 100% { opacity: 0; transform: translate(-50%, -46px) scale(1); } }
+
+/* ══ 商城（原投资人面板）══ 左右两张介绍卡 + 对应的两列按钮；硬币一律用平台官方硬币图标 .pcoin（像素风，缩放保持硬边） */
+.pcoin { display: inline-block; width: 18px; height: 18px; flex: none; vertical-align: -4px; image-rendering: pixelated; image-rendering: crisp-edges; filter: drop-shadow(0 1px 0 rgba(0, 0, 0, .25)); }
+.shop-lead { margin: 0 0 2px; text-align: center; }
+/* 两张介绍卡左右并排，与底部两列按钮对齐（同样 1fr 1fr + 8px 间距），等高 */
+.shop-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; align-items: stretch; margin: 12px 0 4px; }
+.shop-cols.one { grid-template-columns: 1fr; }
+.shop-card { position: relative; min-width: 0; margin: 0; padding: 14px 10px 10px; border-radius: 14px; background: var(--washi-d); border: 2px solid rgba(38, 53, 107, .22); display: flex; flex-direction: column; text-align: center; box-shadow: 0 3px 0 rgba(0, 0, 0, .08); }
+.shop-card > b { display: block; font-size: 15px; color: var(--indigo); margin-bottom: 2px; }
+.shop-card > p { margin: 2px 0; font-size: 13px; line-height: 1.45; overflow-wrap: anywhere; }
+.shop-card .big { margin: 4px 0; font-size: 22px; line-height: 1.25; overflow-wrap: anywhere; }
+.shop-card .big.dim { color: var(--sub); font-size: 17px; }
+.shop-card .mile { margin: auto 0 0; padding-top: 6px; font-size: 11px; }
+.shop-cols.one .shop-card .big { font-size: 30px; }
+.shop-cols.one .shop-card .big.dim { font-size: 20px; }
+/* 硬币卡：暖金底 + 金边，右上角挂一枚价格牌（官方硬币 + 数字） */
+.shop-card.paid { border-color: var(--gold-d); background: radial-gradient(120% 70% at 50% 0%, #fff3c4, transparent 70%), var(--washi-d); }
+.shop-card.paid .big { color: var(--vermilion-d); }
+.price-tag { position: absolute; top: -11px; right: 8px; display: inline-flex; align-items: center; gap: 3px; padding: 2px 8px 2px 4px; border-radius: 999px; background: #3a2804; border: 2px solid #ffdc16; box-shadow: 0 2px 0 rgba(0, 0, 0, .3); }
+.price-tag .pcoin { width: 18px; height: 18px; vertical-align: 0; }
+.price-tag b { font-family: var(--num); font-size: 14px; line-height: 1; color: #ffdc16; font-variant-numeric: tabular-nums; }
+/* 商城底部：硬币招募 + 免费重开并排两列，沿用游戏原本的绿色主按钮 / 描边按钮 */
+.shop-row { align-items: stretch; }
+.shop-row .btn { min-width: 0; padding: 6px 8px; font-size: 16px; line-height: 1.25; overflow-wrap: anywhere; }
+.shop-row .btn small { font-size: 13px; }
+/* 价格行：官方硬币 + 「10 硬币」，放在深色小胶囊里，绿底上也看得清 */
+.btn.pay small.price { display: inline-flex; align-items: center; justify-content: center; gap: 4px; margin-top: 3px; padding: 1px 9px 1px 4px; border-radius: 999px; background: rgba(24, 34, 20, .35); color: #ffdc16; font-weight: 800; }
+.btn.pay small.price .pcoin { width: 18px; height: 18px; vertical-align: 0; }
+.btn.pay:disabled small.price, .btn.pay[aria-disabled="true"] small.price { color: #e8e2d0; background: rgba(0, 0, 0, .2); }
+
+.btn.pay { background: linear-gradient(180deg, #ffdc16, #f2b200); border-color: #a87900; color: #3a2804; text-shadow: none; box-shadow: 0 4px 0 #a87900; }
+/* ══ 商城页签：标题下面一个紧凑的分段开关（不再是两条铺满整行的大按钮）══ */
+.card > .c-tabs { flex: none; display: flex; justify-content: center; margin: 0 0 8px; }
+.c-tabs .shop-tabs { display: inline-flex; gap: 3px; padding: 3px; border-radius: 999px; background: rgba(38, 53, 107, .1); }
+.c-tabs button { flex: none; min-width: 104px; min-height: 44px; padding: 0 18px; border-radius: 999px; border: 0; background: transparent; color: var(--sub); font-size: 15px; font-weight: 800; }
+.c-tabs button[aria-selected="true"] { background: var(--indigo); color: #fff; box-shadow: 0 2px 0 var(--indigo-d); }
+/* 投资人页第一行：现有投资人 / 当前加成 */
+.shop-stat { margin: 0 0 4px; text-align: center; font-size: 13px; font-weight: 800; color: var(--gold-d); }
+/* 按钮放进介绍卡里：只有卡片那么宽 */
+.shop-card .btn.in-card { margin-top: 10px; min-height: 48px; padding: 6px 10px; font-size: 15px; line-height: 1.25; overflow-wrap: anywhere; }
+.shop-card .btn.in-card small { font-size: 12.5px; }
+
+/* 商城面板（宽屏 / 横屏）：标题、页签、底部按钮固定，只有中间滚动——按钮永远看得见 */
+@media not all and (orientation: portrait) and (max-width: 640px) {
+  .card.is-shop { display: flex; flex-direction: column; overflow: hidden; padding-bottom: 0; }
+  .card.is-shop > .c-head { flex: none; }
+  .card.is-shop > .c-body { flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: none; }
+  .card.is-shop > .c-body::-webkit-scrollbar { display: none; }
+  .card.is-shop > .c-foot { flex: none; padding: 10px 0 14px; border-top: 2px solid #e8d8b6; }
+  .card.is-shop > .c-foot:empty { display: none; }
+  .card.is-skins { width: min(720px, 94vw); }
+}
+
+/* ══ 皮肤页 ══ */
+/* 工种横条 */
+.sk-chips { display: flex; gap: 6px; overflow-x: auto; padding: 2px 2px 10px; scrollbar-width: none; -webkit-overflow-scrolling: touch; }
+.sk-chips::-webkit-scrollbar { display: none; }
+.sk-chip { flex: 0 0 auto; display: inline-flex; align-items: center; gap: 6px; min-height: 44px; padding: 0 14px; border-radius: 999px; border: 2px solid rgba(38, 53, 107, .22); background: rgba(255, 255, 255, .6); color: var(--indigo); font-size: 14px; font-weight: 800; white-space: nowrap; }
+.sk-chip i { font-style: normal; font-family: var(--num); font-size: 12px; min-width: 22px; padding: 0 6px; border-radius: 999px; background: rgba(38, 53, 107, .12); text-align: center; }
+.sk-chip small { font-size: 11px; font-weight: 700; color: var(--sub); }
+.sk-chip[aria-pressed="true"] { background: var(--indigo); color: #fff; border-color: var(--indigo-d); box-shadow: 0 3px 0 var(--indigo-d); }
+.sk-chip[aria-pressed="true"] i { background: rgba(255, 255, 255, .25); }
+.sk-chip[aria-disabled="true"] { background: transparent; border-style: dashed; color: var(--sub); }
+
+/* 预览：手机竖屏时吸在列表上方（滚动时一直看得见）；宽屏时放在左侧一栏 */
+.sk-side { position: sticky; top: 0; z-index: 2; display: flex; align-items: center; gap: 12px; padding: 8px 12px 8px 8px; margin: 0 0 10px; border-radius: 16px; background: var(--washi-d); border: 2px solid rgba(38, 53, 107, .14); box-shadow: 0 8px 12px -10px rgba(0, 0, 0, .4); }
+.sk-frame { position: relative; flex: none; width: 104px; height: 130px; border-radius: 12px; overflow: hidden; background: radial-gradient(ellipse 42% 7% at 50% 96%, rgba(38, 53, 107, .22), transparent), linear-gradient(180deg, #eef3fa, #d3deee); }
+.sk-cv { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; object-position: 50% 100%; display: block; }
+.sk-cap { margin: 0; flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.sk-who { font-size: 12.5px; font-weight: 800; color: var(--gold-d); }
+.sk-what { font-size: 16px; font-weight: 800; color: var(--indigo); line-height: 1.3; }
+.sk-desc { font-size: 12px; line-height: 1.4; color: var(--sub); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+/* 动作按钮：紧凑，跟文字一样宽（不再是底部一整条） */
+.sk-do { margin-top: 6px; }
+.btn.sk-act { width: auto; min-width: 132px; max-width: 100%; min-height: 46px; padding: 4px 16px; border-radius: 14px; font-size: 15px; line-height: 1.2; display: inline-flex; flex-direction: column; align-items: center; justify-content: center; }
+.btn.sk-act small { font-size: 12px; line-height: 1.25; }
+
+/* 列表：按管理员分组（组标题 = 职务 · 名字 + 负责哪里），每行 = 头像 + 名字 / 说明 + 状态 */
+.sk-grp { margin: 0 0 12px; }
+.sk-gh { display: flex; flex-wrap: wrap; align-items: baseline; column-gap: 6px; row-gap: 0; margin: 0 0 6px; font-size: 13.5px; font-weight: 800; color: var(--indigo); }
+.sk-gh::before { content: ""; align-self: center; width: 4px; height: 14px; border-radius: 2px; background: var(--gold); }
+/* 以图为主：每套衣服 = 一张全身小图，角上一个状态角标 */
+.sk-tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(78px, 1fr)); gap: 8px; }
+.sk-tile { position: relative; min-width: 0; aspect-ratio: 4 / 5; padding: 0; border-radius: 14px; border: 2px solid rgba(38, 53, 107, .14); background: radial-gradient(ellipse 40% 6% at 50% 95%, rgba(38, 53, 107, .2), transparent), linear-gradient(180deg, #f4f7fc, #dfe7f3); overflow: hidden; }
+.sk-tile.sel { border-color: var(--indigo); box-shadow: 0 0 0 3px rgba(61, 79, 143, .28); }
+.sk-tile.on { border-color: var(--vermilion); }
+.sk-tile.on.sel { box-shadow: 0 0 0 3px rgba(210, 70, 58, .3); }
+.sk-tcv { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; object-position: 50% 100%; display: block; }
+.sk-pill { position: absolute; right: 4px; top: 4px; z-index: 1; }
+.sk-pill i { display: inline-flex; align-items: center; gap: 3px; font-style: normal; font-size: 11px; font-weight: 800; line-height: 1.35; padding: 2px 7px; border-radius: 999px; white-space: nowrap; box-shadow: 0 1px 0 rgba(0, 0, 0, .15); }
+.sk-pill .p-on { background: var(--vermilion); color: #fff; }
+.sk-pill .p-has { width: 22px; height: 22px; padding: 0; justify-content: center; font-size: 13px; background: var(--matcha); color: #fff; }
+.sk-pill .p-buy { padding: 1px 7px 1px 2px; background: #fff4c2; border: 2px solid #e0a800; color: #5a3c00; }
+.sk-pill .p-buy .pcoin { width: 16px; height: 16px; }
+.sk-pill .p-buy b { font-family: var(--num); font-size: 14px; }
+
+/* 宽屏 / 横屏：左 = 预览（跟着可用高度伸缩），右 = 列表（自己滚动） */
+@media not all and (orientation: portrait) and (max-width: 640px) {
+  .card.is-skins > .c-body { display: flex; flex-direction: column; overflow: hidden; }
+  .card.is-skins .sk-shop { flex: 1 1 auto; min-height: 0; display: flex; gap: 14px; }
+  .card.is-skins .sk-side { position: static; flex: 0 0 210px; flex-direction: column; align-items: stretch; gap: 8px; margin: 0; padding: 10px; box-shadow: none; }
+  .card.is-skins .sk-frame { flex: 1 1 auto; width: auto; height: auto; min-height: 90px; max-height: 340px; }
+  .card.is-skins .sk-cap { flex: none; }
+  .card.is-skins .btn.sk-act { width: 100%; }
+  .card.is-skins .sk-list { flex: 1 1 auto; min-width: 0; overflow-y: auto; overscroll-behavior: contain; padding: 0 4px 4px 0; }
+}
+@media (max-height: 520px) and (orientation: landscape) {
+  .card.is-skins .sk-desc { display: none; }
+  .card.is-skins .sk-side { flex-basis: 170px; padding: 6px; gap: 4px; }
+  .card.is-skins .sk-frame { min-height: 70px; }
+  .card.is-shop > .c-tabs { padding-top: 4px; margin-bottom: 6px; }
+  .card.is-shop > .c-tabs button { min-height: 48px; }
+  .card.is-shop > .c-foot { padding: 8px 0 10px; }
+  .card.is-shop > .c-foot .btn { min-height: 48px; }
+}
+
+/* 底部动作按钮：购买（金色，带硬币）/ 换上（绿色）/ 换回标准制服（描边）/ 使用中（朱红状态，不可点） */
+.btn.sk-act.pay { background: linear-gradient(180deg, #ffdc16, #f2b200); border-color: #a87900; color: #3a2804; text-shadow: none; box-shadow: 0 4px 0 #a87900; }
+/* （旧的“价格前自动加硬币图标”规则已去掉：现在 small.price 里自己带了官方硬币图标，两个叠在一起就是重复） */
+.btn.sk-act.on[aria-disabled="true"] { background: #fbe3dd; border-color: var(--vermilion); color: var(--vermilion-d); box-shadow: 0 4px 0 rgba(160, 50, 40, .35); }
+.btn.sk-act.pay[aria-disabled="true"] { background: #e9dfb8; border-color: #b9a46a; color: #6b5a2a; box-shadow: 0 4px 0 #b9a46a; }
+/* 还没上架的工种：只放一个小锁，不再写“即将上架” */
+.sk-chip i.lock { min-width: 0; padding: 0; background: none; font-family: inherit; font-size: 12px; opacity: .7; }
+.sk-pill .p-buy b { font-size: 13px; }
+/* 试玩模式角标：一直挂在屏幕顶部正中，提醒“不会存档” */
+.sandbox-tag { position: fixed; z-index: 70; left: 50%; top: calc(env(safe-area-inset-top, 0px) + 4px); transform: translateX(-50%); padding: 3px 12px; border-radius: 999px; background: rgba(210, 70, 58, .92); color: #fff; font-size: 12px; font-weight: 800; white-space: nowrap; pointer-events: none; box-shadow: 0 2px 0 rgba(0, 0, 0, .25); }
+
+/* ══ 皮肤页 v4：预览 → 选人（一排头像）→ 她的服装大图，一屏装下 ══ */
+.card.is-skins .sk-frame { width: 128px; height: 160px; }
+.card.is-skins .sk-what { font-size: 17px; }
+/* 选人：一排圆头像，选中的金边放大；还有没买衣服的人右上角一个小金点 */
+.sk-people { display: flex; flex-wrap: nowrap; justify-content: center; gap: 4px; margin: 2px 0 12px; padding: 4px 0; }
+.sk-who-b { position: relative; flex: 0 1 46px; min-width: 0; width: 46px; height: auto; aspect-ratio: 1; padding: 0; border-radius: 50%; border: 2px solid rgba(38, 53, 107, .18); background: #fff; transition: transform .12s; }
+.sk-who-b img { width: 100%; height: 100%; border-radius: 50%; display: block; }
+.sk-who-b.sel { border: 3px solid var(--gold); box-shadow: 0 0 0 3px rgba(242, 182, 50, .35); transform: scale(1.1); }
+.sk-dot { position: absolute; right: -1px; top: -1px; width: 12px; height: 12px; border-radius: 50%; background: #ffcf2e; border: 2px solid #fff; display: none; }
+.sk-who-b.more .sk-dot { display: block; }
+/* 她的服装：固定 3 列大图（每人 2~3 套，一行放下） */
+.card.is-skins .sk-tiles { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+.card.is-skins .sk-tile { border-radius: 16px; }
+/* 购买按钮里的价格：官方硬币图标 + 数字 */
+.btn.sk-act small.price { display: inline-flex; align-items: center; gap: 3px; margin-top: 1px; font-size: 13px; }
+.btn.sk-act small.price .pcoin { width: 16px; height: 16px; }
+.btn.sk-act small.price b { font-family: var(--num); }
+@media not all and (orientation: portrait) and (max-width: 640px) {
+  .card.is-skins .sk-frame { width: auto; height: auto; }
+  .card.is-skins .sk-people { justify-content: flex-start; }
+  .card.is-skins .sk-tiles { grid-template-columns: repeat(3, minmax(0, 150px)); }
+}
+/* 宽屏：预览比服装小图大（之前只有 120px 高，反而比小图还小） */
+@media not all and (orientation: portrait) and (max-width: 640px) {
+  .card.is-skins .sk-frame { min-height: 230px; }
+}
+@media (max-height: 520px) and (orientation: landscape) {
+  .card.is-skins .sk-frame { min-height: 96px; }
+  .card.is-skins .sk-people { margin-bottom: 6px; }
+}
+/* 触控目标一律 ≥ 48px（页签、头像、动作按钮） */
+.c-tabs button { min-height: 48px; }
+.card.is-skins .btn.sk-act { min-height: 48px; }
+.sk-people { gap: 2px; }
+.sk-who-b { flex: none; width: 48px; height: 48px; }
+.sk-who-b.sel { transform: none; }
+@media (max-width: 370px) { .sk-who-b { width: 44px; height: 44px; } }
+/* 手机竖屏：预览和服装图稍矮一点，整页离屏幕底边留出余量 */
+@media (orientation: portrait) and (max-width: 640px) {
+  .card.is-skins .sk-frame { width: 116px; height: 140px; }
+  .card.is-skins .sk-tile { aspect-ratio: 5 / 6; }
+}
+/* 横屏手机（很矮）：服装图限宽、标题单行，内容不用滚动就能放下 */
+@media (max-height: 520px) and (orientation: landscape) {
+  .card.is-skins .sk-frame { min-height: 70px; }
+  .card.is-skins .sk-side { gap: 3px; }
+  .card.is-skins .sk-who { font-size: 11px; }
+  .card.is-skins .sk-what { font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .card.is-skins .sk-tiles { grid-template-columns: repeat(3, minmax(0, 100px)); gap: 8px; }
+  .card.is-skins .sk-people { margin: 0 0 6px; padding: 2px 0; }
+  .card.is-shop > .c-tabs { margin-bottom: 4px; padding-top: 0; }
+  .card.is-skins .sk-list { overflow: visible; }
+}
+/* 页签在矮横屏也保持 48px 高（盖过前面的 42px 规则）；服装图再收一点给它腾地方 */
+.card.is-shop > .c-tabs button { min-height: 48px; }
+@media (max-height: 520px) and (orientation: landscape) {
+  .card.is-shop > .c-tabs button { min-height: 48px; }
+  .card.is-skins .sk-tiles { grid-template-columns: repeat(3, minmax(0, 94px)); }
+}
