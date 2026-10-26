@@ -8,8 +8,16 @@ import { t, LANGS, LANG_NAMES, setLangRaw, getLang, detectLang } from "./i18n.js
 import { P, saveProgress, flushProgress, reloadProgress, SHOP_ITEMS, UPGRADE_COST } from "./platform.js";
                                                                   
 
-const W      = window;
-const GP      = W.gp;
+// ★★ `window` 不能在**模块顶层**读。宿主 `check-plugin.mjs` 会在 Node 里真的
+//    `import()` 这个包（那一步就是「模块顶层有没有碰 DOM」的检查）—— 顶层写
+//    `const W = window` 会以 `ReferenceError: window is not defined` 整包导入失败，
+//    而浏览器里一切正常，所以只有静态检查能抓到。
+//    惰性取值：第一次用到时才解析，且 Node 里调用会抛在自己的函数栈里。
+let W = null;
+function win() {
+  if (!W) W = globalThis.window ?? globalThis;
+  return W;
+}
 
 // ============================================================ asset base
 /** Set once by start(); the host passes `ctx.assetBase` (or `ctx.assetUrl`). */
@@ -49,16 +57,26 @@ const TUT_STEPS = ["intro", "learn-m1", "learn-m2", "learn-m3", "learn-m4"];
 let manualLang = false;
 function applyLang(l      ) {
   setLangRaw(l);
-  document.documentElement.lang = l === "zh" ? "zh-CN" : l;
-  document.title = t("title");
+  // ★ 插件形态下**不许改宿主的文档**：`document.title` 是宿主 App 的名字，
+  //   `document.documentElement.lang` 影响的是整页。独立网页里这么写没问题，
+  //   所以按「有没有宿主」分流，而不是一律改。
+  if (!host) {
+    try {
+      document.documentElement.lang = l === "zh" ? "zh-CN" : l;
+      document.title = t("title");
+    } catch { /* */ }
+  }
   loadFonts();
   renderUI();
   refreshHud(true);
 }
 const fontMap      = "zcool-kuaile/ZCOOLKuaiLe-Regular.ttf";
+// `GP` 是独立网页版（MakePlay 平台壳）注入的全局，插件形态下**没有**。
+// 原来它是模块顶层的 `const GP = window.gp` —— 既碰了 window，又把「平台壳」钉死在顶层。
+const GP = () => { try { return win().gp ?? null; } catch { return null; } };
 function loadFonts() {
   let used = false;
-  try { if (GP?.fonts?.use) { used = true; void GP.fonts.use({ display: fontMap, body: "open-huninn/OpenHuninn.woff2", lang: getLang() }); } } catch { used = false; }
+  try { const gp = GP(); if (gp?.fonts?.use) { used = true; void gp.fonts.use({ display: fontMap, body: "open-huninn/OpenHuninn.woff2", lang: getLang() }); } } catch { used = false; }
   // No CDN fallback: the bundled OpenHuninn woff2 lives under assets/_ext/, and the font
   // stack already ends in system CJK faces. A cross-origin URL would also break the
   // "0 external requests" rule the host enforces on plugins.
@@ -70,100 +88,110 @@ function loadFonts() {
     } catch { /* */ }
   }
 }
-setLangRaw(detectLang(GP?.player?.user?.locale || navigator.language));
-document.documentElement.lang = getLang() === "zh" ? "zh-CN" : getLang();
+// ★★ 这一段原来在模块顶层直接读 `navigator` / `document`。
+//    宿主的静态检查会在 Node 里 import 这个包 ⇒ 顶层任何 `document.*` 都是硬错误。
+//    语言判定不依赖 DOM 之外的任何东西，挪进函数、在 start() 里调一次。
+function pickInitialLang() {
+  let nav = "";
+  try { nav = globalThis.navigator?.language || ""; } catch { /* Node */ }
+  setLangRaw(detectLang(GP()?.player?.user?.locale || nav));
+}
 
 // ============================================================ DOM shell
 // Created in start() — the module must not touch the document at import time.
-const css = document.createElement("style");
-css.textContent = `
-#ui{position:absolute;inset:0;pointer-events:none;font-family:MpFontDisplay,"ZCOOLKuaiLe","PingFang SC","Hiragino Maru Gothic ProN","Hiragino Sans","Microsoft YaHei","Noto Sans CJK SC",sans-serif;color:#4a3826;user-select:none;-webkit-user-select:none}
-#ui *{box-sizing:border-box}
-#col{position:absolute;top:0;bottom:0;left:50%;transform:translateX(-50%);width:100%;max-width:520px}
-.btn{pointer-events:auto;min-height:48px;min-width:48px;border:none;border-radius:14px;padding:10px 18px;font:inherit;font-size:18px;color:#4a3826;background:#fdf3dc;box-shadow:4px 4px 0 rgba(74,56,38,.28);cursor:pointer;touch-action:manipulation}
-.btn:active{transform:translate(2px,2px);box-shadow:2px 2px 0 rgba(74,56,38,.28)}
-.btn:focus-visible{outline:3px solid #2f7fd0;outline-offset:2px}
-.btn.primary{background:#ffd65a;font-size:22px}
-.btn.blue{background:#a9d8f5}
-.btn.mint{background:#bfe8c4}
-.btn.peach{background:#ffc9a8}
-.btn[disabled]{opacity:.55;cursor:default}
-.panel{pointer-events:auto;position:absolute;left:16px;right:16px;top:50%;transform:translateY(-50%);max-height:calc(100% - 32px);overflow-y:auto;background:#fff8e8;border-radius:22px;padding:18px 18px 20px;box-shadow:6px 6px 0 rgba(74,56,38,.25);text-align:center}
-.panel h2{margin:4px 0 10px;font-size:26px;font-weight:normal;color:#5a3e22}
-.panel p{margin:6px 0;font-size:16px;line-height:1.45}
-.row{display:flex;gap:10px;justify-content:center;flex-wrap:wrap;margin:10px 0}
-.langs{display:flex;gap:8px;justify-content:center;flex-wrap:wrap;margin:6px 0 10px}
-.lang{pointer-events:auto;min-height:48px;min-width:64px;border-radius:24px;border:2px solid #c9b48e;background:#fff;font:inherit;font-size:16px;color:#4a3826;padding:6px 14px;cursor:pointer}
-.lang[aria-pressed=true]{background:#4a3826;color:#fff8e8;border-color:#4a3826}
-.lang:focus-visible{outline:3px solid #2f7fd0}
-.tape{background:#f6e7c4;border-radius:6px;padding:4px 12px;box-shadow:3px 3px 0 rgba(74,56,38,.22);display:inline-block}
-#hud{position:absolute;inset:0;pointer-events:none}
-#hudTop{position:absolute;left:16px;right:16px;top:14px;display:flex;align-items:flex-start;gap:8px}
-#score{font-size:30px;min-width:104px;text-align:center;background:#f6e7c4;padding:4px 14px;border-radius:6px;box-shadow:3px 3px 0 rgba(74,56,38,.22)}
-#mult{font-size:22px;background:#a9d8f5;padding:6px 12px;border-radius:6px;box-shadow:3px 3px 0 rgba(74,56,38,.22);transition:transform .12s}
-#bells{margin-left:auto;font-size:24px;background:#f6e7c4;padding:4px 10px;border-radius:6px;box-shadow:3px 3px 0 rgba(74,56,38,.22);white-space:nowrap}
-.bell{display:inline-block;width:26px;height:28px;margin:0 2px;vertical-align:middle}
-#meter{position:absolute;right:16px;top:118px;width:34px;height:250px;border-radius:17px;background:#f6e7c4;box-shadow:3px 3px 0 rgba(74,56,38,.22);padding:5px}
-#meterIn{position:relative;width:100%;height:100%;border-radius:12px;overflow:hidden;background:linear-gradient(to top,#5fbf6a 0%,#8fd16a 35%,#ffd65a 60%,#ff9d4d 80%,#e5534b 100%)}
-#meterCover{position:absolute;left:0;right:0;top:0;background:#e9dcc0;transition:height .2s}
-#meterMark{position:absolute;left:-6px;right:-6px;height:4px;background:#4a3826;border-radius:2px;transition:bottom .2s}
-#meterLbl{position:absolute;right:6px;top:372px;width:46px;text-align:center;font-size:13px;background:#fff8e8;border-radius:8px;padding:2px 0}
-#pauseBtn{position:absolute;left:16px;top:70px;font-size:20px;padding:0;width:48px;height:48px}
-#dogBtn{position:absolute;left:16px;bottom:24px;display:flex;align-items:center;gap:6px;padding:4px 12px 4px 4px;font-size:16px}
-#dogBtn img{width:44px;height:44px;border-radius:50%;background:#fff}
-#info{position:absolute;right:16px;bottom:24px;font-size:15px;text-align:right;background:rgba(255,248,232,.92);border-radius:10px;padding:6px 10px;max-width:60%}
-#tut{position:absolute;left:16px;right:16px;top:132px;margin-right:56px;background:rgba(255,248,232,.96);border-radius:16px;padding:10px 12px;box-shadow:4px 4px 0 rgba(74,56,38,.22);font-size:16px;line-height:1.4;pointer-events:none}
-#tut .tutTop{display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;font-size:13px;color:#8a6d4a}
-#tut .btn{font-size:14px;padding:4px 12px;min-height:48px}
-#coach{position:absolute;pointer-events:auto;overflow-y:auto;background:#fff8e8;border:3px solid #ffb300;border-radius:18px;padding:12px 14px 14px;box-shadow:5px 5px 0 rgba(74,56,38,.28);text-align:left;z-index:5}
-#coach .cdots{display:flex;gap:6px;justify-content:center;margin-bottom:4px}
-#coach .cdots i{width:9px;height:9px;border-radius:50%;background:#e2d3b2}
-#coach .cdots i.on{background:#d08a00}
-#coach h3{margin:2px 0 8px;font-size:22px;font-weight:normal;color:#5a3e22;text-align:center}
-#coach .cl{margin:0 0 8px;font-size:17px;line-height:1.45;opacity:0;animation:cin .35s ease-out forwards}
-#coach .cl.step{background:#fff1c7;border-radius:10px;padding:6px 10px}
-#coach .crow{display:flex;justify-content:center;margin-top:6px}
-#coach .btn{min-width:150px}
+let css = null;
+/** Built in start(): the module must not touch the document at import time. */
+function buildCss() {
+  css = document.createElement("style");
+  css.textContent = `
+.rp-root #ui{position:absolute;inset:0;pointer-events:none;font-family:MpFontDisplay,"ZCOOLKuaiLe","PingFang SC","Hiragino Maru Gothic ProN","Hiragino Sans","Microsoft YaHei","Noto Sans CJK SC",sans-serif;color:#4a3826;user-select:none;-webkit-user-select:none}
+.rp-root #ui *{box-sizing:border-box}
+.rp-root #col{position:absolute;top:0;bottom:0;left:50%;transform:translateX(-50%);width:100%;max-width:520px}
+.rp-root .btn{pointer-events:auto;min-height:48px;min-width:48px;border:none;border-radius:14px;padding:10px 18px;font:inherit;font-size:18px;color:#4a3826;background:#fdf3dc;box-shadow:4px 4px 0 rgba(74,56,38,.28);cursor:pointer;touch-action:manipulation}
+.rp-root .btn:active{transform:translate(2px,2px);box-shadow:2px 2px 0 rgba(74,56,38,.28)}
+.rp-root .btn:focus-visible{outline:3px solid #2f7fd0;outline-offset:2px}
+.rp-root .btn.primary{background:#ffd65a;font-size:22px}
+.rp-root .btn.blue{background:#a9d8f5}
+.rp-root .btn.mint{background:#bfe8c4}
+.rp-root .btn.peach{background:#ffc9a8}
+.rp-root .btn[disabled]{opacity:.55;cursor:default}
+.rp-root .panel{pointer-events:auto;position:absolute;left:16px;right:16px;top:50%;transform:translateY(-50%);max-height:calc(100% - 32px);overflow-y:auto;background:#fff8e8;border-radius:22px;padding:18px 18px 20px;box-shadow:6px 6px 0 rgba(74,56,38,.25);text-align:center}
+.rp-root .panel h2{margin:4px 0 10px;font-size:26px;font-weight:normal;color:#5a3e22}
+.rp-root .panel p{margin:6px 0;font-size:16px;line-height:1.45}
+.rp-root .row{display:flex;gap:10px;justify-content:center;flex-wrap:wrap;margin:10px 0}
+.rp-root .langs{display:flex;gap:8px;justify-content:center;flex-wrap:wrap;margin:6px 0 10px}
+.rp-root .lang{pointer-events:auto;min-height:48px;min-width:64px;border-radius:24px;border:2px solid #c9b48e;background:#fff;font:inherit;font-size:16px;color:#4a3826;padding:6px 14px;cursor:pointer}
+.rp-root .lang[aria-pressed=true]{background:#4a3826;color:#fff8e8;border-color:#4a3826}
+.rp-root .lang:focus-visible{outline:3px solid #2f7fd0}
+.rp-root .tape{background:#f6e7c4;border-radius:6px;padding:4px 12px;box-shadow:3px 3px 0 rgba(74,56,38,.22);display:inline-block}
+.rp-root #hud{position:absolute;inset:0;pointer-events:none}
+.rp-root #hudTop{position:absolute;left:16px;right:16px;top:14px;display:flex;align-items:flex-start;gap:8px}
+.rp-root #score{font-size:30px;min-width:104px;text-align:center;background:#f6e7c4;padding:4px 14px;border-radius:6px;box-shadow:3px 3px 0 rgba(74,56,38,.22)}
+.rp-root #mult{font-size:22px;background:#a9d8f5;padding:6px 12px;border-radius:6px;box-shadow:3px 3px 0 rgba(74,56,38,.22);transition:transform .12s}
+.rp-root #bells{margin-left:auto;font-size:24px;background:#f6e7c4;padding:4px 10px;border-radius:6px;box-shadow:3px 3px 0 rgba(74,56,38,.22);white-space:nowrap}
+.rp-root .bell{display:inline-block;width:26px;height:28px;margin:0 2px;vertical-align:middle}
+.rp-root #meter{position:absolute;right:16px;top:118px;width:34px;height:250px;border-radius:17px;background:#f6e7c4;box-shadow:3px 3px 0 rgba(74,56,38,.22);padding:5px}
+.rp-root #meterIn{position:relative;width:100%;height:100%;border-radius:12px;overflow:hidden;background:linear-gradient(to top,#5fbf6a 0%,#8fd16a 35%,#ffd65a 60%,#ff9d4d 80%,#e5534b 100%)}
+.rp-root #meterCover{position:absolute;left:0;right:0;top:0;background:#e9dcc0;transition:height .2s}
+.rp-root #meterMark{position:absolute;left:-6px;right:-6px;height:4px;background:#4a3826;border-radius:2px;transition:bottom .2s}
+.rp-root #meterLbl{position:absolute;right:6px;top:372px;width:46px;text-align:center;font-size:13px;background:#fff8e8;border-radius:8px;padding:2px 0}
+.rp-root #pauseBtn{position:absolute;left:16px;top:70px;font-size:20px;padding:0;width:48px;height:48px}
+.rp-root #dogBtn{position:absolute;left:16px;bottom:24px;display:flex;align-items:center;gap:6px;padding:4px 12px 4px 4px;font-size:16px}
+.rp-root #dogBtn img{width:44px;height:44px;border-radius:50%;background:#fff}
+.rp-root #info{position:absolute;right:16px;bottom:24px;font-size:15px;text-align:right;background:rgba(255,248,232,.92);border-radius:10px;padding:6px 10px;max-width:60%}
+.rp-root #tut{position:absolute;left:16px;right:16px;top:132px;margin-right:56px;background:rgba(255,248,232,.96);border-radius:16px;padding:10px 12px;box-shadow:4px 4px 0 rgba(74,56,38,.22);font-size:16px;line-height:1.4;pointer-events:none}
+.rp-root #tut .tutTop{display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;font-size:13px;color:#8a6d4a}
+.rp-root #tut .btn{font-size:14px;padding:4px 12px;min-height:48px}
+.rp-root #coach{position:absolute;pointer-events:auto;overflow-y:auto;background:#fff8e8;border:3px solid #ffb300;border-radius:18px;padding:12px 14px 14px;box-shadow:5px 5px 0 rgba(74,56,38,.28);text-align:left;z-index:5}
+.rp-root #coach .cdots{display:flex;gap:6px;justify-content:center;margin-bottom:4px}
+.rp-root #coach .cdots i{width:9px;height:9px;border-radius:50%;background:#e2d3b2}
+.rp-root #coach .cdots i.on{background:#d08a00}
+.rp-root #coach h3{margin:2px 0 8px;font-size:22px;font-weight:normal;color:#5a3e22;text-align:center}
+.rp-root #coach .cl{margin:0 0 8px;font-size:17px;line-height:1.45;opacity:0;animation:cin .35s ease-out forwards}
+.rp-root #coach .cl.step{background:#fff1c7;border-radius:10px;padding:6px 10px}
+.rp-root #coach .crow{display:flex;justify-content:center;margin-top:6px}
+.rp-root #coach .btn{min-width:150px}
 @keyframes cin{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
 @media (prefers-reduced-motion:reduce){#coach .cl{animation:none;opacity:1}}
 @media (max-height:520px){#coach{padding:8px 12px 10px}#coach h3{font-size:18px;margin:0 0 4px}#coach .cl{font-size:15px;margin-bottom:5px}}
-#toast{position:absolute;left:50%;top:40%;transform:translate(-50%,-50%);background:rgba(74,56,38,.92);color:#fff8e8;padding:10px 16px;border-radius:12px;font-size:16px;max-width:86%;text-align:center;opacity:0;transition:opacity .25s;pointer-events:none}
-#loading{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;background:#8fd0f0;pointer-events:auto}
-#loading .bar{width:220px;height:16px;background:#fff8e8;border-radius:8px;overflow:hidden;margin-top:14px}
-#loading .fill{height:100%;width:0;background:#ffd65a;transition:width .15s}
-#loading .hop{width:54px;height:40px;border-radius:50%;background:#fff;box-shadow:3px 3px 0 rgba(74,56,38,.25);animation:hop .6s ease-in-out infinite alternate}
+.rp-root #toast{position:absolute;left:50%;top:40%;transform:translate(-50%,-50%);background:rgba(74,56,38,.92);color:#fff8e8;padding:10px 16px;border-radius:12px;font-size:16px;max-width:86%;text-align:center;opacity:0;transition:opacity .25s;pointer-events:none}
+.rp-root #loading{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;background:#8fd0f0;pointer-events:auto}
+.rp-root #loading .bar{width:220px;height:16px;background:#fff8e8;border-radius:8px;overflow:hidden;margin-top:14px}
+.rp-root #loading .fill{height:100%;width:0;background:#ffd65a;transition:width .15s}
+.rp-root #loading .hop{width:54px;height:40px;border-radius:50%;background:#fff;box-shadow:3px 3px 0 rgba(74,56,38,.25);animation:hop .6s ease-in-out infinite alternate}
 @keyframes hop{from{transform:translateY(0)}to{transform:translateY(-26px)}}
-.title{font-size:44px;margin:4px 0 2px;color:#5a3e22;letter-spacing:2px}
-.stat{display:inline-block;margin:2px 8px;font-size:16px}
-.coin{width:20px;height:20px;vertical-align:-4px;margin-right:3px}
-.item{display:flex;align-items:center;gap:10px;text-align:left;background:#fff;border-radius:14px;padding:10px;margin:8px 0;box-shadow:3px 3px 0 rgba(74,56,38,.15)}
-.item .sw{width:52px;height:52px;border-radius:12px;flex:none}
-.item .tx{flex:1;font-size:14px;line-height:1.35}
-.item .tx b{font-size:17px;font-weight:normal;display:block}
-.lb{list-style:none;margin:6px 0;padding:0;text-align:left;max-height:46vh;overflow-y:auto}
-.lb li{display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:10px;font-size:16px}
-.lb li.me{background:#ffeeb0}
-.lb .rk{width:34px;text-align:center}
-.lb .av{width:36px;height:36px;border-radius:50%;background:#e9dcc0;object-fit:cover;flex:none}
-.lb .nm{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.lb button.who{pointer-events:auto;display:flex;align-items:center;gap:8px;flex:1;min-height:48px;background:none;border:none;font:inherit;color:inherit;text-align:left;padding:0;cursor:pointer;overflow:hidden}
-.lb button.who:focus-visible{outline:3px solid #2f7fd0}
-.badge{font-size:12px;background:#a9d8f5;border-radius:8px;padding:1px 6px;margin-left:4px}
-.prog{height:18px;background:#e9dcc0;border-radius:9px;overflow:hidden;margin:8px 0 4px}
-.prog .f{height:100%;background:#a9d8f5}
-.prog.hot .f{background:linear-gradient(90deg,#ffd65a,#ff9d4d)}
-.hotTxt{color:#d0592b}
-.note{font-size:13px;color:#8a6d4a}
-.sim{font-size:13px;color:#b04a2a;background:#ffe9dc;border-radius:8px;padding:4px 8px;margin:6px 0}
-.up{display:flex;align-items:center;gap:8px;background:#fff;border-radius:14px;padding:8px 10px;margin:8px 0;text-align:left;box-shadow:3px 3px 0 rgba(74,56,38,.15)}
-.up .tx{flex:1;font-size:16px}
-.up .btn{font-size:15px;padding:6px 10px}
-.gallery{display:flex;flex-wrap:wrap;justify-content:center;gap:2px;margin:6px 0;min-height:24px}
-.gallery img{width:26px;height:23px}
-.modal{pointer-events:auto;position:absolute;inset:0;background:rgba(40,30,20,.45);display:flex;align-items:center;justify-content:center}
+.rp-root .title{font-size:44px;margin:4px 0 2px;color:#5a3e22;letter-spacing:2px}
+.rp-root .stat{display:inline-block;margin:2px 8px;font-size:16px}
+.rp-root .coin{width:20px;height:20px;vertical-align:-4px;margin-right:3px}
+.rp-root .item{display:flex;align-items:center;gap:10px;text-align:left;background:#fff;border-radius:14px;padding:10px;margin:8px 0;box-shadow:3px 3px 0 rgba(74,56,38,.15)}
+.rp-root .item .sw{width:52px;height:52px;border-radius:12px;flex:none}
+.rp-root .item .tx{flex:1;font-size:14px;line-height:1.35}
+.rp-root .item .tx b{font-size:17px;font-weight:normal;display:block}
+.rp-root .lb{list-style:none;margin:6px 0;padding:0;text-align:left;max-height:46vh;overflow-y:auto}
+.rp-root .lb li{display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:10px;font-size:16px}
+.rp-root .lb li.me{background:#ffeeb0}
+.rp-root .lb .rk{width:34px;text-align:center}
+.rp-root .lb .av{width:36px;height:36px;border-radius:50%;background:#e9dcc0;object-fit:cover;flex:none}
+.rp-root .lb .nm{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.rp-root .lb button.who{pointer-events:auto;display:flex;align-items:center;gap:8px;flex:1;min-height:48px;background:none;border:none;font:inherit;color:inherit;text-align:left;padding:0;cursor:pointer;overflow:hidden}
+.rp-root .lb button.who:focus-visible{outline:3px solid #2f7fd0}
+.rp-root .badge{font-size:12px;background:#a9d8f5;border-radius:8px;padding:1px 6px;margin-left:4px}
+.rp-root .prog{height:18px;background:#e9dcc0;border-radius:9px;overflow:hidden;margin:8px 0 4px}
+.rp-root .prog .f{height:100%;background:#a9d8f5}
+.rp-root .prog.hot .f{background:linear-gradient(90deg,#ffd65a,#ff9d4d)}
+.rp-root .hotTxt{color:#d0592b}
+.rp-root .note{font-size:13px;color:#8a6d4a}
+.rp-root .sim{font-size:13px;color:#b04a2a;background:#ffe9dc;border-radius:8px;padding:4px 8px;margin:6px 0}
+.rp-root .up{display:flex;align-items:center;gap:8px;background:#fff;border-radius:14px;padding:8px 10px;margin:8px 0;text-align:left;box-shadow:3px 3px 0 rgba(74,56,38,.15)}
+.rp-root .up .tx{flex:1;font-size:16px}
+.rp-root .up .btn{font-size:15px;padding:6px 10px}
+.rp-root .gallery{display:flex;flex-wrap:wrap;justify-content:center;gap:2px;margin:6px 0;min-height:24px}
+.rp-root .gallery img{width:26px;height:23px}
+.rp-root .modal{pointer-events:auto;position:absolute;inset:0;background:rgba(40,30,20,.45);display:flex;align-items:center;justify-content:center}
 @media (max-height:520px){.panel{padding:8px 14px 10px}.panel h2{font-size:20px;margin:2px 0 4px}.panel p{margin:3px 0;font-size:14px}.title{font-size:28px;margin:0}.row{margin:5px 0;gap:8px}.langs{margin:2px 0 4px}.btn{padding:6px 14px;font-size:16px}.btn.primary{font-size:18px}.tagline,.weeklyNote{display:none}.stat{font-size:14px}}
-.modal .panel{position:relative;top:auto;transform:none;left:auto;right:auto;max-width:360px;margin:16px}
+.rp-root .modal .panel{position:relative;top:auto;transform:none;left:auto;right:auto;max-width:360px;margin:16px}
 `;
+}
 
 // Test hooks for the e2e scripts. `owner` lets destroy() remove only its own object,
 // so a remount never deletes a newer instance's hooks.
@@ -174,13 +202,46 @@ const TEST_HOOKS = {
   get screen() { return screen; }, get overlay() { return overlay; }, get coach() { return coach; }, coachNext: () => { coachReadyAt = 0; coachNext(); }, P, bpm: () => currentBpm(), startRun, endRun,
   tapDesign: (x        , y        ) => handleTap(x, y, run ? run.time : 0),
   stage: () => ({ K, OX, OY }),
+  /**
+   * 把内存里的存档刷到宿主。
+   *
+   * 存在的理由：e2e 要验「重挂载读回来还是那个值」，就得**先**让它落盘。
+   * 之前脚本里写 `window.__game.save?.()` —— 可选链把「没有这个方法」
+   * 静默吞掉了，于是「存档没落盘」和「脚本没调」看起来一模一样。
+   */
+  save: () => flushProgress(),
   anims: () => Object.fromEntries(Object.keys(ANIM).map((k) => [k, ANIM[k].frames.length])),
   turnerFrame: () => { const ta = themeIsSnow() ? ANIM.snowman : ANIM.scarecrow; return ta ? ta.frames.indexOf(turnerSpr.texture) : -1; },
   sim(sec        , opts                                                                   = {}) {
     autoplay = { recruit: opts.recruit || (() => true) }       ; (autoplay       ).jitter = opts.jitter || 0;
+    //  跑满指定秒数：默认按真实玩法走，但**把教学弹层自动点掉**
+    //（`finishTutorial` 会 `screen = "pause"` 等玩家点「去牧场」；不点掉的话
+    //  模拟永远停在 6.9 秒，看着像 step() 自己停了）。
+    const auto = opts.tutorial !== "keep";
     const dt = opts.dt || 1 / 60; let n = Math.round(sec / dt);
-    try { while (n-- > 0 && run && screen === "play" && !run.over) step(dt); } finally { autoplay = null; }
-    return run ? { time: run.time, score: Math.floor(run.score), jumps: run.jumps, sheep: flock.length, bpm: currentBpm(), bells: run.bells, weather: run.weather, segment: run.segment, over: run.over, mult: run.mult } : null;
+    let thrown = null;
+    let stalled = null;
+    // ★ try/finally 里**不要**只写一个空 finally：step() 抛出的错会被静静吃掉，
+    //   外面只看到「模拟 90 秒却停在 6.9 秒」，像是游戏逻辑自己停了。
+    try {
+      while (n-- > 0 && run && !run.over) {
+        if (screen !== "play") {
+          // 只有教学结束那一个弹层会自动点掉，其余停下来如实报告
+          if (auto && overlay === "tut-done") { overlay = ""; screen = "play"; renderUI(); continue; }
+          stalled = { screen, overlay: overlay || null, coach: coach ? coach.id ?? String(coach) : null };
+          break;
+        }
+        if (coach) { if (!auto) { stalled = { screen, overlay: null, coach: "open" }; break; } coachDone(); continue; }
+        if (pendingCoach) { pendingCoach = null; continue; }
+        step(dt);
+      }
+    }
+    catch (e) { thrown = String((e       )?.message ?? e); }
+    finally { autoplay = null; }
+    const base = run ? { time: run.time, score: Math.floor(run.score), jumps: run.jumps, sheep: flock.length, bpm: currentBpm(), bells: run.bells, weather: run.weather, segment: run.segment, over: run.over, mult: run.mult } : null;
+    if (thrown) return { ...base, thrown };
+    if (stalled) return { ...base, stalled };
+    return base;
   },
 };
 
@@ -217,18 +278,65 @@ let loadingEl = null;
 const app = new PIXI.Application();
 let display      = null;
 let VW = 390, VH = 844, K = 1, OX = 0, OY = 0;
-const camRoot = new PIXI.Container(); // additive FX camera impulse root
-const world = new PIXI.Container(); // design-space container
-const bgLayer = new PIXI.Container();
-const backLayer = new PIXI.Container(); // windmill, scarecrow, ground pulse, back rope
-const flockLayer = new PIXI.Container();
-const frontLayer = new PIXI.Container(); // front rope
-const weatherLayer = new PIXI.Container();
-const fxLayer = new PIXI.Container();
-world.addChild(bgLayer, backLayer, flockLayer, frontLayer, weatherLayer, fxLayer);
-const styleFilter = new PIXI.ColorMatrixFilter();
+// ★★ 这些容器**必须每次挂载重建**，不能做成模块级 `const`。
+//    `app.destroy()` 会把整棵显示树的内部字段（`_worldTransform` / `parent` / …）置空，
+//    第二份刚建好的容器如果还带着上一次的 transform 引用，`scale.set()` 直接抛
+//    `Cannot read properties of null (reading 'set')` —— 而报错栈指在 `relayout` 里，
+//    看起来像「第二次挂载存档坏了」。这也是 Pixi 插件最典型的「切一次 tab 就白屏」。
+let camRoot      = new PIXI.Container(); // additive FX camera impulse root
+let world        = new PIXI.Container(); // design-space container
+let bgLayer      = new PIXI.Container();
+let backLayer    = new PIXI.Container(); // windmill, scarecrow, ground pulse, back rope
+let flockLayer   = new PIXI.Container();
+let frontLayer   = new PIXI.Container(); // front rope
+let weatherLayer = new PIXI.Container();
+let fxLayer      = new PIXI.Container();
+// 同样是**每次挂载重建**：`new PIXI.ColorMatrixFilter()` 会立刻 createCanvas，
+// 放在模块顶层 = import 阶段就要 WebGL/DOM（`check-plugin.mjs` 在 Node 里 import 必挂）。
+let styleFilter = null;
 
-const TEX                               = {};
+/** (Re)build the container tree for one mount. Called from start() before boot(). */
+function buildSceneTree() {
+  camRoot = new PIXI.Container();
+  world = new PIXI.Container();
+  bgLayer = new PIXI.Container();
+  backLayer = new PIXI.Container();
+  flockLayer = new PIXI.Container();
+  frontLayer = new PIXI.Container();
+  weatherLayer = new PIXI.Container();
+  fxLayer = new PIXI.Container();
+  world.addChild(bgLayer, backLayer, flockLayer, frontLayer, weatherLayer, fxLayer);
+  camRoot.addChild(world);
+  // same reason: every Graphics below gets its pool/transform wiped by app.destroy()
+  skyFill = new PIXI.Graphics();
+  windmillSpr = new PIXI.Sprite();
+  sails = new PIXI.Graphics();
+  turnerSpr = new PIXI.Sprite();
+  crankG = new PIXI.Graphics();
+  pulseG = new PIXI.Graphics();
+  ropeBack = new PIXI.Graphics();
+  ropeFront = new PIXI.Graphics();
+  ropeShadow = new PIXI.Graphics();
+  ropeShadowTop = new PIXI.Graphics();
+  duskOverlay = new PIXI.Graphics();
+  styleOverlay = new PIXI.Graphics();
+  ringG = new PIXI.Graphics();
+  bellIcon = new PIXI.Graphics();
+  coachG = new PIXI.Graphics();
+  hintG = new PIXI.Graphics();
+  styleFilter = new PIXI.ColorMatrixFilter();
+  // per-mount scene bookkeeping
+  bgSprites = [];
+  grainSpr = null;
+  flock = [];
+  visitor = null;
+  fleeing.length = 0;
+  parts.length = 0;
+  partPool.length = 0;
+  pops.length = 0;
+  drops.length = 0;
+  assetsReady = false;
+}const TEX                               = {};
 let fx      = null;
 function fxPlay(id        , x        , y        , extra      = {}) {
   if (!fx) return;
@@ -237,29 +345,39 @@ function fxPlay(id        , x        , y        , extra      = {}) {
 let assetsReady = false;
 
 function relayout(w        , h        ) {
+  // ★ 第一件事判 alive：`mountDisplay({ onResize })` 的观察者挂在 window 上，
+  //   **卸载之后还会回调一次**。这时 `app.destroy()` 已经把世界容器内部的
+  //   transform 置空了，`world.scale.set()` 会抛
+  //   `Cannot read properties of null (reading 'set')` —— 而它是在 resize 回调里抛的，
+  //   报错栈完全指不到「是卸载后又被调了一次」，只会看着像存档 / 重挂载坏了。
+  if (!alive || destroyed) return;
   VW = w; VH = h;
   K = Math.min(w / DW, h / DH);
   if (w < DW * K + 1) K = w / DW;
   OX = (w - DW * K) / 2; OY = (h - DH * K) / 2;
   world.scale.set(K); world.position.set(OX, OY);
-  col.style.maxWidth = Math.max(320, Math.min(520, w)) + "px";
+  // ★ `col` 是**每次挂载**建出来的（buildShell），但 `relayout` 会被
+  //   `mountDisplay({ onResize })` 在**卸载之后**再回调一次（resizeTo 的观察者还没摘）。
+  //   不判空就是 `Cannot read properties of null (reading 'style')` —— 而且它是在
+  //   resize 回调里抛的，看起来像「存档坏了」。
+  if (col) col.style.maxWidth = Math.max(320, Math.min(520, w)) + "px";
   layoutBg();
   placeCoach();
 }
 
 // ============================================================ scene objects
 let bgSprites                = [];
-const skyFill = new PIXI.Graphics();
-const windmillSpr = new PIXI.Sprite();
-const sails = new PIXI.Graphics();
-const turnerSpr = new PIXI.Sprite();
-const crankG = new PIXI.Graphics();
-const pulseG = new PIXI.Graphics();
-const ropeBack = new PIXI.Graphics();
-const ropeFront = new PIXI.Graphics();
-const ropeShadow = new PIXI.Graphics();
-const duskOverlay = new PIXI.Graphics();
-const styleOverlay = new PIXI.Graphics();
+let skyFill = new PIXI.Graphics();
+let windmillSpr = new PIXI.Sprite();
+let sails = new PIXI.Graphics();
+let turnerSpr = new PIXI.Sprite();
+let crankG = new PIXI.Graphics();
+let pulseG = new PIXI.Graphics();
+let ropeBack = new PIXI.Graphics();
+let ropeFront = new PIXI.Graphics();
+let ropeShadow = new PIXI.Graphics();
+let duskOverlay = new PIXI.Graphics();
+let styleOverlay = new PIXI.Graphics();
 let grainSpr                           = null;
 
 function layoutBg() {
@@ -310,7 +428,7 @@ function setupScene() {
   applyTheme();
   applyStyle();
 }
-const ropeShadowTop = new PIXI.Graphics();
+let ropeShadowTop = new PIXI.Graphics();
 
 function applyTheme() {
   if (!assetsReady) return;
@@ -472,8 +590,8 @@ function layoutFlock() {
 
 // ============================================================ particles & popups
 ;                                                                                                   
-const parts         = [];
-const partPool                  = [];
+let parts           = [];
+let partPool                  = [];
 function puff(x        , y        , n        , color               , spread = 50) {
   for (let i = 0; i < n; i++) {
     if (parts.length > 220) break;
@@ -486,7 +604,7 @@ function puff(x        , y        , n        , color               , spread = 50
   }
 }
 ;                                                       
-const pops        = [];
+let pops          = [];
 function popup(text        , x        , y        , color = 0x5a3e22, size = 22) {
   const tx = new PIXI.Text({
     text, style: { fontFamily: ["MpFontDisplay", "ZCOOLKuaiLe", "PingFang SC", "Hiragino Sans", "Microsoft YaHei", "sans-serif"], fontSize: size, fill: color, stroke: { color: 0xfff8e8, width: 5 }, align: "center", wordWrap: true, wordWrapWidth: 300, breakWords: true },
@@ -498,7 +616,7 @@ function popup(text        , x        , y        , color = 0x5a3e22, size = 22) 
 }
 // weather particles
 ;                                                                                 
-const drops         = [];
+let drops           = [];
 
 // ============================================================ sound
 let sound      = null;
@@ -519,8 +637,17 @@ async function unlockAudio() {
   } catch { /* */ }
 }
 function onFirstGesture() { void unlockAudio(); }
-window.addEventListener("pointerdown", onFirstGesture);
-window.addEventListener("keydown", onFirstGesture);
+// ★ 这两个监听器原来在**模块顶层**注册。插件被 import 进宿主的页面后，
+//   它们会在第一次挂载之前就绑到**宿主自己的**窗口上，而且卸载时没有任何人摘 ——
+//   每切一次 tab 就多一份。只能放在 start() 里挂、destroy() 里摘。
+function bindFirstGesture() {
+  try { window.addEventListener("pointerdown", onFirstGesture); } catch { /* Node */ }
+  try { window.addEventListener("keydown", onFirstGesture); } catch { /* */ }
+}
+function unbindFirstGesture() {
+  try { window.removeEventListener("pointerdown", onFirstGesture); } catch { /* */ }
+  try { window.removeEventListener("keydown", onFirstGesture); } catch { /* */ }
+}
 function sfx(id        ) {
   if (!sound || !soundUnlocked) return;
   try {
@@ -621,12 +748,16 @@ function clearFlock() {
 
 function startRun(opts                                          = {}) {
   // Tutorial and latency-calibration runs are not real rounds — never charge for those.
-  if (!opts.tutorial && !opts.calib && chargePlay) {
+  //
+  // ★ `charged` 必须参与判断，否则递归回来的那次会**再扣一遍**：上面 `.then` 里
+  //   重新调 `startRun({...opts, charged:true})`，而这里如果只判 tutorial/calib，
+  //   条件仍然成立 ⇒ 又走一次 chargePlay ⇒ 一局扣两次票（第一次还只是预扣）。
+  if (!opts.tutorial && !opts.calib && !opts.charged && chargePlay) {
     if (paying) return;
     paying = true;
     Promise.resolve(chargePlay())
       .then((ok) => { paying = false; if (ok !== false) startRun({ ...opts, charged: true }); })
-      .catch(() => { paying = false; });
+      .catch((e) => { paying = false; console.error("[ropeland] chargePlay threw", e); });
     return;
   }
   const t0 = performance.now();
@@ -645,7 +776,7 @@ function startRun(opts                                          = {}) {
   run.peakSheep = flock.length;
   screen = "play"; overlay = "";
   renderUI(); refreshHud(true); syncAmbience();
-  W.__lastStartMs = performance.now() - t0;
+  win().__lastStartMs = performance.now() - t0;
 }
 
 function sheepCount() { return flock.length; }
@@ -882,10 +1013,10 @@ function endRun() {
   P.bestMult = Math.max(P.bestMult, r.peakMult);
   void saveProgress();
   lastResult = { score, prevBest, newBest, jumps: r.jumps, peakSheep: r.peakSheep, peakMult: r.peakMult, wool: woolGain, goldRecruits: r.goldRecruits, goldPassed: r.goldPassed };
-  // hand the run's earnings to the host: wool is a game coin, convertible to vouchers.
-  const host = opts.host;
-  if (host && typeof host.mintGameCoin === "function" && woolGain > 0) {
-    void Promise.resolve(host.mintGameCoin(woolGain, t("woolEarned"))).catch(() => {});
+  // hand the run's earnings to the host: wool is a game coin. Zero payout is
+  // refused by the host gate, so skip the call entirely when nothing was earned.
+  if (api && typeof api.mintGameCoin === "function" && woolGain > 0) {
+    void Promise.resolve(api.mintGameCoin(woolGain, t("woolEarned"))).catch(() => {});
   }
   setTimeout(() => { screen = "results"; overlay = ""; syncAmbience(); renderUI(); }, 700);
 }
@@ -912,7 +1043,7 @@ function tutOnLeave(k      ) {
 function advanceTut() {
   if (!run) return;
   run.tutStep++; run.tutCount = 0;
-  W.__tutStep = TUT_STEPS[run.tutStep] || "done";
+  win().__tutStep = TUT_STEPS[run.tutStep] || "done";
   if (run.tutStep >= TUT_STEPS.length) { finishTutorial(false); return; }
   const step = TUT_STEPS[run.tutStep];
   if (step === "learn-m2") spawnVisitor("normal");
@@ -948,8 +1079,8 @@ const COACH                               = {
 let coach                                       = null;
 let pendingCoach                                     = null;
 let coachReadyAt = 0;
-const coachG = new PIXI.Graphics();
-const hintG = new PIXI.Graphics();
+let coachG = new PIXI.Graphics();
+let hintG = new PIXI.Graphics();
 let hintTx                   = null;
 
 function needsRecruitHint() { return !!run && !run.calib && !P.recruitTaught; }
@@ -1011,6 +1142,8 @@ function renderCoach() {
   placeCoach();
 }
 function placeCoach() {
+  // 同 relayout：卸载之后 resize 观察者还会回调一次，那时 coachEl / col 都是 null
+  if (!coachEl || !col) return;
   if (coachEl.style.display === "none") return;
   const s = coachEl.style;
   if (OX >= 250) { // wide window: use the free side area next to the stage
@@ -1400,7 +1533,10 @@ function hudTick() { hudAcc++; if (hudAcc % 4 === 0) refreshHud(); }
 // ============================================================ screens
 function pauseGame() { if (screen !== "play" || !run || run.over) return; screen = "pause"; overlay = ""; renderUI(); }
 function resumeGame() { if (screen !== "pause" || !run) return; screen = "play"; overlay = ""; lastFrame = performance.now(); renderUI(); refreshHud(true); }
-document.addEventListener("visibilitychange", () => { if (document.hidden) pauseGame(); });
+// 切走标签页就暂停 —— 同样是「只能挂在 start() / 摘在 destroy()」的一类
+function onVisibility() { try { if (document.hidden) pauseGame(); } catch { /* */ } }
+function bindVisibility() { try { document.addEventListener("visibilitychange", onVisibility); } catch { /* Node */ } }
+function unbindVisibility() { try { document.removeEventListener("visibilitychange", onVisibility); } catch { /* */ } }
 
 function langChips() {
   return `<div class="langs" role="group" aria-label="Language">${LANGS.map((l) => `<button class="lang" data-lang="${l}" lang="${l}" aria-pressed="${getLang() === l}">${LANG_NAMES[l]}</button>`).join("")}</div>`;
@@ -1599,7 +1735,14 @@ export async function start(o) {
   alive = true; destroyed = false; paying = false;
   // The store is live by now (plugin.js installs it before calling start), so re-read.
   reloadProgress();
-  try { W.gp ??= { playCue: id => api?.tone?.(id) }; } catch { /* */ }
+  try { win().gp ??= { playCue: id => api?.tone?.(id) }; } catch { /* */ }
+  pickInitialLang();
+  buildCss();
+  // ★ 必须在 boot() 之前：上一轮的 app.destroy() 把显示树里的容器都掏空了，
+  //   复用它们的后果是第二次挂载直接抛在 relayout 里（见 buildSceneTree 的注释）。
+  buildSceneTree();
+  bindFirstGesture();
+  bindVisibility();
   buildShell();
   loadingEl = document.createElement("div"); loadingEl.id = "loading";
   loadingEl.innerHTML = `<div class="hop"></div><div style="margin-top:18px;font-size:20px">${esc(t("loading"))}</div><div class="bar"><div class="fill"></div></div>`;
@@ -1607,8 +1750,8 @@ export async function start(o) {
   await boot();
   if (!alive) return;
   hooksOwner = owner;
-  W.__game = TEST_HOOKS;
-  W.__gpReady = true;
+  win().__game = TEST_HOOKS;
+  win().__gpReady = true;
   return destroy;
 }
 
@@ -1653,7 +1796,7 @@ async function boot() {
   renderUI();
   (app.canvas                     ).addEventListener("pointerdown", onPointerDown);
   window.addEventListener("keydown", onKey);
-  W.__gpPlayable = true;
+  win().__gpPlayable = true;
 }
 
 /** Tear everything down. Host unmount calls this; it must be safe to call twice. */
@@ -1662,8 +1805,9 @@ export function destroy() {
     destroyed = true;
     alive = false;
   }
-  if (unmountGame) { const u = unmountGame; unmountGame = null; try { u(); } catch { /* */ } }
   try { app.ticker?.remove(frame); } catch { /* */ }
+  unbindFirstGesture();
+  unbindVisibility();
   try { (app.canvas                     )?.removeEventListener?.("pointerdown", onPointerDown); } catch { /* */ }
   try { window.removeEventListener("keydown", onKey); } catch { /* */ }
   try { display?.dispose?.(); } catch { /* */ }
@@ -1674,8 +1818,14 @@ export function destroy() {
   try { app.destroy?.(true, { children: true, texture: false, textureSource: false }); } catch { /* */ }
   try { css.remove(); } catch { /* */ }
   try { root.remove(); } catch { /* */ }
-  if (W.__game && hooksOwner === owner && W.__game === TEST_HOOKS) {
-    try { delete W.__game; } catch { /* */ }
+  // ★ 把这些**每次挂载建出来**的节点置空：`mountDisplay` 的 resize 观察者可能
+  //   在卸载之后才回调一次（它挂在 window 上，dispose 之前已经排队的通知还是会来）。
+  //   留着旧引用就等于「卸载后的代码还在写一棵已经不在文档里的树」，要么静默、
+  //   要么在 col 被清掉之后抛 null。
+  root = null; ui = null; col = null; hud = null; screenEl = null; toastEl = null; coachEl = null;
+  loadingEl = null;
+  if (win().__game && hooksOwner === owner && win().__game === TEST_HOOKS) {
+    try { delete win().__game; } catch { /* */ }
     hooksOwner = null;
   }
 }
