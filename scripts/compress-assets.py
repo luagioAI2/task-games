@@ -25,6 +25,14 @@ python scripts/compress-assets.py              # 真写
   再缩就是肉眼可见的糊。同理 `ui-gem/` 是 204² 的小图标，留着。
 
 ★ 原图在 `_originals/` 里有备份（扒站产物），需要回滚就 `git checkout -- assets`。
+
+★★ **必须原子写**（`tmp` + `os.replace`）。2026-10-26 实测：前台跑被 SIGTERM 掐掉时，
+   正好在 `im.save(p)` 里 ⇒ **文件被截成 0 字节**，而下一个进程打开它就
+   `UnidentifiedImageError` —— 报错指向的文件看着完全正常（名字对、路径对），
+   真正的原因在上一次被杀掉的运行里。写临时文件再 replace，掐在哪一刀都不会毁原图。
+
+★★ 顺带：**开始前先扫一遍 0 字节 / 打不开的文件并直接退出**。
+   0 字节的图在游戏里是「一块空白」而不是报错，很容易被当成「设计就是这样」。
 """
 import argparse
 import os
@@ -46,10 +54,36 @@ def human(n):
     return f"{n / 1048576:.2f} MB" if n >= 1048576 else f"{n / 1024:.0f} KB"
 
 
+def scan_broken():
+    """开跑前的体检：0 字节 / PIL 打不开的都列出来。有就直接退出，别在坏图上继续压。"""
+    bad = []
+    for dp, _dn, fns in os.walk(os.path.join(ROOT, "assets")):
+        for fn in fns:
+            if not fn.lower().endswith((".webp", ".png", ".jpg", ".jpeg")):
+                continue
+            p = os.path.join(dp, fn)
+            if os.path.getsize(p) == 0:
+                bad.append((os.path.relpath(p, ROOT), "0 字节"))
+                continue
+            try:
+                Image.open(p).load()
+            except Exception as e:  # noqa: BLE001
+                bad.append((os.path.relpath(p, ROOT), type(e).__name__))
+    return bad
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--dry-run", action="store_true")
     args = ap.parse_args()
+
+    broken = scan_broken()
+    if broken:
+        print("✗ assets/ 里有坏图，先修好再压（否则压出来的还是坏的）：")
+        for rel, why in broken:
+            print(f"   {rel}  —— {why}")
+        print("\n  修法：`git checkout -- assets/<路径>`，或从 _originals/ 重新拷。")
+        return 2
 
     rows = []
     for sub, (target, q) in PLAN.items():
@@ -75,7 +109,9 @@ def main():
             else:
                 r = im.convert("RGBA" if im.mode in ("RGBA", "LA", "P") else "RGB")
                 r = r.resize(out, Image.LANCZOS)
-                r.save(p, "WEBP", quality=q, method=6)
+                tmp = p + ".tmp"
+                r.save(tmp, "WEBP", quality=q, method=6)
+                os.replace(tmp, p)   # 原子替换：掐在上一行也只是留个 .tmp，原图还在
                 after = os.path.getsize(p)
             rows.append((os.path.relpath(p, ROOT), (w, h), out, before, after, False))
 

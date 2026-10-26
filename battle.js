@@ -15,6 +15,22 @@ import { fxScreen, initFx, fxUpdate, play, applyShake, clearFx } from './fx.js';
                                                                                       
 
 const ALLY_R = 34;
+
+/**
+ * 素材的**原始**宽度。
+ *
+ * ★★ 为什么需要这个常量：这游戏有三处把「显示尺寸」写成了「纹理宽度的比例」，
+ *   而分母是**写死的设计常数**（430 / 560 / 1024）。2026-10-26 把 1024² 的立绘
+ *   压到 768²、怪物压到 320² 之后，`sprite.scale` 不变而纹理变小 ⇒
+ *   **画面里的怪物缩小了 3.2 倍**，而且一个错都不报 —— 只有看截图才发现
+ *   （第一版 store 截图里，两只小怪小得像两个点）。
+ *
+ *   判据：`scale × texture.width` 才是在屏幕上的宽度。
+ *   所以凡是「按 1024 宽的素材设计」的地方，都要乘 `ART_W / 实际宽度` 把它补回来。
+ */
+const ART_W = 1024;
+/** `scaleFor1024` 是「素材 1024 宽时该用的 scale」，这里按实际纹理宽度换算。 */
+const artScale = (sprite, scaleFor1024) => scaleFor1024 * (ART_W / Math.max(1, sprite.texture.width));
 const MAX_SPEED = 4400;
 const HUD_H = 196;
 
@@ -157,7 +173,7 @@ export class Battle {
       const back = new PIXI.Graphics().circle(0, 0, ALLY_R).fill({ color: EL_COLOR[def.el], alpha: 0.55 });
       const sp = new PIXI.Sprite(texNow(charArt(id, tier)));
       sp.anchor.set(0.5, 0.35);
-      sp.scale.set((ALLY_R * 2) / 430);
+      sp.scale.set(artScale(sp, (ALLY_R * 2) / 430));
       const mask = new PIXI.Graphics().circle(0, 0, ALLY_R - 2).fill(0xffffff);
       sp.mask = mask;
       const ring = new PIXI.Graphics().circle(0, 0, ALLY_R).stroke({ width: tier === 2 ? 5 : 4, color: tier === 2 ? 0xffd86b : EL_COLOR[def.el] })
@@ -238,7 +254,7 @@ export class Battle {
       const bg = new PIXI.Graphics();
       const sp = new PIXI.Sprite(texNow(charArt(a.def.id, a.tier)));
       sp.anchor.set(0.5, 0.3);
-      sp.scale.set((cw - 8) / 560);
+      sp.scale.set(artScale(sp, (cw - 8) / 560));
       sp.position.set(cw / 2, 4 + (ch - 36) * 0.5);
       const mask = new PIXI.Graphics().roundRect(4, 4, cw - 8, ch - 36, 12).fill(0xffffff);
       sp.mask = mask;
@@ -312,7 +328,7 @@ export class Battle {
       const view = new PIXI.Container();
       const sprite = new PIXI.Sprite(texNow(def.tex));
       sprite.anchor.set(0.5);
-      const baseScale = (def.r * (def.boss ? 3.2 : 3.4)) / 1024;
+      const baseScale = artScale(sprite, (def.r * (def.boss ? 3.2 : 3.4)) / ART_W);
       sprite.scale.set(baseScale);
       const shadow = new PIXI.Graphics().ellipse(0, def.r * 0.85, def.r * 0.8, def.r * 0.18).fill({ color: 0x7a5aa8, alpha: 0.18 });
       const hpBar = new PIXI.Graphics();
