@@ -9,3 +9,8 @@ node_modules/
 
 # smoke.mjs 的调试截图（临时，别当商城截图用）
 shots/smoke-*.png
+# mount-test 的产物截图（同上，只是「画面非空白」的证据，不是商城图）
+shots/mount-test-*.png
+
+# _pluginize.py 改造前留的备份（改造前的样子 = _originals/ 里那份）
+_src-backup/

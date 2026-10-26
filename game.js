@@ -8,6 +8,45 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { createLensTree, createLensThreeBridge } from './src/lens/lens.js';
 import { createThreeFx } from '@makeplay/fx';
 import { createBiteMask, eatTo, biteSpot, isAlive, surfaceAt,               } from './world/bites.js';
+import { scopeCss } from './scope-css.js';
+
+/**
+ * 游戏入口。独立网页（`index.html`）和插件（`plugin.js`）调的是**同一个函数**，
+ * 差别全部通过 `opts` 注入 —— 所以这里没有任何 `if (isPlugin)` 分支：
+ *
+ * | | `index.html` | `plugin.js` |
+ * | --- | --- | --- |
+ * | 资源 | 不传（相对文档） | `ctx.assetUrl()` |
+ * | 音频 | 不传（`./`） | `ctx.assetBase`（manifest 里是 `assets/…` / `sound.pack`，相对站点根） |
+ * | 存档 | 不传（平台存档 / 内存） | `host.storage` → `makeHostStore()` |
+ * | 容器 | 不传（`#app`） | `mount(container)` 给的那个 |
+ * | 开局收费 | 不传（不收费） | `chargePlay()` |
+ */
+export async function start(opts = {}) {
+  const mountTo = opts.mountTo ?? null;
+  const store = opts.store ?? null;
+  /** 资源解析：插件里走 `ctx.assetUrl`（相对 `assets/`），网页里原样 */
+  const A = typeof opts.asset === 'function' ? opts.asset : (rel) => rel;
+  /** 音频清单里的 url 是相对**站点根**的（`assets/audio/…`、`sound.pack`） */
+  const assetRoot = typeof opts.assetRoot === 'string' && opts.assetRoot ? opts.assetRoot : './';
+  /** 样式作用域的根类名（随机，防止两份挂载互相干扰） */
+  const scope = 'anthill-' + Math.random().toString(36).slice(2, 8);
+  let alive = true;
+
+  // ---- 开局收费（只有插件形态会传）----
+  const paid = opts.chargePlay ? await opts.chargePlay() : true;
+  if (!paid) {
+    const gate = document.createElement('div');
+    gate.style.cssText =
+      'position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;'
+      + 'gap:10px;padding:24px;text-align:center;background:#fbf3e4;color:#4a3550;'
+      + "font:900 16px/1.5 system-ui,-apple-system,'PingFang SC','Microsoft YaHei',sans-serif";
+    gate.innerHTML = '<div style="font-size:20px">积分不够啦</div>'
+      + '<div style="font-weight:800;color:#7a6070">去做个任务攒点积分，再回来喂蚂蚁</div>';
+    const box = mountTo || document.getElementById('app') || document.body;
+    box.appendChild(gate);
+    return function unmountGate() { gate.remove(); };
+  }
 
 // ======================= config =======================
 const FIELD_W = 9.2; // x extent of playfield
@@ -62,9 +101,9 @@ const S           = {
 };
 function loadSave() {
   try {
-    const d = window.gp?.player?.saves?.latestSync;
-    const info = window.gp?.player?.saves?.latestInfo;
-    if (!d || info?.legacy || typeof d !== 'object' || d.v !== 1) return false;
+    // 插件形态读 `host.storage`（已 await 过的内存缓存）；网页形态读平台存档
+    const d = store ? store.get('save') : window.gp?.player?.saves?.latestSync;
+    if (!d || typeof d !== 'object' || d.v !== 1) return false;
     S.money = Number(d.money) || 0;
     S.world = Math.max(0, Math.floor(Number(d.world) || 0));
     for (const k of Object.keys(S.lv)           ) S.lv[k] = Math.max(0, Math.min(UPS[k].max, Math.floor(Number(d.lv?.[k]) || 0)));
@@ -81,14 +120,18 @@ let dirty = false;
 function save() {
   S.items = items.map((it) => Math.round(it.hp * 1000) / 1000);
   S.lastSeen = Date.now();
-  window.gp?.player?.saves?.putLatest({ ...S });
+  if (store) store.set('save', { ...S });
+  else window.gp?.player?.saves?.putLatest({ ...S });
   dirty = false;
 }
 const hadSave = loadSave();
 const offlineElapsed = hadSave ? (Date.now() - S.lastSeen) / 1000 : 0;
 
 // ======================= renderer / scene =======================
-const host = document.getElementById('app') ;
+// ★ 容器由外部传入（插件形态）。定位上下文由 `plugin.js` 负责补 ——
+//   这里**不碰** `host.style.position`：宿主给的是 `absolute inset-0` 写在**类**里，
+//   补 inline `relative` 会盖掉它，盒子退回内容高度（且所有高度断言照样绿）。
+const host = mountTo || document.getElementById('app') || document.body;
 const renderer = new THREE.WebGLRenderer({ antialias: true });
 renderer.outputColorSpace = THREE.SRGBColorSpace;
 renderer.shadowMap.enabled = true;
@@ -712,7 +755,7 @@ const fmt = (n        ) => {
 
 const css = `
 :root{--navy:#1f3a5f;--font:'Nunito','Baloo 2','Arial Rounded MT Bold','PingFang SC','Hiragino Sans','Hiragino Kaku Gothic ProN','Noto Sans CJK SC','Noto Sans JP','Microsoft YaHei',system-ui,sans-serif}
-#ui{position:fixed;inset:0;pointer-events:none;font-family:var(--font);color:var(--navy);user-select:none;-webkit-user-select:none}
+#ui{position:absolute;inset:0;pointer-events:none;font-family:var(--font);color:var(--navy);user-select:none;-webkit-user-select:none}
 #col{position:absolute;top:0;bottom:0;left:50%;transform:translateX(-50%);width:min(100%,560px)}
 #ui button{font-family:var(--font);pointer-events:auto;cursor:pointer;border:none;-webkit-tap-highlight-color:transparent}
 .top{position:absolute;left:16px;right:16px;top:max(14px,env(safe-area-inset-top));display:flex;gap:8px;align-items:center}
@@ -732,7 +775,6 @@ const css = `
 .side{position:absolute;top:calc(max(14px,env(safe-area-inset-top)) + 64px);width:72px;height:76px;border-radius:18px;background:linear-gradient(#53a8f5,#2a74d6);box-shadow:0 4px 0 #1b4f9c,0 6px 12px rgba(0,0,0,.15);display:flex;flex-direction:column;align-items:center;justify-content:center;color:#fff;font-weight:900;font-size:14px;padding:4px}
 .side img{width:44px;height:44px;object-fit:contain}
 #shopBtn{left:16px}
-#rankBtn{left:16px;top:calc(max(14px,env(safe-area-inset-top)) + 152px)}
 .side span{max-width:64px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:13px}
 .rlist{margin:4px 14px 0;max-height:min(46vh,420px);overflow-y:auto}
 .rrow{display:flex;align-items:center;gap:10px;padding:8px 10px;margin:6px 0;background:#f4e6cf;border-radius:14px;text-align:left;font-weight:900}
@@ -866,17 +908,24 @@ const css = `
 .seg button.on{background:linear-gradient(#f7a982,#e2725b)}
 #loader{background:linear-gradient(#f7c59f,#e8927a 60%,#a98bb8)}
 #loader .lt{text-shadow:0 2px 0 #a0503e}
+.toast{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);background:rgba(74,53,80,.88);color:#fff;font-weight:900;font-size:16px;padding:10px 18px;border-radius:16px;opacity:0;transition:opacity .18s;pointer-events:none}
+.toast.on{opacity:1}
 `;
 const styleEl = document.createElement('style');
-styleEl.textContent = css;
+styleEl.textContent = scopeCss(css, '.' + scope);
 document.head.appendChild(styleEl);
 
 const IMG = {
-  cash: 'assets/ui/icon_cash.png', ant: 'assets/ui/icon_ant.png', speed: 'assets/ui/icon_speed.png', strength: 'assets/ui/icon_strength.png',
-  shop: 'assets/ui/icon_shop.png', trophy: 'assets/ui/icon_trophy.png', world: 'assets/ui/icon_world.png', gear: 'assets/ui/icon_gear.png',
-  coin: 'assets/ui/icon_coin.svg',
-  soldier: 'assets/ui/ant_soldier.png', strong: 'assets/ui/ant_strong.png', golden: 'assets/ui/ant_golden.png',
+  cash: A('assets/ui/icon_cash.png'), ant: A('assets/ui/icon_ant.png'), speed: A('assets/ui/icon_speed.png'), strength: A('assets/ui/icon_strength.png'),
+  shop: A('assets/ui/icon_shop.png'), trophy: A('assets/ui/icon_trophy.png'), world: A('assets/ui/icon_world.png'), gear: A('assets/ui/icon_gear.png'),
+  coin: A('assets/ui/icon_coin.svg'),
+  soldier: A('assets/ui/ant_soldier.png'), strong: A('assets/ui/ant_strong.png'), golden: A('assets/ui/ant_golden.png'),
 };
+// 游戏 UI 挂在**容器里**，不是 document.body（否则会盖住宿主的底栏和弹层）
+const rootEl = document.createElement('div');
+rootEl.className = scope;
+rootEl.style.cssText = 'position:absolute;inset:0;overflow:hidden';
+host.appendChild(rootEl);
 const ui = document.createElement('div');
 ui.id = 'ui';
 ui.innerHTML = `
@@ -888,7 +937,6 @@ ui.innerHTML = `
   </div>
   <div class="wname" id="wname"></div>
   <button class="side" id="shopBtn"><img src="${IMG.shop}" alt=""><span id="shopLbl"></span></button>
-  <button class="side" id="rankBtn"><img src="${IMG.trophy}" alt=""><span id="rankLbl"></span></button>
   <button class="side" id="setBtn" aria-label="settings"><img src="${IMG.gear}" alt=""></button>
   <div id="boost"><img src="${IMG.speed}" alt=""><span id="boostLbl"></span></div>
   <div id="hint"></div>
@@ -903,13 +951,14 @@ ui.innerHTML = `
 <div id="modal" class="modal hidden"><div class="panel" id="panel"></div></div>
 <div id="loader"><div class="spin"></div><div class="lt" data-l="loading"></div><div class="lb"><div class="lf" id="lfill"></div></div></div>
 `;
-document.body.appendChild(ui);
-const $ = (id        ) => document.getElementById(id) ;
+rootEl.appendChild(ui);
+// ★ 只在游戏自己的子树里找：`#money` / `#panel` / `#loader` 这些 id 太通用，
+//   用 document.getElementById 会抓到宿主里同名元素（或抓到上一次挂载残留的那份）。
+const $ = (id) => ui.querySelector('#' + id);
 
 function applyStaticText() {
   ui.querySelectorAll('[data-l]').forEach((el) => { el.textContent = t((el               ).dataset.l          ); });
   $('shopLbl').textContent = t('shop');
-  $('rankLbl').textContent = t('rank');
   $('boostLbl').textContent = t('boost');
   $('hint').textContent = t('tapHint');
   $('wlabel').textContent = t('nextWorld');
@@ -943,7 +992,7 @@ function buyUp(k       ) {
   const lv = S.lv[k];
   if (lv >= UPS[k].max) return false;
   const cost = upCost(k, lv);
-  if (S.money < cost) { openCoins(); return false; } // not enough cash -> coin exchange
+  if (S.money < cost) { notEnough(); return false; } // 钱不够：提示一句，不再弹「买金币」
   S.money -= cost;
   S.lv[k]++;
   if (k === 'workers') syncAnts();
@@ -961,12 +1010,23 @@ ui.querySelectorAll             ('.card').forEach((c) => {
     e.preventDefault();
     unlockAudio();
     const k = c.dataset.up         ;
-    if (!buyUp(k)) { stop(); return; } // short on cash: openCoins() already opened the exchange, no repeat-buy
+    if (!buyUp(k)) { stop(); return; } // 钱不够：notEnough() 已经提示过，别再连点
     stop();
     tm = window.setTimeout(() => { iv = window.setInterval(() => { if (!buyUp(k)) stop(); }, 110); }, 420);
   });
   c.addEventListener('pointerup', stop); c.addEventListener('pointerleave', stop); c.addEventListener('pointercancel', stop);
 });
+
+// 钱不够的提示（原来这里会弹「金币兑换」内购面板）
+let toastTm = 0;
+function notEnough() {
+  let el = ui.querySelector('.toast');
+  if (!el) { el = document.createElement('div'); el.className = 'toast'; ui.appendChild(el); }
+  el.textContent = t('noCash');
+  el.classList.add('on');
+  clearTimeout(toastTm);
+  toastTm = setTimeout(() => el.classList.remove('on'), 1400);
+}
 
 // ---- modals ----
 let modalKind                                                         = '';
@@ -984,81 +1044,10 @@ function renderShop() {
   }).join('') + `</div><button class="bbtn blue big" data-close="1">${t('close')}</button>`;
 }
 
-function renderCoins() {
-  const p = $('panel');
-  const pay = window.gp?.pay;
-  const buyable = !!(pay && pay.available);
-  p.innerHTML = `<div class="phead">${t('coinTitle')}</div>
-    <div class="crate">
-      <img src="${IMG.coin}" alt=""><span class="eq">=</span><img class="cash" src="${IMG.cash}" alt=""><span class="mul">×${String(Math.round(COIN_PACK.cash))}</span>
-    </div>
-    <button class="bbtn big" data-coin="1">${buyable ? (coinBusy ? '…' : t('coinBuy', { n: 1 })) : t('coinUnavailable')}</button>
-    ${coinMsg ? `<div class="cmsg" style="margin-top:8px">${coinMsg}</div>` : ''}
-    <button class="bbtn blue big" data-close="1">${t('close')}</button>`;
-}
-
-// ======================= coins (platform purchases) =======================
-// 1 platform coin = COIN_PACK.cash game cash, paid straight into the bank. Nothing about the
-// purchase is stored: the panel just shows the rate.
-const COIN_PACK = { itemId: 'coin_pack_1', price: 1, cash: 1000 };
-let coinMsg = '';
-let coinBusy = false;
-function applyCoinDelivery() {
-  moneyGain(COIN_PACK.cash);
-  playCueSafe('ui.coin');
-  coinMsg = t('coinOk');
-  save();
-}
-async function checkPendingPurchases() {
-  const pay = window.gp?.pay;
-  if (!pay || !pay.available) return 0;
-  let delivered = 0;
-  try {
-    const r = await pay.pending();
-    if (!r || !r.ok) return 0; // failed query: do nothing now, retry next launch
-    for (const it of r.items) {
-      if (it.itemId !== COIN_PACK.itemId) continue;
-      delivered++;
-      applyCoinDelivery();
-      await pay.ack(it.purchaseId);
-    }
-  } catch { /* offline */ }
-  return delivered;
-}
-// single entry point, opened wherever the player runs out of cash
-function openCoins() {
-  coinMsg = '';
-  openModal('coins');
-  void checkPendingPurchases().then(() => { if (modalKind === 'coins') renderModal(); });
-}
-async function buyCoins() {
-  const pay = window.gp?.pay;
-  if (coinBusy) return;
-  if (!pay || !pay.available) { coinMsg = t('coinUnavailable'); renderModal(); return; }
-  coinBusy = true; coinMsg = ''; renderModal();
-  try {
-    const r = await pay.purchase({ itemId: COIN_PACK.itemId, title: t('coinTitle'), desc: t('coinDesc'), price: COIN_PACK.price });
-    if (r.ok) {
-      await pay.ack(r.purchaseId);
-      // the acked purchase is no longer pending, so this pass only picks up earlier unfinished ones
-      const late = await checkPendingPurchases();
-      if (late === 0) applyCoinDelivery();
-    } else if (r.error === 'need_login') { try { window.gp?.player?.requestLogin(); } catch { /* ignore */ } }
-    else if (r.error !== 'declined') coinMsg = t('coinErr');
-  } catch { coinMsg = t('coinErr'); }
-  coinBusy = false;
-  if (modalKind === 'coins') renderModal();
-  updateHud();
-}
-
 function renderModal() {
   const p = $('panel');
   if (modalKind === 'shop') {
     renderShop();
-  } else if (modalKind === 'coins') {
-    renderCoins();
-  } else if (modalKind === 'rank') {
-    p.innerHTML = renderRank();
   } else if (modalKind === 'settings') {
     const L = getLang();
     p.innerHTML = `<div class="phead">${t('settings')}</div>
@@ -1081,20 +1070,18 @@ function renderModal() {
 $('modal').addEventListener('pointerdown', (e) => {
   unlockAudio();
   const tg = (e.target               ).closest('button')                      ;
-  if (!tg) { if (e.target === $('modal') && (modalKind === 'shop' || modalKind === 'coins' || modalKind === 'settings' || modalKind === 'rank')) closeModal(); return; }
+  if (!tg) { if (e.target === $('modal') && (modalKind === 'shop' || modalKind === 'settings')) closeModal(); return; }
   const d = tg.dataset;
   if (d.close) { resetArmed = false; closeModal(); return; }
-  if (d.login) { try { window.gp?.player?.requestLogin(); } catch { /* ignore */ } return; }
   if (d.buy) {
     const k = d.buy           ;
     const n = S.spec[k];
     const cost = specCost(k, n);
     if (n >= SPECS[k].max) return; // maxed: nothing to buy, nothing to upsell
-    if (S.money < cost) { openCoins(); return; } // not enough cash -> coin exchange
+    if (S.money < cost) { notEnough(); return; }
     S.money -= cost; S.spec[k]++; syncAnts(); playCueSafe('ui.upgrade'); save();
     renderModal(); updateHud(); return;
   }
-  if (d.coin) { void buyCoins(); return; }
   if (d.lang) { S.lang = d.lang        ; setLang(S.lang); save(); renderModal(); return; }
   if (d.music) { S.music = d.music === '1'; applyVolumes(); save(); renderModal(); return; }
   if (d.sfx) { S.sfx = d.sfx === '1'; applyVolumes(); save(); renderModal(); return; }
@@ -1107,61 +1094,14 @@ $('modal').addEventListener('pointerdown', (e) => {
   if (d.next) { nextWorld(); return; }
   if (d.collect) { moneyGain(offlineReward); pendingMoney = 0; playCueSafe('ui.coin'); save(); closeModal(); return; }
 });
-$('shopBtn').addEventListener('pointerdown', () => { unlockAudio(); coinMsg = ''; openModal('shop'); });
-$('rankBtn').addEventListener('pointerdown', () => { unlockAudio(); openRank(); });
+$('shopBtn').addEventListener('pointerdown', () => { unlockAudio(); openModal('shop'); });
 
-// ======================= leaderboard =======================
-// Score = worlds cleared (S.world). Submitted once per world clear, plus once at boot to sync old progress.
-                                                                              
-let rankRows                   = null;
-let rankState                               = 'loading';
-let myBest                                        = null;
-let lastSubmitted = -1;
-const esc = (x        ) => x.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }                          )[c]);
-async function submitProgress() {
-  const p = window.gp?.player;
-  if (!p || S.world <= 0 || S.world <= lastSubmitted) return;
-  lastSubmitted = S.world;
-  try {
-    const r = await p.submitScore(S.world)                                    ;
-    if (r && typeof r.best === 'number') myBest = { best: r.best, rank: Number(r.rank) || 0 };
-    else lastSubmitted = -1; // needLogin / offline: allow a retry on the next clear or panel open
-  } catch { lastSubmitted = -1; }
-}
-async function openRank() {
-  rankState = 'loading';
-  openModal('rank');
-  try {
-    const p = window.gp?.player;
-    if (!p) throw new Error('no player');
-    await p.ready;
-    await submitProgress();
-    const top = await p.topScores(10);
-    rankRows = Array.isArray(top) ? (top             ) : [];
-    rankState = 'ok';
-  } catch { rankState = 'offline'; }
-  if (modalKind === 'rank') renderModal();
-}
-function renderRank() {
-  let body = '';
-  if (rankState === 'loading') body = `<div class="rnote">${t('rankLoading')}</div>`;
-  else if (rankState === 'offline') body = `<div class="rnote">${t('rankOffline')}</div>`;
-  else if (!rankRows || !rankRows.length) body = `<div class="rnote">${t('rankEmpty')}</div>`;
-  else body = `<div class="rlist" data-mp-scroll>` + rankRows.map((r, i) => `<div class="rrow${r.isMe ? ' me' : ''}"><span class="rno">${i + 1}</span>${r.avatar ? `<img class="rav" src="${esc(String(r.avatar))}" alt="">` : '<span class="rav"></span>'}<span class="rname">${esc(String(r.name || t('rankGuest')))}</span><span class="rsc">${t('rankWorlds', { n: r.score })}</span></div>`).join('') + '</div>';
-  const user = window.gp?.player?.user;
-  let mine = '';
-  if (myBest && myBest.rank > 0) mine = t('rankMineRank', { n: myBest.best, r: myBest.rank });
-  else mine = t('rankMine', { n: S.world });
-  const login = !user ? `<button class="bbtn big" data-login="1">${t('rankLogin')}</button>` : '';
-  return `<div class="phead">${t('rankTitle')}</div><div class="msub">${t('rankSub')}</div>${body}<div class="rmine">${mine}</div><div class="btnrow">${login}<button class="bbtn blue big" data-close="1">${t('close')}</button></div>`;
-}
 $('setBtn').addEventListener('pointerdown', () => { unlockAudio(); resetArmed = false; openModal('settings'); });
 
 function nextWorld() {
   S.money += doneReward;
   S.world++;
   S.items = null;
-  void submitProgress();
   buildWorld(S.world, null);
   applyStaticText();
   closeModal();
@@ -1253,12 +1193,14 @@ function playCueSafe(id                                                         
     else void sound.playCue('item.eaten', { eventId });
   } catch { /* ignore */ }
 }
-window.addEventListener('pagehide', () => { save(); void sound?.dispose(); }, { once: true });
+const onPagehide = () => { save(); void sound?.dispose(); };
+window.addEventListener('pagehide', onPagehide);
 
 // ======================= loop =======================
 let last = performance.now();
 let floatAcc = 0, secAcc = 0, saveAcc = 0;
 function frame(now        ) {
+  if (!alive) return;
   const rawDt = Math.min(0.05, (now - last) / 1000);
   last = now;
   let dt = rawDt;
@@ -1297,12 +1239,12 @@ function frame(now        ) {
   ($('hint')               ).style.display = S.hinted || modalKind ? 'none' : '';
   updateHud();
   if (!fx || !fx.render()) renderer.render(scene, camera);
-  requestAnimationFrame(frame);
+  if (alive) requestAnimationFrame(frame);
 }
 
 // ======================= boot =======================
-document.title = 'Ant Boss';
 const display = mountDisplay({
+  host,
   orientation: 'portrait',
   onResize: ({ width, height }                                   ) => { viewW = width; viewH = height; floatsEl.replaceChildren(); fitCamera(); },
 });
@@ -1327,8 +1269,6 @@ window.__gpReady = true;
 lensTree; // registered above
 createLensThreeBridge({ tree: lensTree, THREE, renderer, camera });
 
-// boot sync only for signed-in players (a guest submit would trigger a login prompt at launch)
-window.gp?.player?.ready.then(() => { if (window.gp?.player?.user) return submitProgress(); }).catch(() => { /* offline */ });
 if (hadSave && offlineElapsed > 120 && S.rate > 0) {
   offlineReward = Math.round(S.rate * Math.min(offlineElapsed, 4 * 3600) * 0.4);
   if (offlineReward >= 1) openModal('offline');
@@ -1338,7 +1278,8 @@ if (hadSave && offlineElapsed > 120 && S.rate > 0) {
   const lf = $('lfill')               ;
   const urls = Object.values(IMG);
   let done = 0;
-  const glbEntries = Object.entries(GLB_URLS)                        ;
+  // GLB 的路径也相对 `assets/`，同样要过 A()
+  const glbEntries = Object.entries(GLB_URLS).map(([k, u]) => [k, A(u)]);
   const total = urls.length + 1 + glbEntries.length;
   const tick = () => { done++; lf.style.width = ((done / total) * 100).toFixed(0) + '%'; };
   const gltf = new GLTFLoader();
@@ -1349,7 +1290,8 @@ if (hadSave && offlineElapsed > 120 && S.rate > 0) {
       if (items.some((it) => GLB_URLS[it.kind])) { const hp = items.map((it) => it.hp); buildWorld(S.world, hp); }
     });
   const imgs = urls.map((u) => new Promise      ((res) => { const im = new Image(); im.onload = im.onerror = () => { tick(); res(); }; im.src = u; }));
-  const snd = loadSoundSystem({ manifestUrl: './sound.manifest.json' })
+  // 清单里 `assets/audio/…` 与 `sound.pack` 都是**相对站点根**的 ⇒ baseUrl 取 assetRoot
+  const snd = loadSoundSystem({ manifestUrl: assetRoot + 'assets/sound.manifest.json', baseUrl: assetRoot })
     .then((s) => { sound = s                    ; applyVolumes(); })
     .catch(() => { sound = null; })
     .finally(tick);
@@ -1369,7 +1311,37 @@ if (hadSave && offlineElapsed > 120 && S.rate > 0) {
 })();
 
 last = performance.now();
-requestAnimationFrame(frame);
+if (alive) requestAnimationFrame(frame);
 
 // debug hooks for testing
 window.__ant = { S, get items() { return items; }, ants, buyUp, get boost() { return boost; }, get worldDone() { return worldDone; }, get modal() { return modalKind; }, nextWorld, eatTo, get focus() { return focusIdx; }, setFocus, itemIndexAt, get camera() { return camera; }, get canvas() { return renderer.domElement; }, overlaps: () => { const o           = []; for (let i = 0; i < items.length; i++) for (let j = i + 1; j < items.length; j++) { const a = items[i], b = items[j]; const d = Math.hypot(a.x - b.x, a.z - b.z); if (d < a.radius + b.radius) o.push(a.kind + '/' + b.kind + ' ' + d.toFixed(2) + '<' + (a.radius + b.radius).toFixed(2)); } return o; } };
+
+  // ======================= destroy =======================
+  /**
+   * 卸载。宿主会在切 tab 时调它，所以**每一步都要能单独失败**：
+   * 一个 try 包住全部，前面那步抛了后面就全不执行（症状是「切回来黑屏」）。
+   *
+   * ★ 3D 特有的那一步是 `forceContextLoss()`：只 `dispose()` 不释放上下文的话，
+   *   浏览器有 WebGL context 数量上限（通常 16），切几次之后**新建的上下文直接失败**，
+   *   画面全黑而且**不报错**。
+   */
+  return function destroy() {
+    alive = false;
+    try { save(); } catch (e) { console.warn('[anthill] 存档落盘失败', e); }
+    try { display?.dispose?.(); } catch { /* 已卸 */ }
+    try { window.removeEventListener('pagehide', onPagehide); } catch { /* 已卸 */ }
+    try { sound?.dispose?.(); } catch { /* 已卸 */ }
+    try { fx?.dispose?.(); } catch { /* 已卸 */ }
+    try { lensTree?.dispose?.(); } catch { /* 已卸 */ }
+    try { renderer.dispose(); } catch { /* 已卸 */ }
+    try { renderer.forceContextLoss?.(); } catch { /* 已卸 */ }
+    try { renderer.domElement.remove(); } catch { /* 已卸 */ }
+    try { ui.remove(); } catch { /* 已卸 */ }
+    try { rootEl.remove(); } catch { /* 已卸 */ }
+    try { styleEl.remove(); } catch { /* 已卸 */ }
+    // 调试钩子必须摘干净：留着 `__gpPlayable` 会让下一次挂载「等它就绪」的判据立刻假通过
+    try { delete window.__ant; } catch { /* ignore */ }
+    try { delete window.__gpReady; } catch { /* ignore */ }
+    try { delete window.__gpPlayable; } catch { /* ignore */ }
+  };
+}

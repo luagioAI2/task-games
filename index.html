@@ -9,4 +9,9 @@
     "@makeplay/display": "./runtime/display-1.js"
   }
 }
-</script></head><body><div id="app"></div><script type="module" src="./game.js"></script></body></html>
+</script></head><body><div id="app"></div><script type="module">
+  // 独立网页：不传任何注入项（资源相对文档、存档走平台/内存、容器是 #app、不收费）。
+  // 插件形态的差别全在 plugin.js 里，game.js 自己没有 if(isPlugin) 分支。
+  import { start } from './game.js'
+  start().catch((e) => console.error('[anthill] 启动失败', e))
+</script></body></html>
