@@ -65,6 +65,7 @@
 | --- | --- |
 | `check:registry` | ✓ 四处一致（9 款）—— 修掉 minergirl 的过期哈希后 |
 | `tsc -b --noEmit` / `npm test` | exit 0 / **774 通过（37 文件）** |
+| 假宿主 `plugin-test.cjs`（第 3 层） | ✓ 通过（默认端口 4404）：清单 v1.0.0 · `playCost=20 payout=5 cap=30 rate=undefined` · 宿主 `.btn`/`.panel` 没被改写 · 标题页 500 色 · 教学局不扣票 · 正式局 `500→480` 且只扣一次 · 局内 907 色 · 币 `3→50` · 卸载 canvas 0 + `__game` undefined · 重挂载读回羊毛 4242 · 余额 3 时开局被拦住 · 0×404 / 0 pageerror |
 | `npm run build` | `✓ built in 19.76s`；预览服务的 `index-Bc9lHyjq.js` 与 `dist/` 一致 |
 | e2e 手机 390×844 | 全绿：教学局 50→50 · 正式局 50→30 且 600ms 后仍 30 · 对局 219 色 · 币 3→26 · 切回 110 色 · 羊毛读回 4242 |
 | e2e 平板 834×1112 | 全绿：正式局 50→30 · 对局 148 色 · 币 3→28 · 切回 78 色 · 羊毛读回 4242 |
@@ -84,7 +85,7 @@
 cd E:/plan/test25/task-games/ropeland
 # 改 src/ 或 game.js
 CODEBUDDY_SAFE_DELETE_ENABLED=0 node scripts/build-plugin.mjs
-node scripts/plugin-test.cjs 4455            # 假宿主，先过这一关
+node scripts/plugin-test.cjs                  # 假宿主，先过这一关（默认 4404，改端口用 --port）
 node scripts/check-i18n.mjs                  # 新加的字有没有漏键
 # ⚠️ 改了行为就要升 manifest.version，否则界面说「已是最新」
 node scripts/install-to-host.mjs             # 拷包 + 改 index.json + 重算哈希
@@ -105,6 +106,9 @@ node scripts/install-to-host.mjs             # 拷包 + 改 index.json + 重算�
 2. **`--browse` 会把拿不到的写 0 字节**：12 张 `sheet-*.webp` 全 0。必须按各 anim `manifest.json` 的 `files[]` 逐张重下并**校验 size + sha256**。
 3. **`scaffold.mjs` 的相对 `--dir` 是相对它自己的 CWD**（在 skill 的 `scripts/` 下），会把整个工程建到 `skills/.../scripts/task-games/ropeland` 并自带 git init。**必须给绝对 `--dir`**。（已删掉误建目录）
 4. **`/tmp` 与 Python 看到的 `/tmp` 不是同一个地方**：curl 到 `/tmp/x` 看着成功、之后文件不存在。一律下到工作区内。
+4b. ★ **假宿主端口原本是 4395，和抓奖乐园的独立运行端口撞了** ⇒ 已改成 **4404**（4392/4394/4395/4397/4398/4402/4403 都被占）。
+    另外 `plugin-test.cjs` 只认 **`--port <n>`**，位置参数会被忽略、静默回落到默认值 —— 写成
+    `plugin-test.cjs 4455` 会以为换了端口，其实还在默认那个上。
 
 ## 验收坑（这次真踩到的，全都会「静默」）
 

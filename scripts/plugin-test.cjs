@@ -26,14 +26,18 @@
  *    `replaceChildren()` 会把后来那份清掉，症状是「ready 是 true 但 DOM 不在容器里」。
  *    所以这里每次挂载先建一个自己的 slot div，清理只 `slot.remove()`。
  *
- * 用法：node scripts/plugin-test.cjs [--port 4395]
+ * 用法：node scripts/plugin-test.cjs [--port 4404]
+ *
+ * ⚠️ 端口是 `--port`，**不是位置参数** —— 写 `plugin-test.cjs 4455` 会被忽略，
+ *    静默回落到默认值（这里踩过一次：以为换了端口，其实还在默认那个上）。
+ *    默认 4404：4395 是抓奖乐园的独立运行端口，撞了会 EADDRINUSE。
  */
 const http = require('node:http')
 const fs = require('node:fs')
 const path = require('node:path')
 
 const ROOT = path.resolve(__dirname, '..')
-const PORT = Number(process.argv[process.argv.indexOf('--port') + 1]) || 4395
+const PORT = Number(process.argv[process.argv.indexOf('--port') + 1]) || 4404
 const OUT = path.join(ROOT, 'shots')
 
 const MIME = {
