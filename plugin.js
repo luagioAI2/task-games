@@ -55,7 +55,7 @@ export const manifest = {
   emoji: '⚔️',
   // 底栏格子：2026-10-26 起宿主放宽到 5 字，这里直接用商城名。
   tabLabel: '少女战记',
-  version: '1.0.0',
+  version: '1.0.1',
   minHostApi: NEED_HOST_API,
 
   // ⚠️ 宿主把 `coin` 当**必填**（`describeManifestProblem` 会拒），但本作

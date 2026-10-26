@@ -6,7 +6,7 @@ export const LANG_LABEL                       = { zh: '中文', en: 'English', j
                                    
 
 const zh       = {
-  prism: '无色水晶', prismDesc: '可以代替任意属性的水晶使用', prismShop: '无色水晶商店', prismBuy: '购买', prismOk: '获得 {n} 个无色水晶！', prismUse: '不足部分用无色水晶补 ×{n}', prismHint: '1 金币 = 20 个无色水晶',
+  prism: '无色水晶', prismUse: '不足部分用无色水晶补 ×{n}',
   loading: '加载中', tapStart: '点击开始', adventure: '冒险', characters: '角色', settings: '设置',
   language: '语言', sound: '声音', on: '开', off: '关', close: '关闭', back: '返回',
   team: '编队', teamHint: '按住角色拖到上方队伍位置即可替换，轻点查看详情', locked: '未解锁', unlockAt: '通关第{n}关加入',
@@ -36,7 +36,6 @@ const zh       = {
   rankRow: '第{n}关 · {t}回合', rankBest: '最佳 第{n}关 · 排名 #{r}', rankLogin: '登录后即可登上排行榜', login: '登录', guest: '玩家',
   allClear: '恭喜通关全部关卡！可以继续挑战或培养角色。', tierLabel: '阶段',
   buyTitle: '解锁角色', buyHint: '花平台金币直接解锁，不用等到第{n}关', buy: '购买解锁', buyPrice: '金币',
-  buyOk: '解锁成功！剩余金币 {n}', buyNo: '金币不足，先去攒点金币吧', buyFail: '购买未完成，请稍后重试', buyBusy: '正在处理，请稍等',
   name_mira: '米菈', title0_mira: '晨星少女', title1_mira: '星辉公主',
   name_shizuku: '雫', title0_shizuku: '雨滴少女', title1_shizuku: '雨之巫女',
   name_hina: '日奈', title0_hina: '火花少女', title1_hina: '凤凰舞姬',
@@ -50,7 +49,7 @@ const zh       = {
 };
 
 const en       = {
-  prism: 'Prism Crystal', prismDesc: 'Can replace a crystal of any element', prismShop: 'Prism Crystal Shop', prismBuy: 'Buy', prismOk: 'Got {n} Prism Crystals!', prismUse: 'Prism Crystals cover the rest ×{n}', prismHint: '1 coin = 20 Prism Crystals',
+  prism: 'Prism Crystal', prismUse: 'Prism Crystals cover the rest ×{n}',
   loading: 'Loading', tapStart: 'Tap to start', adventure: 'Adventure', characters: 'Heroines', settings: 'Settings',
   language: 'Language', sound: 'Sound', on: 'On', off: 'Off', close: 'Close', back: 'Back',
   team: 'Team', teamHint: 'Drag a heroine onto a team slot to swap; tap for details', locked: 'Locked', unlockAt: 'Joins after Stage {n}',
@@ -80,7 +79,6 @@ const en       = {
   rankRow: 'Stage {n} · {t} turns', rankBest: 'Best: Stage {n} · Rank #{r}', rankLogin: 'Sign in to join the ranking', login: 'Sign in', guest: 'Player',
   allClear: 'All stages cleared! Keep replaying and growing your heroines.', tierLabel: 'Tier',
   buyTitle: 'Unlock heroine', buyHint: 'Unlock now with platform coins instead of waiting for Stage {n}', buy: 'Unlock', buyPrice: 'coins',
-  buyOk: 'Unlocked! {n} coins left', buyNo: 'Not enough coins yet', buyFail: 'Purchase not completed, try again later', buyBusy: 'Processing, hold on',
   name_mira: 'Mira', title0_mira: 'Morning Star', title1_mira: 'Starlight Princess',
   name_shizuku: 'Shizuku', title0_shizuku: 'Raindrop Girl', title1_shizuku: 'Rain Priestess',
   name_hina: 'Hina', title0_hina: 'Spark Girl', title1_hina: 'Phoenix Dancer',
@@ -94,7 +92,7 @@ const en       = {
 };
 
 const ja       = {
-  prism: '無色クリスタル', prismDesc: 'どの属性のクリスタルの代わりにも使える', prismShop: '無色クリスタルショップ', prismBuy: '購入', prismOk: '無色クリスタルを{n}個獲得！', prismUse: '足りない分を無色クリスタルで補う ×{n}', prismHint: '1コイン = 無色クリスタル20個',
+  prism: '無色クリスタル', prismUse: '足りない分を無色クリスタルで補う ×{n}',
   loading: '読み込み中', tapStart: 'タップでスタート', adventure: '冒険', characters: 'キャラ', settings: '設定',
   language: '言語', sound: 'サウンド', on: 'オン', off: 'オフ', close: '閉じる', back: '戻る',
   team: '編成', teamHint: 'キャラを上の枠にドラッグして入れ替え、タップで詳細', locked: '未解放', unlockAt: 'ステージ{n}クリアで加入',
@@ -124,7 +122,6 @@ const ja       = {
   rankRow: 'ステージ{n} · {t}ターン', rankBest: 'ベスト ステージ{n} · {r}位', rankLogin: 'ログインするとランキングに参加できます', login: 'ログイン', guest: 'プレイヤー',
   allClear: '全ステージクリアおめでとう！引き続き挑戦や育成を楽しもう。', tierLabel: '段階',
   buyTitle: 'キャラ解放', buyHint: 'プラットフォームコインで今すぐ解放（ステージ{n}まで待たない）', buy: '解放する', buyPrice: 'コイン',
-  buyOk: '解放しました！残り{n}コイン', buyNo: 'コインが足りません', buyFail: '購入が完了しませんでした。後でもう一度', buyBusy: '処理中です',
   name_mira: 'ミラ', title0_mira: '明けの星の少女', title1_mira: '星輝の姫',
   name_shizuku: 'シズク', title0_shizuku: '雨粒の少女', title1_shizuku: '雨の巫女',
   name_hina: 'ヒナ', title0_hina: '火花の少女', title1_hina: '鳳凰の舞姫',
