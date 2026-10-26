@@ -1,27 +1,16 @@
-// Platform glue: progress autosave (gp.player.saves), MakePlay coin shop (gp.pay), leaderboard (gp.player).
-                                                              
+// Progress persistence for 跳绳羊群.
+//
+// Standalone (index.html) this uses localStorage. Inside the host plugin the loader
+// installs a bridge on `window.__ropelandStore` (see src/host.js) that routes every read
+// and write through `host.storage`, which is namespaced per plugin. `P` is a plain object
+// the game mutates freely; `saveProgress()` debounces the write.
+//
+// Everything to do with real money, platform login and leaderboards was removed when the
+// game was onboarded — the host has no equivalent, and the plugin contract forbids it.
 
-                           
-       
-               
-                    
-                   
-               
-                                                   
-                        
-                                                                                              
-                                                     
-                                          
-                                                                               
-                                                     
-                                              
-               
-                       
-                                                       
-                                      
- 
+const KEY = "ropeland.progress.v1";
 
-export const SHOP_ITEMS                                  = [
+export const SHOP_ITEMS = [
   { id: "skin_rainbow_wool", price: 12 },
   { id: "theme_snow_ranch", price: 20 },
 ];
@@ -32,160 +21,93 @@ export const UPGRADE_COST = {
   dog: [150, 150], // 0..2 rescues
 };
 
-function defaults()           {
+function defaults() {
   return {
     v: 1, best: 0, bestSheep: 0, bestMult: 1, wool: 0,
     up: { start: 0, bell: 0, dog: 0 },
     tutorialDone: false, recruitTaught: false, latency: 0,
     owned: {}, equipped: { skin: "", theme: "" },
-    grants: [], recent: [], runs: 0, protectNext: false, below: 0, style: "paper",
+    recent: [], runs: 0, protectNext: false, below: 0, style: "paper",
   };
 }
 
-function gpx()      { return (window       ).gp; }
+/** @returns {{ get(s:string):string|null, set(s:string,v:string):void, remove(s:string):void, ready?:Promise<void> }|null} */
+function bridge() {
+  try { return (window).__ropelandStore || null; } catch { return null; }
+}
 
-// ---- Local test fallback: ONLY when the host injected no gp.pay at all. Never charges anything. ----
-export let simConfirmHook                                                                                        = null;
-export function setSimConfirmHook(fn                                                                              ) { simConfirmHook = fn; }
-const simPending                                                                      = [];
-const SIM_PAY = {
-  sim: true,
-  available: true,
-  async purchase(o     ) {
-    const ok = simConfirmHook ? await simConfirmHook(o) : false;
-    return ok ? { ok: true, purchaseId: "sim-" + Date.now() + "-" + Math.floor(Math.random() * 1e6), balance: 0 }
-      : { ok: false, purchaseId: "", error: "declined" };
-  },
-  async pending() { return { ok: true, items: simPending.slice() }; },
-  async ack(id        ) { const i = simPending.findIndex((p) => p.purchaseId === id); if (i >= 0) simPending.splice(i, 1); return { ok: true }; },
-};
-(window       ).__simPay = SIM_PAY;
-export function payApi()      { return gpx()?.pay || SIM_PAY; }
-export function isSimPay()          { return payApi() === SIM_PAY; }
+function readRaw() {
+  const b = bridge();
+  try { return b ? b.get(KEY) : window.localStorage.getItem(KEY); } catch { return null; }
+}
 
-function loadProgress()           {
+function writeRaw(json) {
+  const b = bridge();
+  try { if (b) b.set(KEY, json); else window.localStorage.setItem(KEY, json); } catch { /* full / denied */ }
+}
+
+function loadProgress() {
   const d = defaults();
   try {
-    const raw = gpx()?.player?.saves?.latestSync;
+    const raw = JSON.parse(readRaw() ?? "null");
     if (raw && typeof raw === "object" && raw.v === 1) {
       return {
         ...d, ...raw,
         up: { ...d.up, ...(raw.up || {}) },
         owned: { ...(raw.owned || {}) },
         equipped: { ...d.equipped, ...(raw.equipped || {}) },
-        grants: Array.isArray(raw.grants) ? raw.grants.slice(-300) : [],
+        // `grants` belonged to the old paid-item flow; harmless if a save still carries it.
         recent: Array.isArray(raw.recent) ? raw.recent.slice(-10) : [],
       };
     }
-  } catch { /* fall through */ }
+  } catch { /* corrupt save → fresh defaults */ }
   return d;
 }
 
-export const P           = loadProgress();
+export const P = loadProgress();
 
-export function saveProgress()                   {
-  try {
-    const s = gpx()?.player?.saves;
-    if (!s?.putLatest) return Promise.resolve(false);
-    return s.putLatest(JSON.parse(JSON.stringify(P))).then((r         ) => !!r, () => false);
-  } catch { return Promise.resolve(false); }
+/**
+ * Re-read the save into `P` **in place**.
+ *
+ * `P` is seeded at import time, which is before the host store is installed — inside the
+ * plugin that means the module always starts from defaults. `start()` calls this once the
+ * store is live. Merging in place (rather than reassigning) keeps every importer's
+ * binding valid.
+ */
+export function reloadProgress() {
+  const fresh = loadProgress();
+  for (const k of Object.keys(P)) delete P[k];
+  Object.assign(P, fresh);
 }
 
-// ---------- shop ----------
-export function payAvailable()          {
-  try { return !!payApi().available; } catch { return false; }
+let saveTimer = 0;
+let pendingResolvers = [];
+
+/** Flush pending writes immediately (unmount does this). */
+export function flushProgress() {
+  if (saveTimer) { clearTimeout(saveTimer); saveTimer = 0; }
+  writeRaw(JSON.stringify(P));
+  const rs = pendingResolvers; pendingResolvers = [];
+  for (const r of rs) r(true);
 }
 
-/** Deliver an item for a purchaseId exactly once. Returns true when newly granted. */
-function grant(itemId        , purchaseId        )          {
-  if (P.grants.includes(purchaseId)) return false;
-  if (itemId !== "skin_rainbow_wool" && itemId !== "theme_snow_ranch") return false;
-  P.grants.push(purchaseId);
-  if (P.grants.length > 300) P.grants = P.grants.slice(-300);
-  const already = !!P.owned[itemId];
-  P.owned[itemId] = true;
-  if (!already) {
-    if (itemId === "skin_rainbow_wool") P.equipped.skin = "skin_rainbow_wool";
-    if (itemId === "theme_snow_ranch") P.equipped.theme = "theme_snow_ranch";
-  }
-  return true;
+export function saveProgress() {
+  return new Promise((resolve) => {
+    pendingResolvers.push(resolve);
+    if (saveTimer) clearTimeout(saveTimer);
+    saveTimer = setTimeout(() => {
+      const rs = pendingResolvers; pendingResolvers = [];
+      saveTimer = 0;
+      writeRaw(JSON.stringify(P));
+      for (const r of rs) r(true);
+    }, 120);
+  });
 }
 
-/** Startup pass: pending() → grant (dedupe) → persist → ack. Returns newly granted item ids. */
-export async function recoverPending()                    {
-  const pay = payApi();
-  if (!pay?.pending || !pay.available) return [];
-  let res     ;
-  try { res = await pay.pending(); } catch { return []; }
-  if (!res || res.ok !== true || !Array.isArray(res.items)) return []; // query failed → retry next launch
-  const got           = [];
-  const toAck           = [];
-  for (const it of res.items) {
-    if (!it || !it.purchaseId) continue;
-    if (grant(it.itemId, it.purchaseId)) got.push(it.itemId);
-    if (P.grants.includes(it.purchaseId)) toAck.push(it.purchaseId);
-  }
-  if (toAck.length) {
-    await saveProgress(); // persist dedupe record before ack
-    for (const id of toAck) { try { void pay.ack(id); } catch { /* host retries */ } }
-  }
-  return got;
-}
-
-;                                                                                                                       
-
-export async function buy(itemId        , title        , desc        )                     {
-  const pay = payApi();
-  const item = SHOP_ITEMS.find((i) => i.id === itemId);
-  if (!pay?.purchase || !item) return "unavailable";
-  let r     ;
-  try { r = await pay.purchase({ itemId, title, desc, price: item.price }); } catch { return "fail"; }
-  if (r && r.ok === true && r.purchaseId) {
-    grant(itemId, r.purchaseId);
-    await saveProgress();
-    try { void pay.ack(r.purchaseId); } catch { /* host retries */ }
-    return "ok";
-  }
-  const e = r?.error;
-  if (e === "pending") return "pending";
-  if (e === "busy") return "busy";
-  if (e === "declined") return "declined";
-  if (e === "insufficient") return "insufficient";
-  if (e === "need_login") return "need_login";
-  if (e === "disabled" || e === "offline") return "unavailable";
-  return "fail";
-}
-
-// ---------- leaderboard ----------
-;                                                                                                                                          
-
-export async function topScores()                          {
-  const pl = gpx()?.player;
-  if (!pl?.topScores) return null;
-  try {
-    const gp = gpx();
-    const rows = await gp.player.topScores(10, { includeMutual: true });
-    if (!Array.isArray(rows)) return null;
-    return rows.map((r     , i        ) => ({
-      name: String(r.name ?? ""), avatar: String(r.avatar ?? ""), score: Number(r.score) || 0,
-      isMe: !!r.isMe, rank: r.rank ?? i + 1, mutual: r.mutual === true, userId: r.userId || null,
-    }));
-  } catch { return null; }
-}
-
-;                                                                                                
-export async function submitScore(score        )                         {
-  const pl = gpx()?.player;
-  if (!pl?.submitScore) return { kind: "offline" };
-  try {
-    const gp = gpx(); void pl;
-    const r = await gp.player.submitScore(Math.floor(score));
-    if (r && r.needLogin) return { kind: "login" };
-    if (r && typeof r.best === "number") return { kind: "ok", best: r.best, rank: r.rank };
-    return { kind: "offline" };
-  } catch { return { kind: "offline" }; }
-}
-
-export function weekIndex()         {
-  return Math.floor(Date.now() / (7 * 86400000));
+/** Monday-anchored week number. Only used to rotate the ranch's decorative "featured" sheep. */
+export function weekIndex() {
+  const t = new Date();
+  const day = (t.getDay() + 6) % 7;
+  const monday = new Date(t.getFullYear(), t.getMonth(), t.getDate() - day).getTime();
+  return Math.floor(monday / (7 * 86400000));
 }

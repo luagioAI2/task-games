@@ -5,14 +5,32 @@ import { loadSoundSystem } from "@makeplay/sound";
 import { createPixiFx } from "@makeplay/fx";
 import { t, LANGS, LANG_NAMES, setLangRaw, getLang, detectLang } from "./i18n.js";
                                       
-import {
-  P, saveProgress, SHOP_ITEMS, UPGRADE_COST, payAvailable, recoverPending, buy, topScores, submitScore,
-  weekIndex, isSimPay, setSimConfirmHook,
-} from "./platform.js";
+import { P, saveProgress, flushProgress, reloadProgress, SHOP_ITEMS, UPGRADE_COST } from "./platform.js";
                                                                   
 
 const W      = window;
 const GP      = W.gp;
+
+// ============================================================ asset base
+/** Set once by start(); the host passes `ctx.assetBase` (or `ctx.assetUrl`). */
+let ASSET_BASE = "";
+/** The mount container. */
+let host = null;
+/** HostApi subset — mintGameCoin / pushToast / tone. Null when running standalone. */
+let api = null;
+let chargePlay = null;
+/** Flip to false in destroy(); async continuations check it before touching the scene. */
+let alive = false;
+let destroyed = false;
+/** True while a ticket purchase is in flight, so a double tap can't pay twice. */
+let paying = false;
+
+/** Resolve a package-relative asset path against `ASSET_BASE`. */
+function asset(rel) {
+  // Paths in the game source are written package-relative ("assets/x.webp").
+  const p = rel.replace(/^assets\//, "");
+  return /^assets\/$/.test(ASSET_BASE) ? "assets/" + p : ASSET_BASE + p;
+}
 
 // ============================================================ constants
 const DW = 390, DH = 844; // design stage (portrait)
@@ -41,19 +59,22 @@ const fontMap      = "zcool-kuaile/ZCOOLKuaiLe-Regular.ttf";
 function loadFonts() {
   let used = false;
   try { if (GP?.fonts?.use) { used = true; void GP.fonts.use({ display: fontMap, body: "open-huninn/OpenHuninn.woff2", lang: getLang() }); } } catch { used = false; }
+  // No CDN fallback: the bundled OpenHuninn woff2 lives under assets/_ext/, and the font
+  // stack already ends in system CJK faces. A cross-origin URL would also break the
+  // "0 external requests" rule the host enforces on plugins.
   if (!used) {
     try {
-      const f = new FontFace("MpFontDisplay", "url(https://static.makeplay.ai/fonts/v1/zcool-kuaile/ZCOOLKuaiLe-Regular.ttf)");
+      const url = new URL("_ext/static.makeplay.ai/fonts/v1/open-huninn/OpenHuninn.woff2", new URL(asset(""), document.baseURI)).toString();
+      const f = new FontFace("MpFontDisplay", `url(${url})`);
       f.load().then((ff) => { (document.fonts       ).add(ff); }, () => {});
     } catch { /* */ }
   }
 }
 setLangRaw(detectLang(GP?.player?.user?.locale || navigator.language));
 document.documentElement.lang = getLang() === "zh" ? "zh-CN" : getLang();
-document.title = t("title");
 
 // ============================================================ DOM shell
-const host = document.getElementById("app") ;
+// Created in start() — the module must not touch the document at import time.
 const css = document.createElement("style");
 css.textContent = `
 #ui{position:absolute;inset:0;pointer-events:none;font-family:MpFontDisplay,"ZCOOLKuaiLe","PingFang SC","Hiragino Maru Gothic ProN","Hiragino Sans","Microsoft YaHei","Noto Sans CJK SC",sans-serif;color:#4a3826;user-select:none;-webkit-user-select:none}
@@ -143,27 +164,54 @@ css.textContent = `
 @media (max-height:520px){.panel{padding:8px 14px 10px}.panel h2{font-size:20px;margin:2px 0 4px}.panel p{margin:3px 0;font-size:14px}.title{font-size:28px;margin:0}.row{margin:5px 0;gap:8px}.langs{margin:2px 0 4px}.btn{padding:6px 14px;font-size:16px}.btn.primary{font-size:18px}.tagline,.weeklyNote{display:none}.stat{font-size:14px}}
 .modal .panel{position:relative;top:auto;transform:none;left:auto;right:auto;max-width:360px;margin:16px}
 `;
-document.head.appendChild(css);
-const ui = document.createElement("div"); ui.id = "ui"; host.appendChild(ui);
-const col = document.createElement("div"); col.id = "col"; ui.appendChild(col);
-const hud = document.createElement("div"); hud.id = "hud"; col.appendChild(hud);
-const screenEl = document.createElement("div"); screenEl.style.cssText = "position:absolute;inset:0;pointer-events:none"; col.appendChild(screenEl);
-const toastEl = document.createElement("div"); toastEl.id = "toast"; col.appendChild(toastEl);
-const modalEl = document.createElement("div"); col.appendChild(modalEl);
-const coachEl = document.createElement("div"); coachEl.id = "coach"; coachEl.setAttribute("role", "dialog"); coachEl.setAttribute("aria-live", "polite"); coachEl.style.display = "none"; ui.appendChild(coachEl);
+
+// Test hooks for the e2e scripts. `owner` lets destroy() remove only its own object,
+// so a remount never deletes a newer instance's hooks.
+const owner = Symbol("ropeland");
+let hooksOwner = null;
+const TEST_HOOKS = {
+  get run() { return run; }, get flock() { return flock.length; }, get visitor() { return visitor ? { kind: visitor.kind, state: visitor.state, x: visitor.x, y: visitor.y } : null; },
+  get screen() { return screen; }, get overlay() { return overlay; }, get coach() { return coach; }, coachNext: () => { coachReadyAt = 0; coachNext(); }, P, bpm: () => currentBpm(), startRun, endRun,
+  tapDesign: (x        , y        ) => handleTap(x, y, run ? run.time : 0),
+  stage: () => ({ K, OX, OY }),
+  anims: () => Object.fromEntries(Object.keys(ANIM).map((k) => [k, ANIM[k].frames.length])),
+  turnerFrame: () => { const ta = themeIsSnow() ? ANIM.snowman : ANIM.scarecrow; return ta ? ta.frames.indexOf(turnerSpr.texture) : -1; },
+  sim(sec        , opts                                                                   = {}) {
+    autoplay = { recruit: opts.recruit || (() => true) }       ; (autoplay       ).jitter = opts.jitter || 0;
+    const dt = opts.dt || 1 / 60; let n = Math.round(sec / dt);
+    try { while (n-- > 0 && run && screen === "play" && !run.over) step(dt); } finally { autoplay = null; }
+    return run ? { time: run.time, score: Math.floor(run.score), jumps: run.jumps, sheep: flock.length, bpm: currentBpm(), bells: run.bells, weather: run.weather, segment: run.segment, over: run.over, mult: run.mult } : null;
+  },
+};
+
+/* Every node below is created per mount and torn down by destroy(). */
+let root = null, ui = null, col = null, hud = null, screenEl = null, toastEl = null, coachEl = null;
 let toastTimer = 0;
 function toast(msg        , ms = 2200) {
+  if (!toastEl) return;
   toastEl.textContent = msg; toastEl.style.opacity = "1";
   clearTimeout(toastTimer); toastTimer = setTimeout(() => { toastEl.style.opacity = "0"; }, ms)       ;
 }
 function esc(s        ) { return s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }       )[c]); }
-const COIN = `<img class="coin" src="assets/ui/icon_coin_selected.svg" alt="">`;
 const BELL_SVG = (on         ) => `<svg class="bell" viewBox="0 0 26 28" aria-hidden="true"><path d="M13 2c1.2 0 2 .9 2 2v.6c4 1 6.5 4.6 6.5 9v5l2.5 3.4H2l2.5-3.4v-5c0-4.4 2.5-8 6.5-9V4c0-1.1.8-2 2-2z" fill="${on ? "#ffcf3a" : "#d9cdb3"}" stroke="${on ? "#c98f12" : "#b5a888"}" stroke-width="1.5"/><circle cx="13" cy="24.5" r="2.6" fill="${on ? "#c98f12" : "#b5a888"}"/></svg>`;
 
 // loading screen (shown first; __gpReady is set once it's painted)
-const loadingEl = document.createElement("div"); loadingEl.id = "loading";
-loadingEl.innerHTML = `<div class="hop"></div><div style="margin-top:18px;font-size:20px">${esc(t("loading"))}</div><div class="bar"><div class="fill"></div></div>`;
-col.appendChild(loadingEl);
+/** Built in start(); the host measures the container before anything is appended. */
+function buildShell() {
+  root = document.createElement("div");
+  root.className = "rp-root";
+  root.style.cssText = "position:absolute;inset:0;overflow:hidden";
+  host.appendChild(root);
+  document.head.appendChild(css);
+  ui = document.createElement("div"); ui.id = "ui"; root.appendChild(ui);
+  col = document.createElement("div"); col.id = "col"; ui.appendChild(col);
+  hud = document.createElement("div"); hud.id = "hud"; col.appendChild(hud);
+  screenEl = document.createElement("div"); screenEl.style.cssText = "position:absolute;inset:0;pointer-events:none"; col.appendChild(screenEl);
+  toastEl = document.createElement("div"); toastEl.id = "toast"; col.appendChild(toastEl);
+  coachEl = document.createElement("div"); coachEl.id = "coach"; coachEl.setAttribute("role", "dialog"); coachEl.setAttribute("aria-live", "polite"); coachEl.style.display = "none"; ui.appendChild(coachEl);
+}
+// loading screen (shown first; built in start())
+let loadingEl = null;
 
 // ============================================================ pixi
 const app = new PIXI.Application();
@@ -360,12 +408,12 @@ const SHEEP_ANIM_K = 512 / 353; // static sheep.png is 512 wide; the animated sh
 async function loadAnims(tick            , addTotal                     ) {
   const mans                      = {};
   await Promise.all(Object.keys(ANIM_PACKS).map(async (k) => {
-    try { const r = await fetch(`assets/${ANIM_PACKS[k].dir}/manifest.json`); mans[k] = await r.json(); addTotal(mans[k].pages.length); } catch { /* static fallback */ }
+    try { const r = await fetch(asset(`assets/${ANIM_PACKS[k].dir}/manifest.json`)); mans[k] = await r.json(); addTotal(mans[k].pages.length); } catch { /* static fallback */ }
   }));
   await Promise.all(Object.keys(mans).map(async (k) => {
     const m = mans[k], dir = ANIM_PACKS[k].dir;
     try {
-      const pages                 = await Promise.all(m.pages.map(async (p        ) => { const tx = await PIXI.Assets.load(`assets/${dir}/${p}`); tick(); return tx; }));
+      const pages                 = await Promise.all(m.pages.map(async (p        ) => { const tx = await PIXI.Assets.load(asset(`assets/${dir}/${p}`)); tick(); return tx; }));
       const { w, h, count, cols, rows } = m.frame; const per = cols * rows;
       const frames                 = [];
       for (let i = 0; i < count; i++) {
@@ -458,7 +506,7 @@ let soundUnlocked = false;
 let musicOn = false;
 const ambIds                                = { wind: null, rain: null };
 async function initSound() {
-  try { sound = await loadSoundSystem({ manifestUrl: "./sound.manifest.json" }); } catch { sound = null; }
+  try { sound = await loadSoundSystem({ manifestUrl: asset("sound.manifest.json") }); } catch { sound = null; }
 }
 async function unlockAudio() {
   if (soundUnlocked || !sound) return;
@@ -527,6 +575,16 @@ let overlay                                                                    =
 let lastResult      = null;
 let autoplay                                           = null;
 
+/**
+ * Monday-anchored week number, so the ranch's "featured sheep" rotates on the same day
+ * everywhere (a plain floor(now / week) rotates mid-week depending on the epoch).
+ */
+function weekIndex() {
+  const d = new Date();
+  const day = (d.getDay() + 6) % 7;
+  const monday = new Date(d.getFullYear(), d.getMonth(), d.getDate() - day).getTime();
+  return Math.floor(monday / (7 * 86400000));
+}
 function weeklyKind()       { const ks         = ["gold", "lamb", "black", "bell"]; return ks[weekIndex() % 4]; }
 
 function startingSheep() { return 1 + P.up.start; }
@@ -562,6 +620,15 @@ function clearFlock() {
 }
 
 function startRun(opts                                          = {}) {
+  // Tutorial and latency-calibration runs are not real rounds — never charge for those.
+  if (!opts.tutorial && !opts.calib && chargePlay) {
+    if (paying) return;
+    paying = true;
+    Promise.resolve(chargePlay())
+      .then((ok) => { paying = false; if (ok !== false) startRun({ ...opts, charged: true }); })
+      .catch(() => { paying = false; });
+    return;
+  }
   const t0 = performance.now();
   clearFlock();
   coach = null; pendingCoach = null;
@@ -709,7 +776,9 @@ function pickKind()       {
   if (run.jumps >= 30) pool.push(["lamb", 2.5]);
   if (run.jumps >= 80) pool.push(["gold", 2.2]);
   if (run.jumps >= 130) { pool.push(["black", 2]); pool.push(["bell", run.bells < run.maxBells ? 1.2 : 0.4]); }
-  for (const p of pool) if (p[0] === run.weekly && p[0] !== "normal") p[1] *= 1.6; // weekly featured sheep
+  // Featured sheep only boosts a kind that is actually unlocked — otherwise "this week's
+  // sheep" is a sheep that cannot appear yet (the title used to advertise exactly that).
+  if (pool.some((p) => p[0] === run.weekly)) for (const p of pool) if (p[0] === run.weekly) p[1] *= 1.6;
   let tot = 0; for (const p of pool) tot += p[1];
   let r = Math.random() * tot;
   for (const p of pool) { r -= p[1]; if (r <= 0) return p[0]; }
@@ -812,15 +881,13 @@ function endRun() {
   P.bestSheep = Math.max(P.bestSheep, r.peakSheep);
   P.bestMult = Math.max(P.bestMult, r.peakMult);
   void saveProgress();
-  lastResult = { score, prevBest, newBest, jumps: r.jumps, peakSheep: r.peakSheep, peakMult: r.peakMult, wool: woolGain, submit: "pending"          , sub: null                        , goldRecruits: r.goldRecruits, goldPassed: r.goldPassed };
-  setTimeout(() => { screen = "results"; overlay = ""; syncAmbience(); renderUI(); }, 700);
-  // submit exactly once per real run
-  if (!r.submitted) {
-    r.submitted = true;
-    W.__submitCount = (W.__submitCount || 0) + 1;
-    const res = lastResult;
-    submitScore(score).then((o) => { res.sub = o; res.submit = o.kind; if (screen === "results") renderUI(); });
+  lastResult = { score, prevBest, newBest, jumps: r.jumps, peakSheep: r.peakSheep, peakMult: r.peakMult, wool: woolGain, goldRecruits: r.goldRecruits, goldPassed: r.goldPassed };
+  // hand the run's earnings to the host: wool is a game coin, convertible to vouchers.
+  const host = opts.host;
+  if (host && typeof host.mintGameCoin === "function" && woolGain > 0) {
+    void Promise.resolve(host.mintGameCoin(woolGain, t("woolEarned"))).catch(() => {});
   }
+  setTimeout(() => { screen = "results"; overlay = ""; syncAmbience(); renderUI(); }, 700);
 }
 
 // ============================================================ tutorial
@@ -1267,7 +1334,7 @@ function buildHud() {
   <button class="btn" id="pauseBtn"></button>
   <div id="meter" role="meter" aria-valuemin="60" aria-valuemax="180"><div id="meterIn"><div id="meterCover"></div><div id="meterMark"></div></div></div>
   <div id="meterLbl"></div>
-  <button class="btn" id="dogBtn"><img src="assets/sprites/dog.png" alt=""><span id="dogTxt"></span></button>
+  <button class="btn" id="dogBtn"><img src="${asset("assets/sprites/dog.webp")}" alt=""><span id="dogTxt"></span></button>
   <div id="info"></div>
   <div id="tut" style="display:none"></div>`;
   for (const id of ["score", "mult", "bells", "pauseBtn", "meter", "meterCover", "meterMark", "meterLbl", "dogBtn", "dogTxt", "info", "tut"]) H[id] = document.getElementById(id) ;
@@ -1351,8 +1418,6 @@ function act(a        , el             ) {
     case "start": if (!P.tutorialDone) startRun({ tutorial: true }); else startRun(); break;
     case "restart": startRun(); break;
     case "ranch": overlay = "ranch"; renderUI(); break;
-    case "shop": overlay = "shop"; renderUI(); break;
-    case "lb": overlay = "lb"; openBoard(); break;
     case "help": overlay = "help"; renderUI(); break;
     case "close": overlay = ""; renderUI(); break;
     case "menu": run = null; clearFlock(); screen = "title"; overlay = ""; syncAmbience(); renderUI(); refreshHud(); break;
@@ -1363,26 +1428,19 @@ function act(a        , el             ) {
     case "calReset": P.latency = 0; void saveProgress(); renderUI(); break;
     case "tutGo": startRun(); break;
     case "up": upgrade(el.dataset.k       ); break;
-    case "buy": void doBuy(el.dataset.item          , el                     ); break;
+    case "buy": doBuy(el.dataset.item          ); renderUI(); break;
     case "equip": equip(el.dataset.item          ); break;
     case "style": P.style = el.dataset.s       ; applyStyle(); void saveProgress(); renderUI(); break;
-    case "retryLb": openBoard(); break;
-    case "login": try { GP?.player?.requestLogin?.(); } catch { /* */ } break;
-    case "profile": openProfile(el.dataset.uid || ""); break;
   }
 }
 
 function renderUI() {
-  modalEl.innerHTML = simModal ? simModalHtml() : "";
-  if (simModal) bind(modalEl);
   refreshHud(true);
   let h = "";
   if (screen === "title" && !overlay) h = titleHtml();
   else if (screen === "pause" && !overlay) h = pauseHtml();
   else if (screen === "results" && !overlay) h = resultsHtml();
   if (overlay === "ranch") h = ranchHtml();
-  else if (overlay === "shop") h = shopHtml();
-  else if (overlay === "lb") h = lbHtml();
   else if (overlay === "help") h = helpHtml();
   else if (overlay === "tut-done") h = `<div class="panel" data-mp-scroll><h2>${esc(t("tutDone"))}</h2><p>${esc(t("tutDoneSub"))}</p><div class="row"><button class="btn primary" data-act="tutGo">${esc(t("tutGo"))}</button></div><div class="row"><button class="btn blue" data-act="calib">${esc(t("calibrate"))}</button></div></div>`;
   else if (overlay === "calib-done") h = `<div class="panel" data-mp-scroll><h2>${esc(t("calTitle"))}</h2><p>${esc(t("calDone", { n: P.latency }))}</p><div class="row"><button class="btn primary" data-act="menu">${esc(t("menu"))}</button><button class="btn" data-act="calib">${esc(t("retry"))}</button></div></div>`;
@@ -1392,15 +1450,13 @@ function renderUI() {
 }
 
 function titleHtml() {
-  const shop = payAvailable() ? `<button class="btn peach" data-act="shop">${COIN}${esc(t("shop"))}</button>` : "";
   return `<div class="panel" style="background:rgba(255,248,232,.95)">
   ${langChips()}
   <div class="title">${esc(t("title"))}</div>
   <p class="tagline">${esc(t("tagline"))}</p>
   <div><span class="stat">${esc(t("best"))} <b>${P.best}</b></span><span class="stat">${esc(t("bestSheep"))} <b>${P.bestSheep}</b></span><span class="stat">${esc(t("wool"))} <b>${P.wool}</b></span></div>
-  <p class="note weeklyNote">${esc(t("weekly"))}：${esc(t("s_" + weeklyKind()))}</p>
   <div class="row"><button class="btn primary" data-act="start" style="min-width:200px">${esc(t("start"))}</button></div>
-  <div class="row"><button class="btn mint" data-act="ranch">${esc(t("ranch"))}</button>${shop}<button class="btn blue" data-act="lb">${esc(t("leaderboard"))}</button><button class="btn" data-act="help">${esc(t("help"))}</button></div>
+  <div class="row"><button class="btn mint" data-act="ranch">${esc(t("ranch"))}</button><button class="btn" data-act="help">${esc(t("help"))}</button></div>
   </div>`;
 }
 function pauseHtml() {
@@ -1416,20 +1472,13 @@ function resultsHtml() {
   const gap = Math.max(0, (R.prevBest - R.score) / target * 100);
   const hot = !R.newBest && gap <= 5 && R.prevBest > 0;
   let msg = R.newBest ? (R.prevBest > 0 ? t("beatBest") : t("newBest")) : hot ? t("closeToBest", { p: gap.toFixed(1) }) : t("toBest", { p: gap.toFixed(0) });
-  let sub = "";
-  if (R.submit === "pending") sub = t("submitting");
-  else if (R.submit === "ok") sub = t("submitted", { best: R.sub.best, rank: R.sub.rank ?? "-" });
-  else if (R.submit === "login") sub = t("submitLogin");
-  else sub = t("submitFail");
-  const shop = payAvailable() ? `<button class="btn peach" data-act="shop">${COIN}${esc(t("themeEntry"))}</button>` : "";
   return `<div class="panel" data-mp-scroll><h2>${esc(t("results"))}</h2>
   <div style="font-size:40px;color:#5a3e22">${R.score}</div>
   <div class="prog ${hot || R.newBest ? "hot" : ""}" role="progressbar" aria-valuenow="${Math.round(pct)}" aria-valuemin="0" aria-valuemax="100"><div class="f" style="width:${R.newBest ? 100 : pct}%"></div></div>
   <p class="${hot || R.newBest ? "hotTxt" : ""}">${esc(msg)} · ${esc(t("best"))} ${Math.max(P.best, R.score)}</p>
   <div><span class="stat">${esc(t("jumps"))} <b>${R.jumps}</b></span><span class="stat">${esc(t("peakSheep"))} <b>${R.peakSheep}</b></span><span class="stat">${esc(t("peakMult"))} <b>×${R.peakMult.toFixed(1)}</b></span><span class="stat">${esc(t("woolEarned"))} <b>+${R.wool}</b></span></div>
-  <p class="note" id="subTxt">${esc(sub)}</p>
   <div class="row"><button class="btn primary" data-act="restart" style="min-width:220px;min-height:64px">${esc(t("restart"))}</button></div>
-  <div class="row"><button class="btn blue" data-act="lb">${esc(t("leaderboard"))}</button><button class="btn mint" data-act="ranch">${esc(t("ranch"))}</button>${shop}<button class="btn" data-act="menu">${esc(t("menu"))}</button></div></div>`;
+  <div class="row"><button class="btn mint" data-act="ranch">${esc(t("ranch"))}</button><button class="btn" data-act="menu">${esc(t("menu"))}</button></div></div>`;
 }
 function ranchHtml() {
   const lv = P.up;
@@ -1439,14 +1488,16 @@ function ranchHtml() {
     return `<div class="up"><div class="tx">${esc(label)} <b>${esc(value)}</b><br><span class="note">${esc(t("level", { n: level }))}</span></div>
     ${maxed ? `<span class="note">${esc(t("max"))}</span>` : `<button class="btn mint" data-act="up" data-k="${k}" ${P.wool < cost ? "disabled" : ""} aria-label="${esc(t("buy") + " " + label)}">${esc(t("costWool", { n: cost }))}</button>`}</div>`;
   };
-  let gal = ""; for (let i = 0; i < Math.min(30, P.bestSheep); i++) gal += `<img src="assets/sprites/sheep.png" alt="">`;
+  let gal = ""; for (let i = 0; i < Math.min(30, P.bestSheep); i++) gal += `<img src="${asset("assets/sprites/sheep.webp")}" alt="">`;
   const wardrobe = SHOP_ITEMS.map((it) => {
     const owned = !!P.owned[it.id];
     const on = it.id === "skin_rainbow_wool" ? P.equipped.skin === it.id : P.equipped.theme === it.id;
-    return `<div class="up"><div class="tx">${esc(t("item_" + it.id))}</div>${owned ? `<button class="btn ${on ? "" : "blue"}" data-act="equip" data-item="${it.id}" aria-pressed="${on}">${esc(on ? t("unequip") : t("equip"))}</button>` : `<span class="note">${esc(t("locked"))}</span>`}</div>`;
+    const label = esc(t("item_" + it.id));
+    if (owned) return `<div class="up"><div class="tx">${label}</div><button class="btn ${on ? "" : "blue"}" data-act="equip" data-item="${it.id}" aria-pressed="${on}">${esc(on ? t("unequip") : t("equip"))}</button></div>`;
+    const can = P.wool >= it.price;
+    return `<div class="up"><div class="tx">${label}<br><span class="note">${esc(t("costWool", { n: it.price }))}</span></div><button class="btn mint" data-act="buy" data-item="${it.id}" ${can ? "" : "disabled"}>${esc(can ? t("buyBtn") : t("locked"))}</button></div>`;
   }).join("");
   const styles = (["paper", "dusk", "collage"]         ).map((s) => `<button class="lang" data-act="style" data-s="${s}" aria-pressed="${P.style === s}">${esc(t("style_" + s))}</button>`).join("");
-  const shop = payAvailable() ? `<button class="btn peach" data-act="shop">${COIN}${esc(t("shop"))}</button>` : "";
   return `<div class="panel" data-mp-scroll><h2>${esc(t("ranchTitle"))}</h2><p>${esc(t("wool"))} <b>${P.wool}</b></p>
   ${upRow("start", t("up_start"), lv.start, 4, String(1 + lv.start))}
   ${upRow("bell", t("up_bell"), lv.bell, 1, String(3 + lv.bell))}
@@ -1454,7 +1505,7 @@ function ranchHtml() {
   <p class="note">${esc(t("gallery"))} · ${P.bestSheep}</p><div class="gallery">${gal}</div>
   <p style="margin-top:12px">${esc(t("artStyle"))}</p><div class="langs">${styles}</div>
   <p style="margin-top:12px">${esc(t("wardrobe"))}</p>${wardrobe}
-  <div class="row">${shop}<button class="btn" data-act="close">${esc(t("back"))}</button></div></div>`;
+  <div class="row"><button class="btn" data-act="close">${esc(t("back"))}</button></div></div>`;
 }
 function upgrade(k                          ) {
   const max = k === "start" ? 4 : k === "bell" ? 1 : 2;
@@ -1476,82 +1527,23 @@ function equip(id        ) {
   renderUI();
 }
 
-// ---------------- shop
-let buying = "";
-let simModal                                                                          = null;
-setSimConfirmHook((o) => new Promise         ((res) => { simModal = { title: o.title, price: o.price, resolve: res }; renderUI(); }));
-function simModalHtml() {
-  if (!simModal) return "";
-  return `<div class="modal"><div class="panel"><h2>${esc(simModal.title)}</h2><p>${COIN}${simModal.price}</p><p class="sim">${esc(t("simNote"))}</p>
-  <div class="row"><button class="btn primary" data-act="simOk">${esc(t("confirm"))}</button><button class="btn" data-act="simNo">${esc(t("cancel"))}</button></div></div></div>`;
+// ---------------- wardrobe (paid with in-game wool, the only repeatable wool sink)
+/** Buy an appearance item with wool. Returns true when the purchase went through. */
+function doBuy(id        ) {
+  const it = SHOP_ITEMS.find((x) => x.id === id);
+  if (!it || P.owned[id]) return false;
+  if (P.wool < it.price) { toast(t("notEnough")); return false; }
+  P.wool -= it.price;
+  P.owned[id] = true;
+  if (id === "skin_rainbow_wool") P.equipped.skin = id;
+  else P.equipped.theme = id;
+  sfx("unlock");
+  applyTheme();
+  for (const s of flock) s.refreshTint();
+  toast(t("buyOk"));
+  void saveProgress();
+  return true;
 }
-modalEl.addEventListener("click", (e) => {
-  const b = (e.target               ).closest("[data-act]")                      ;
-  if (!b || !simModal) return;
-  const m = simModal;
-  if (b.dataset.act === "simOk") { simModal = null; m.resolve(true); }
-  if (b.dataset.act === "simNo") { simModal = null; m.resolve(false); }
-  renderUI();
-});
-function shopHtml() {
-  if (!payAvailable()) return `<div class="panel" data-mp-scroll><h2>${esc(t("shopTitle"))}</h2><p>${esc(t("shopUnavailable"))}</p><div class="row"><button class="btn" data-act="close">${esc(t("back"))}</button></div></div>`;
-  const items = SHOP_ITEMS.map((it) => {
-    const owned = !!P.owned[it.id];
-    const sw = it.id === "skin_rainbow_wool" ? "background:linear-gradient(135deg,#ff9aa2,#ffd65a,#a8e6a3,#a9d8f5,#c8a8f0)" : "background:linear-gradient(180deg,#b9dcf2,#ffffff)";
-    const btn = owned ? `<span class="note">${esc(t("owned"))}</span>`
-      : `<button class="btn primary" data-act="buy" data-item="${it.id}" ${buying ? "disabled" : ""} aria-label="${esc(t("item_" + it.id) + " " + t("priceAria", { n: it.price }))}">${buying === it.id ? esc(t("buying")) : COIN + it.price}</button>`;
-    return `<div class="item"><div class="sw" style="${sw}"></div><div class="tx"><b>${esc(t("item_" + it.id))}</b>${esc(t("item_" + it.id + "_d"))}</div>${btn}</div>`;
-  }).join("");
-  const sim = isSimPay() ? `<p class="sim">${esc(t("simNote"))}</p>` : "";
-  return `<div class="panel" data-mp-scroll><h2>${esc(t("shopTitle"))}</h2><p class="note">${esc(t("shopNote"))}</p>${sim}${items}<div class="row"><button class="btn" data-act="close">${esc(t("back"))}</button></div></div>`;
-}
-async function doBuy(id        , el                   ) {
-  if (buying || P.owned[id]) return;
-  sfx("ui.click");
-  buying = id; renderUI();
-  const res = await buy(id, t("item_" + id), t("item_" + id + "_d"));
-  buying = "";
-  W.__lastBuy = res;
-  if (res === "ok") { toast(t("buyOk")); sfx("unlock"); applyTheme(); for (const s of flock) s.refreshTint(); }
-  else if (res === "pending") toast(t("buyPending"), 3200);
-  else if (res === "busy") toast(t("buyBusy"));
-  else if (res === "unavailable") toast(t("shopUnavailable"));
-  else if (res === "fail") toast(t("buyFail"));
-  renderUI();
-  void el;
-}
-
-// ---------------- leaderboard
-let board                                                       = { state: "loading", rows: [] };
-async function openBoard() {
-  board = { state: "loading", rows: [] }; renderUI();
-  const rows = await topScores();
-  board = rows ? { state: "ok", rows } : { state: "error", rows: [] };
-  W.__board = board;
-  if (overlay === "lb") renderUI();
-}
-function lbHtml() {
-  let body = "";
-  if (board.state === "loading") body = `<p>${esc(t("lbLoading"))}</p>`;
-  else if (board.state === "error") body = `<p>${esc(t("lbError"))}</p><div class="row"><button class="btn blue" data-act="retryLb">${esc(t("retry"))}</button></div>`;
-  else if (!board.rows.length) body = `<p>${esc(t("lbEmpty"))}</p><div class="row"><button class="btn primary" data-act="restart">${esc(t("playNow"))}</button></div>`;
-  else {
-    const canProfile = !!GP?.player?.profileAvailable;
-    body = `<ul class="lb">${board.rows.map((r) => {
-      const inner = `<img class="av" src="${esc(r.avatar)}" alt="" onerror="this.style.visibility='hidden'"><span class="nm">${esc(r.name)}${r.isMe ? `<span class="badge">${esc(t("me"))}</span>` : ""}${r.mutual ? `<span class="badge">${esc(t("mutual"))}</span>` : ""}</span>`;
-      const who = r.userId && canProfile ? `<button class="who" data-act="profile" data-uid="${esc(r.userId)}" aria-label="${esc(r.name + " · " + t("profileAria"))}" title="${esc(t("profileAria"))}">${inner}</button>` : `<span class="who" style="display:flex;align-items:center;gap:8px;flex:1;overflow:hidden">${inner}</span>`;
-      return `<li class="${r.isMe ? "me" : ""}"><span class="rk">#${r.rank}</span>${who}<b>${r.score}</b></li>`;
-    }).join("")}</ul>`;
-  }
-  const guest = !GP?.player?.user ? `<p class="note">${esc(t("guestHint"))}</p><div class="row"><button class="btn" data-act="login">${esc(t("login"))}</button></div>` : "";
-  return `<div class="panel" data-mp-scroll><h2>${esc(t("lbTitle"))}</h2>${body}${guest}<div class="row"><button class="btn" data-act="close">${esc(t("back"))}</button></div></div>`;
-}
-function openProfile(uid        ) {
-  if (!uid || !GP?.player?.openProfile) return;
-  try { GP.player.openProfile(uid).then((o     ) => { if (o && o.ok === false) toast(t("profileFail")); }, () => toast(t("profileFail"))); } catch { toast(t("profileFail")); }
-}
-try { GP?.player?.onChange?.(() => { if (overlay === "lb") void openBoard(); }); } catch { /* */ }
-window.addEventListener("focus", () => { if (overlay === "lb") void openBoard(); });
 
 function helpHtml() {
   return `<div class="panel" data-mp-scroll>${langChips()}<h2>${esc(t("helpTitle"))}</h2>
@@ -1584,24 +1576,60 @@ function onKey(e               ) {
 }
 
 // ============================================================ boot
+/**
+ * Boot the game inside `o.mountTo`.
+ *
+ * Everything that used to run at module top level (document access, listeners, the
+ * PIXI.Application) happens here instead — a plugin module is imported onto the host's
+ * page and must never assume it owns it.
+ *
+ * @param {{
+ *   mountTo: HTMLElement,
+ *   assetBase: string,                                     // "assets/" or an absolute/blob URL ending in "/"
+ *   host?: object|null,                                    // storage / mintGameCoin / pushToast / tone
+ *   chargePlay?: (() => Promise<boolean>|boolean)|null,     // false ⇒ the round never starts
+ * }} o
+ */
+export async function start(o) {
+  if (!o || !o.mountTo) throw new Error("ropeland: mountTo is required");
+  host = o.mountTo;
+  ASSET_BASE = o.assetBase ?? "assets/";
+  chargePlay = o.chargePlay ?? null;
+  api = o.host ?? null;
+  alive = true; destroyed = false; paying = false;
+  // The store is live by now (plugin.js installs it before calling start), so re-read.
+  reloadProgress();
+  try { W.gp ??= { playCue: id => api?.tone?.(id) }; } catch { /* */ }
+  buildShell();
+  loadingEl = document.createElement("div"); loadingEl.id = "loading";
+  loadingEl.innerHTML = `<div class="hop"></div><div style="margin-top:18px;font-size:20px">${esc(t("loading"))}</div><div class="bar"><div class="fill"></div></div>`;
+  col.appendChild(loadingEl);
+  await boot();
+  if (!alive) return;
+  hooksOwner = owner;
+  W.__game = TEST_HOOKS;
+  W.__gpReady = true;
+  return destroy;
+}
+
 async function boot() {
   await app.init({ resizeTo: host, autoDensity: true, antialias: true, backgroundColor: 0x8fd0f0, resolution: Math.min(2, window.devicePixelRatio || 1) });
-  host.insertBefore(app.canvas                     , ui);
+  if (!alive) return;
+  host.appendChild(app.canvas                     );
   (app.canvas                     ).style.touchAction = "none";
-  display = mountDisplay({ orientation: "portrait", onResize: (info     ) => relayout(info.width, info.height) });
+  display = mountDisplay({ orientation: "portrait", host, onResize: (info     ) => relayout(info.width, info.height) });
   display.attachPixi(app);
   relayout(display.info.width, display.info.height);
   camRoot.addChild(world);
   app.stage.addChild(camRoot);
   app.ticker.add(frame);
   screen = "loading";
-  W.__gpReady = true; // loading screen is painted
   loadFonts();
   void initSound();
   // load assets with real progress
   const urls                         = {
-    meadow: "assets/bg/meadow.jpg", snow: "assets/bg/snow.jpg", sheep: "assets/sprites/sheep.png",
-    scarecrow: "assets/sprites/scarecrow.png", snowman: "assets/sprites/snowman.png", windmill: "assets/sprites/windmill.png",
+    meadow: "assets/bg/meadow.webp", snow: "assets/bg/snow.webp", sheep: "assets/sprites/sheep.webp",
+    scarecrow: "assets/sprites/scarecrow.webp", snowman: "assets/sprites/snowman.webp", windmill: "assets/sprites/windmill.webp",
   };
   const keys = Object.keys(urls);
   const fill = loadingEl.querySelector(".fill")               ;
@@ -1609,46 +1637,45 @@ async function boot() {
   const tick = () => { done++; fill.style.width = Math.min(100, done / total * 100) + "%"; };
   await Promise.all([
     ...keys.map(async (k) => {
-      try { TEX[k] = await PIXI.Assets.load(urls[k]); } catch { TEX[k] = PIXI.Texture.WHITE; }
+      try { TEX[k] = await PIXI.Assets.load(asset(urls[k])); } catch { TEX[k] = PIXI.Texture.WHITE; }
       tick();
     }),
     loadAnims(tick, (n) => { total += n - 1; }),
   ]);
+  if (!alive) return;
   assetsReady = true;
   setupScene();
   relayout(VW, VH);
   try { fx = await createPixiFx({ PIXI, app, world: fxLayer, referenceSpan: SHEEP_W, photosafe: "auto", onImpulse: (i     ) => { camRoot.position.set(i.offsetX || 0, i.offsetY || 0); camRoot.pivot.set(VW / 2, VH / 2); camRoot.position.x += VW / 2; camRoot.position.y += VH / 2; camRoot.rotation = i.roll || 0; } }); } catch (e) { fx = null; }
+  if (!alive) return;
   loadingEl.remove();
   screen = "title";
   renderUI();
   (app.canvas                     ).addEventListener("pointerdown", onPointerDown);
   window.addEventListener("keydown", onKey);
   W.__gpPlayable = true;
-  // player identity → language (manual choice wins)
-  try {
-    GP?.player?.ready?.then((r     ) => { if (!manualLang && r?.user?.locale) applyLang(detectLang(r.user.locale)); });
-  } catch { /* */ }
-  // startup: recover paid-but-undelivered purchases
-  recoverPending().then((got) => {
-    W.__recovered = got;
-    if (got.length) { toast(t("recovered", { items: got.map((g) => t("item_" + g)).join("、") }), 3000); applyTheme(); renderUI(); }
-  });
 }
 
-// test hooks
-W.__game = {
-  get run() { return run; }, get flock() { return flock.length; }, get visitor() { return visitor ? { kind: visitor.kind, state: visitor.state, x: visitor.x, y: visitor.y } : null; },
-  get screen() { return screen; }, get overlay() { return overlay; }, get coach() { return coach; }, coachNext: () => { coachReadyAt = 0; coachNext(); }, P, bpm: () => currentBpm(), startRun, endRun, recoverPending,
-  tapDesign: (x        , y        ) => handleTap(x, y, run ? run.time : 0),
-  stage: () => ({ K, OX, OY }),
-  anims: () => Object.fromEntries(Object.keys(ANIM).map((k) => [k, ANIM[k].frames.length])),
-  turnerFrame: () => { const ta = themeIsSnow() ? ANIM.snowman : ANIM.scarecrow; return ta ? ta.frames.indexOf(turnerSpr.texture) : -1; },
-  sim(sec        , opts                                                                   = {}) {
-    autoplay = { recruit: opts.recruit || (() => true) }       ; (autoplay       ).jitter = opts.jitter || 0;
-    const dt = opts.dt || 1 / 60; let n = Math.round(sec / dt);
-    try { while (n-- > 0 && run && screen === "play" && !run.over) step(dt); } finally { autoplay = null; }
-    return run ? { time: run.time, score: Math.floor(run.score), jumps: run.jumps, sheep: flock.length, bpm: currentBpm(), bells: run.bells, weather: run.weather, segment: run.segment, over: run.over, mult: run.mult } : null;
-  },
-};
-
-boot().catch((e) => { console.error(e); });
+/** Tear everything down. Host unmount calls this; it must be safe to call twice. */
+export function destroy() {
+  if (!destroyed) {
+    destroyed = true;
+    alive = false;
+  }
+  if (unmountGame) { const u = unmountGame; unmountGame = null; try { u(); } catch { /* */ } }
+  try { app.ticker?.remove(frame); } catch { /* */ }
+  try { (app.canvas                     )?.removeEventListener?.("pointerdown", onPointerDown); } catch { /* */ }
+  try { window.removeEventListener("keydown", onKey); } catch { /* */ }
+  try { display?.dispose?.(); } catch { /* */ }
+  try { fx?.destroy?.(); } catch { /* */ }
+  try { sound?.dispose?.(); } catch { /* */ }
+  // Persist before tearing the renderer down: the save shim buffers writes in memory.
+  try { flushProgress(); } catch { /* */ }
+  try { app.destroy?.(true, { children: true, texture: false, textureSource: false }); } catch { /* */ }
+  try { css.remove(); } catch { /* */ }
+  try { root.remove(); } catch { /* */ }
+  if (W.__game && hooksOwner === owner && W.__game === TEST_HOOKS) {
+    try { delete W.__game; } catch { /* */ }
+    hooksOwner = null;
+  }
+}
