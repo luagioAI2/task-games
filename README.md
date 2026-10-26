@@ -80,7 +80,7 @@ three.js 的**放置 / 经营**：点食物 → 蚂蚁排着队往洞里搬 → 
 
 | 层 | 命令 | 结果 |
 | --- | --- | --- |
-| 1 静态 | `check-plugin.mjs dist-plugin/anthill.plugin.mjs --assets dist-plugin/assets` | 通过（4 条提示，见下） |
+| 1 静态 | `check-plugin.mjs dist-plugin/anthill.plugin.mjs --assets dist-plugin/assets` | 通过（3 条提示，见下；资源清单 18 条哈希逐条对得上） |
 | 2 类型 + 单测 | `npm run lint` · `npm test`（在宿主里跑） | tsc 0 错；774 条全绿 |
 | 3 假宿主 | `node scripts/mount-test.mjs` | 30 条全绿（0×404、扣 15、宽限不重扣、上下文释放、挂第三次、颜色 513） |
 | 4 真 App | `node scripts/e2e-anthill.mjs <url> phone\|tablet` | 两档全绿（见下） |
@@ -96,13 +96,14 @@ three.js 的**放置 / 经营**：点食物 → 蚂蚁排着队往洞里搬 → 
   这条抓的是「只 dispose 不 forceContextLoss，切几次后 WebGL 上下文耗尽、全黑且不报错」）、
   语言设置被记住（`host.storage` 真的读回来了）。
 
-`check-plugin` 的 4 条提示都是**已知且无害**的：
+`check-plugin` 的 3 条提示都是**已知且无害**的：
 
 - `voucherPerCoin` 缺省 —— B 型的定义，本来就不开放兑换；
 - `document.head` —— 只有 `game.js` 那一条带随机根类名的样式注入；
 - `document.body` —— 全在 **three.js 内部**（`WebGLRenderer` 建 canvas、`CSS2DRenderer` 的
-  `textContent` 容器），本作的 UI 层是挂**容器**里的（`mount-test` 有一条专门验这个）；
-- ~~没有 `assets/manifest.json`~~ —— 已补上（见上）。
+  `textContent` 容器），本作的 UI 层是挂**容器**里的（`mount-test` 有一条专门验这个）。
+
+（第 4 条「有 `assets/` 却没有 `manifest.json`」已经消掉了 —— 见上。）
 
 ## 一个已知的小毛病
 
