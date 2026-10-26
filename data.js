@@ -1,4 +1,5 @@
 // Static game data: elements, characters, monsters, stages (100 stages, 20 areas, 10 heroines).
+import { A } from './src/assets.js';
 
                                                                    
                                            
@@ -60,7 +61,7 @@ export function tierCost(c         , tier        )                              
   if (tier === 1) return { [c.el]: 16, [subElement(c.el)]: 6 };
   return null;
 }
-export function charArt(id        , tier        )         { return `assets/chara/${id}_${tier > 0 ? 1 : 0}.webp`; }
+export function charArt(id        , tier        )         { return A(`assets/chara/${id}_${tier > 0 ? 1 : 0}.webp`); }
 
 ;                                                                                                                                  
 export const MONS                         = {
@@ -137,3 +138,11 @@ export const STAGES             = buildStages();
 /** Enemy stat scale for a stage number: HP base ×2.7 +5%/stage; ATK base ×1.6 +3%/stage (user asked for tougher monsters). */
 export function stageScale(n        ) { return { hp: 2.43 * (1 + 0.05 * (n - 1)), atk: 1.44 * (1 + 0.03 * (n - 1)) }; }
 export const AREA_BG = 'assets/bg/opt_forest.webp';
+
+/**
+ * 把 `GEM_ICON` 里的路径换成宿主绝对路径。**挂载时调一次**，之后 DOM 里直接可用。
+ * `A()` 幂等，所以重复挂载不会越拼越长。
+ */
+export function localizeAssets() {
+  for (const k in GEM_ICON) GEM_ICON[k] = A(GEM_ICON[k]);
+}

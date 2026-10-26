@@ -7,5 +7,7 @@ dist-plugin/
 node_modules/
 *.log
 
-# smoke.mjs 的调试截图（临时，别当商城截图用）
+# 调试截图（临时，别当商城截图用）。商城要用的那几张由 capture.mjs 出、要入库。
 shots/smoke-*.png
+shots/probe-*.png
+shots/_*/

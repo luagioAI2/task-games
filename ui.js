@@ -4,15 +4,27 @@ import { CHARS, CHAR_BY_ID, ELEMENTS, EL_CSS, GEM_ICON, STAGES, charArt, tierCos
                                          
 import { save, persist, isUnlocked, tierOf, stats, canAfford, shortfall, tryUpgrade } from './state.js';
 import { t, setLang, lang, LANGS, LANG_LABEL, FONT } from './i18n.js';
-import { showHeroShop, canBuy, showPrismShop } from './purchase.js';
+import { scopeCss } from './scope-css.js';
+import { A } from './src/assets.js';
                                       
 import { Battle } from './battle.js';
                                                 
 
-export const uiRoot = document.createElement('div');
+/*
+ * ★ 原来这里是 `export const uiRoot = document.createElement('div')` —— **模块顶层碰 DOM**。
+ *   两个后果：① 宿主 `check-plugin.mjs` 在 Node 里真 `import()` 这个包时直接抛；
+ *   ② 模块级节点在第二次挂载时还指着上一次已经被移除的那个（切走再切回 = 白屏）。
+ *   所以改成 `initUI()` 里建、`destroyUI()` 里清。
+ */
+export let uiRoot = null;
+let styleEl = null;
 let screen             = () => {};
 let battle                = null;
 let setBackdrop                        = () => {};
+
+/** 开局收费回调：由 `game.js` 的 `start(opts)` 注入；独立网页里是 null（不收费）。 */
+let chargePlay = null;
+export function setChargePlay(fn) { chargePlay = fn; }
 
 const CSS = `
 #ui{overflow:hidden;position:absolute;left:0;top:0;width:${W}px;transform-origin:0 0;font-family:${FONT};color:#5d4a86;user-select:none;-webkit-user-select:none;pointer-events:none}
@@ -139,12 +151,11 @@ function stars(tier        ) { return '★'.repeat(tier + 1) + '☆'.repeat(2 - 
 function gemBar() {
   const g = h('div', 'gems');
   for (const e of ELEMENTS) g.appendChild(h('div', 'gem', `<img src="${GEM_ICON[e]}">${save.gems[e]}`));
-  const pr = h('div', 'gem prism', `<img src="assets/ui-gem/prism.png">${save.prism || 0}${canBuy() ? '<b class="plus">+</b>' : ''}`);
-  if (canBuy()) { pr.setAttribute('role', 'button'); pr.setAttribute('aria-label', t('prismShop')); tap(pr, () => showPrismShop(() => screen())); }
-  g.appendChild(pr);
+  // 无色水晶现在是**通关掉落**（见 onBattleEnd），没有商店入口了 —— 只读显示。
+  g.appendChild(h('div', 'gem prism', `<img src="${A('assets/ui-gem/prism.png')}">${save.prism || 0}`));
   return g;
 }
-function clear() { uiRoot.innerHTML = ''; }
+function clear() { if (uiRoot) uiRoot.innerHTML = ''; }
 const BACK_SVG = '<svg width="26" height="26" viewBox="0 0 24 24" style="display:block"><path d="M15 4.5 L7.5 12 L15 19.5" fill="none" stroke="#fff" stroke-width="3.6" stroke-linecap="round" stroke-linejoin="round"/></svg>';
 function backBtn(fn            ) { return tap(h('div', 'icon-btn', BACK_SVG), fn); }
 // Vector gear centred exactly on (12,12) — the ⚙ glyph sat off-centre because of font metrics.
@@ -160,22 +171,74 @@ const GEAR_SVG = (() => {
 })();
 function areaName(a        ) { return `${t('area' + (a % 5))} ${Math.floor(a / 5) + 1}`; }
 
-export function initUI(backdrop                       ) {
+/**
+ * 建 UI 层。
+ *
+ * @param backdrop 背景图切换回调
+ * @param opts.host  宿主给的容器（不传 = 独立网页，挂 `#app`）
+ * @param opts.scope 作用域类名（随机，如 `moestrike-a1b2c3`）
+ *
+ * ★ 样式必须经 `scopeCss` 收进根类名：这份 CSS 里有 `.grid` / `.btn` / `.panel` /
+ *   `.modal` 这种通用类名，直接注入会盖掉宿主的 Tailwind 工具类
+ *   （未分层样式胜过 `@layer utilities`）—— 症状是**宿主**坏了，不是游戏坏了。
+ */
+export function initUI(backdrop, opts = {}) {
   setBackdrop = backdrop;
-  const st = document.createElement('style');
-  st.textContent = CSS;
-  document.head.appendChild(st);
+  screen = showHome;
+  battle = null;
+  const scope = opts.scope || 'moestrike';
+  const host = opts.host || document.getElementById('app') || document.body;
+  // 作用域容器：`#ui` 要**在它里面**，否则 `.scope #ui{…}` 一条都不匹配
+  let wrap = host.querySelector(':scope > .' + scope);
+  if (!wrap) {
+    wrap = document.createElement('div');
+    wrap.className = scope;
+    wrap.style.cssText = 'position:absolute;inset:0;pointer-events:none';
+    host.appendChild(wrap);
+  }
+  styleEl = document.createElement('style');
+  styleEl.textContent = scopeCss(CSS, '.' + scope);
+  document.head.appendChild(styleEl);
+  uiRoot = document.createElement('div');
   uiRoot.id = 'ui';
-  document.getElementById('app') .appendChild(uiRoot);
+  wrap.appendChild(uiRoot);
+}
+
+/** 卸载：停掉战斗、摘样式、摘节点。**每一步单独 try** —— 前面抛了后面就不执行了。 */
+export function destroyUI() {
+  try { battle?.destroy(); } catch { /* ignore */ }
+  battle = null;
+  screen = () => {};
+  setBackdrop = () => {};
+  chargePlay = null;
+  try { styleEl?.remove(); } catch { /* ignore */ }
+  styleEl = null;
+  try { uiRoot?.remove(); } catch { /* ignore */ }
+  uiRoot = null;
 }
 
 export function layoutUI() {
+  // `mountDisplay` 的第一次 onResize 可能在 initUI 之前就到（微任务），
+  // 那时候还没有 UI 层 —— 直接返回，别让整个启动流程挂在这一句上。
+  if (!uiRoot) return;
   uiRoot.style.height = core.H + 'px';
   uiRoot.style.transform = `translate(${core.offX}px,${core.offY}px) scale(${core.scale})`;
   uiRoot.style.setProperty('--m', `${Math.ceil(Math.max(48, 50 / core.scale))}px`);
 }
 
 export function refresh() { screen(); }
+
+/**
+ * 调试钩子：把当前战斗交出去。
+ *
+ * ★ 为什么需要它 —— 这是一款**回合制弹弓**，球靠摩擦减速，
+ *   实测**一回合 10 秒以上**，一整关 5 波打完要 6 分钟。
+ *   让 e2e 真打完一场，一套两屏就是 12 分钟，还随时可能超时；
+ *   而「通关掉落」这条逻辑（`onBattleEnd` 里的 `prismGain`）恰恰只有
+ *   打赢才走得到。所以 e2e 读回合数用 `turn`、验结算用 `finish(true)` ——
+ *   走的都是游戏自己的方法，没有测试专用分支。
+ */
+export function currentBattle() { return battle; }
 
 // ---------- home ----------
 export function showHome() {
@@ -188,7 +251,7 @@ export function showHome() {
   top.appendChild(gemBar());
   top.appendChild(tap(h('div', 'icon-btn', GEAR_SVG), showSettings));
   s.appendChild(top);
-  const title = h('div', 'title', 'Moe Girl Strike');
+  const title = h('div', 'title', t('title'));
   title.style.marginTop = '10px';
   s.appendChild(title);
   s.appendChild(h('div', 'sub', `${t('stage', { n: Math.min(save.cleared + 1, STAGES.length) })} · ${areaName(STAGES[Math.min(save.cleared, STAGES.length - 1)].area)}`));
@@ -201,77 +264,8 @@ export function showHome() {
   btns.style.cssText = 'display:flex;flex-direction:column;gap:12px;padding:0 60px 40px';
   btns.appendChild(tap(h('button', 'btn', t('adventure')), showStages));
   btns.appendChild(tap(h('button', 'btn violet', t('characters')), () => showChars()));
-  btns.appendChild(tap(h('button', 'btn gold', t('ranking')), showRanking));
   s.appendChild(btns);
   uiRoot.appendChild(s);
-}
-
-// ---------- ranking ----------
-// Score = furthest stage cleared, ties broken by fewer turns on that clear (see LEADERBOARD.json).
-export function packScore(stage        , turns        ) {
-  const st = Math.min(999, Math.max(0, Math.floor(stage)));
-  const tu = Math.min(999, Math.max(0, Math.floor(turns)));
-  return st * 1000 + (999 - tu);
-}
-function unpack(v        ) { return { stage: Math.floor(v / 1000), turns: 999 - (v % 1000) }; }
-function rankText(v        ) {
-  const u = unpack(v);
-  return u.turns >= 999 ? t('stage', { n: u.stage }) : t('rankRow', { n: u.stage, t: u.turns });
-}
-function esc(s        ) { return s.replace(/[&<>"']/g, c => `&#${c.charCodeAt(0)};`); }
-
-function showRanking() {
-  const m = h('div', 'modal');
-  const p = h('div', 'panel pop');
-  p.appendChild(h('div', '', `<b style="font-size:24px">${t('ranking')}</b>`));
-  p.appendChild(h('div', 'sub', t('rankHint'))).style.fontSize = '13px';
-  const list = h('div', 'rklist', `<div class="sub">${t('rankLoading')}</div>`);
-  p.appendChild(list);
-  const gp = window.gp?.player;
-  if (gp && !gp.user) {
-    p.appendChild(h('div', 'sub', t('rankLogin')));
-    p.appendChild(tap(h('button', 'btn violet', t('login')), () => gp.requestLogin()));
-  }
-  p.appendChild(tap(h('button', 'btn blue', t('close')), () => m.remove()));
-  m.appendChild(p);
-  uiRoot.appendChild(m);
-  const req = gp?.topScores ? gp.topScores(20) : Promise.resolve([]);
-  void Promise.resolve(req).catch(() => []).then((rows     ) => {
-    list.innerHTML = '';
-    if (!Array.isArray(rows) || !rows.length) { list.appendChild(h('div', 'sub', t('rankEmpty'))); return; }
-    rows.forEach((r     , i        ) => {
-      const row = h('div', `rk ${r.isMe ? 'me' : ''}`);
-      row.appendChild(h('div', 'no', i < 3 ? ['🥇', '🥈', '🥉'][i] : String(i + 1)));
-      const av = h('div', 'av');
-      if (r.avatar) av.style.backgroundImage = `url("${String(r.avatar).replace(/"/g, '')}")`;
-      row.appendChild(av);
-      row.appendChild(h('div', 'nmx', esc(String(r.name || t('guest')))));
-      row.appendChild(h('div', 'sc', rankText(Number(r.score) || 0)));
-      list.appendChild(row);
-    });
-  });
-}
-
-let seededScore = false;
-/** Existing progress joins the board once per session (turns unknown → worst tie-break). */
-export function seedScore() {
-  if (seededScore || save.cleared <= 0) return;
-  seededScore = true;
-  void window.gp?.player?.submitScore?.(packScore(save.cleared, 999))?.catch?.(() => {});
-}
-
-async function submitClear(stage        , turns        , into             ) {
-  const gp = window.gp?.player;
-  if (!gp?.submitScore) return;
-  seededScore = true;
-  const r      = await gp.submitScore(packScore(stage, turns)).catch(() => null);
-  if (!r || !into.isConnected) return;
-  if (r.needLogin) {
-    const row = h('div', 'sub', t('rankLogin'));
-    into.appendChild(row);
-  } else if (r.best != null && r.rank != null) {
-    into.appendChild(h('div', 'sub', t('rankBest', { n: unpack(r.best).stage, r: r.rank })));
-  }
 }
 
 // ---------- settings ----------
@@ -464,12 +458,8 @@ function showChars() {
     card.appendChild(h('img', 'el')).setAttribute('src', GEM_ICON[c.el]);
     if (un && save.team.includes(c.id)) card.appendChild(h('div', 'tm', t('inTeam')));
     card.appendChild(h('div', 'nm', `${cname(c.id)}<div class="stars">${stars(tier)}</div>`));
-    const buyable = !un && canBuy();
-    if (!un) card.appendChild(h('div', 'lk', buyable
-      ? `🔒<br>${t('unlockAt', { n: c.unlockAfter })}<span class="buy"><img src="assets/ui/icon_coin_selected.svg">5</span>`
-      : `🔒<br>${t('unlockAt', { n: c.unlockAfter })}`));
-    if (!un && buyable) tap(card, () => showHeroShop(c.id, showChars));
-    else if (!un) card.appendChild(h('div', 'lk', ''));
+    // 付费解锁那条路已删：锁着的角色**只能靠通关解锁**（unlockAt）。
+    if (!un) card.appendChild(h('div', 'lk', `🔒<br>${t('unlockAt', { n: c.unlockAfter })}`));
     if (un) dragSource(card, c.id);
     grid.appendChild(card);
   }
@@ -516,8 +506,7 @@ function showDetail(id        ) {
     const short = shortfall(cost);
     if (short > 0) {
       const enough = short <= (save.prism || 0);
-      const pr = h('div', 'cost', `<span class="${enough ? '' : 'no'}" style="font-size:14px"><img src="assets/ui-gem/prism.png">${t('prismUse', { n: short })} (${save.prism || 0})</span>`);
-      if (!enough && canBuy()) { pr.appendChild(tap(h('span', 'plus-btn', '+'), () => showPrismShop(() => screen()))); }
+      const pr = h('div', 'cost', `<span class="${enough ? '' : 'no'}" style="font-size:14px"><img src="${A('assets/ui-gem/prism.png')}">${t('prismUse', { n: short })} (${save.prism || 0})</span>`);
       evo.appendChild(pr);
     }
     const ok = canAfford(cost);
@@ -556,6 +545,16 @@ function playEvolve(id        ) {
 
 // ---------- battle ----------
 async function enterBattle(n        ) {
+  /*
+   * ★ 开局收费：**一场战斗 10 积分**。
+   *
+   * 放在这里而不是「开始」按钮里，是因为进战斗有三条路（首次 / 下一关 / 重试），
+   * 写在一处才不会漏掉一条。钱不够就回主页 —— 别让玩家进到一半被打断。
+   */
+  if (chargePlay) {
+    const paid = await chargePlay();
+    if (!paid) { showHome(); return; }
+  }
   clear();
   const s = h('div', 'scr');
   s.style.justifyContent = 'center';
@@ -605,8 +604,12 @@ function showPause() {
 function onBattleEnd(r              ) {
   const firstClear = r.win && r.stage > save.cleared;
   let joined                = null;
+  // 无色水晶：删掉内购商店之后改成**通关掉落**（Boss 关 3 个、普通关 1 个）。
+  // 不加这一步 `save.prism` 永远是 0，而升级面板会一直显示「缺口补不上」。
+  const prismGain = r.win ? (STAGES[r.stage - 1].boss ? 3 : 1) : 0;
   if (r.win) {
     for (const e of ELEMENTS) save.gems[e] += r.drops[e];
+    save.prism = (save.prism || 0) + prismGain;
     if (firstClear) {
       save.gems[STAGES[r.stage - 1].el] += 3;
       const before = CHARS.filter(isUnlocked).map(c => c.id);
@@ -626,13 +629,9 @@ function onBattleEnd(r              ) {
       const n = r.drops[e] + (firstClear && STAGES[r.stage - 1].el === e ? 3 : 0);
       if (n) cs.appendChild(h('span', '', `<img src="${GEM_ICON[e]}">×${n}`));
     }
+    if (prismGain) cs.appendChild(h('span', '', `<img src="${A('assets/ui-gem/prism.png')}">×${prismGain}`));
     p.appendChild(cs);
     if (firstClear) p.appendChild(h('div', 'sub', `${t('firstClear')} +3`));
-    if (r.stage >= save.cleared) {
-      const slot = h('div', '');
-      p.appendChild(slot);
-      void submitClear(r.stage, r.turns || 999, slot);
-    }
     if (joined) {
       p.appendChild(h('div', '', `<b style="font-size:20px;color:#f48ab8">${t('newChar')}</b>`));
       const img = document.createElement('img');

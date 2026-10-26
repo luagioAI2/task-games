@@ -20,19 +20,26 @@ function fresh()       {
     v: 1, cleared: 0, sv: 2, owned: [],
     tiers: Object.fromEntries(CHARS.map(c => [c.id, 0])),
     gems: { fire: 0, water: 0, wood: 0, light: 0, dark: 0 },
-    prism: 0, paid: [],
+    prism: 0,
     team: ['mira', 'shizuku', 'hina', 'wakaba'],
   };
 }
 
 export let save       = fresh();
 
+/**
+ * 存档后端。插件里是 `host.storage`（`src/host.js` 的 makeHostStore），
+ * 独立网页里是 localStorage 版。**必须在 `loadSave()` 之前注入。**
+ */
+let store = null;
+export function setStore(s) { store = s; }
+
 export function loadSave() {
   try {
-    const s = window.gp?.player?.saves;
-    const info = s?.latestInfo;
-    const d = s?.latestSync;
-    if (d && !(info && info.legacy) && d.v === 1) {
+    // ★ 原来这里是 `window.gp.player.saves.latestSync`（平台云存档）。
+    //   换成注入的 store：读的是 `preload()` 之后的内存缓存，同步、不 await。
+    const d = store ? store.get('save') : null;
+    if (d && d.v === 1) {
       const f = fresh();
       save = {
         ...f, ...d,
@@ -49,24 +56,18 @@ export function loadSave() {
       }
       if (!Array.isArray(save.owned)) save.owned = [];
       if (typeof save.prism !== 'number' || !(save.prism >= 0)) save.prism = 0;
-      if (!Array.isArray(save.paid)) save.paid = [];
     }
   } catch { save = fresh(); }
 }
 
 export function persist() {
-  try { window.gp?.player?.saves?.putLatest(save); } catch { /* host keeps retrying */ }
+  // 只写内存 + 标脏，真正的落盘在 unmount 的 `store.flush()` 里。
+  try { store?.set('save', save); } catch { /* 落盘失败不该打断游戏 */ }
 }
 
 export function isUnlocked(c         ) { return save.cleared >= c.unlockAfter || (save.owned || []).includes(c.id); }
-/** Heroine bought with platform coins — granted by grantHero() on a successful purchase / startup settle. */
-export function grantHero(id        )       {
-  if (isUnlocked(CHAR_BY_ID[id])) return false;
-  if (!save.owned.includes(id)) save.owned.push(id);
-  persist();
-  return true;
-}
-export function grantHeroes(ids          ) { let n = 0; for (const id of ids) if (CHAR_BY_ID[id] && grantHero(id)) n++; return n; }
+// 付费解锁（grantHero / grantHeroes）随 `purchase.js` 一起删掉了：
+// 锁着的角色现在**只能靠通关解锁**（`unlockAfter`）。
 export function tierOf(id        ) { return save.tiers[id] || 0; }
 
 export function stats(id        ) {
@@ -83,15 +84,6 @@ export function shortfall(cost                                  ) {
 export function canAfford(cost                                  ) {
   return shortfall(cost) <= (save.prism || 0);
 }
-/** Colorless crystals bought with platform coins; purchaseId dedupes a delivery seen twice. */
-export function grantPrism(n        , purchaseId        )          {
-  if (purchaseId && save.paid.includes(purchaseId)) return false;
-  save.prism = (save.prism || 0) + n;
-  if (purchaseId) { save.paid.push(purchaseId); if (save.paid.length > 60) save.paid.splice(0, save.paid.length - 60); }
-  persist();
-  return true;
-}
-
 export function tryUpgrade(id        )          {
   const c = CHAR_BY_ID[id];
   const tier = tierOf(id);

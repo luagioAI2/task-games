@@ -1,6 +1,15 @@
 <!doctype html><html><head>
 <title>少女战记</title><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>html,body,#app{margin:0;width:100%;height:100%;overflow:hidden;background:#0b0d12;}#app{position:fixed;inset:0}canvas{display:block}</style><script type="importmap">
 {
-  "imports": {}
+  "imports": {
+    "pixi.js": "./engines/pixi.min.mjs",
+    "@makeplay/fx": "./runtime/makeplay-fx/game.js",
+    "@makeplay/sound": "./runtime/sound-1.js",
+    "@makeplay/display": "./runtime/display-1.js"
+  }
 }
-</script></head><body><div id="app"></div><script type="module" src="./game.js"></script></body></html>
+</script></head><body><div id="app"></div><script type="module">
+// 独立网页 = 同一个 `start()`，只是什么注入都不传（不收费、localStorage 存档、相对路径）
+import { start } from './game.js';
+start();
+</script></body></html>
