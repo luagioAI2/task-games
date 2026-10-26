@@ -95,9 +95,14 @@ const CSS = `
 #ui .slot b{position:absolute;left:4px;top:2px;color:#fff;text-shadow:0 1px 2px #8a5fb8;font-size:15px}
 #ui .hint{font-size:13px;font-weight:800;text-align:center;color:#fff;text-shadow:0 1px 3px #8a6fc0;padding:4px 16px}
 #ui .art{position:relative;height:42%;min-height:300px;display:flex;justify-content:center}
-#ui .art img{height:100%;filter:drop-shadow(0 6px 14px rgba(150,110,210,.35));animation:float 4s ease-in-out infinite}
+#ui .art img{height:100%;filter:drop-shadow(0 6px 14px rgba(150,110,210,.35));animation:mgs-float 4s ease-in-out infinite}
 #ui .art.aw img{filter:drop-shadow(0 0 10px #ffe08a) drop-shadow(0 0 22px #ffd06b)}
-@keyframes float{0%,100%{transform:translateY(0)}50%{transform:translateY(-8px)}}
+/* ★ 关键帧名带 mgs- 前缀：@keyframes 是**全局**的（scopeCss 作用域不了它），
+   float / spin / flash / pop 这种名字撞上宿主的 Tailwind（animate-spin）
+   或别的插件时，**后注入的那份会赢**，而症状是「宿主的动画变快了/不转了」。
+   宿主自己那套已经统一叫 kqf-*，我们这边跟着加前缀。
+   ⚠️ 这段注释在**模板字符串**里，不能出现反引号（会把 CSS 字符串提前闭合）。 */
+@keyframes mgs-float{0%,100%{transform:translateY(0)}50%{transform:translateY(-8px)}}
 #ui .info{margin:0 14px;padding:12px 14px;flex:1;overflow-y:auto;touch-action:pan-y}
 #ui .row{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
 #ui .tag{border-radius:10px;padding:2px 10px;color:#fff;font-weight:900;font-size:14px;border:2px solid #fff}
@@ -118,12 +123,12 @@ const CSS = `
 #ui .seg button.on{background:linear-gradient(#ffb3d4,#f48ab8);color:#fff}
 #ui .bar{height:16px;border-radius:8px;background:rgba(255,255,255,.8);border:2px solid #fff;overflow:hidden}
 #ui .bar div{height:100%;background:linear-gradient(90deg,#ffb3d4,#b9a0f5);width:0}
-#ui .spin{width:46px;height:46px;margin:0 auto;animation:spin 1.2s linear infinite;font-size:44px;line-height:46px;color:#ffd86b;text-shadow:0 0 10px #fff}
-@keyframes spin{to{transform:rotate(360deg)}}
-#ui .flash{position:absolute;inset:0;background:#fff;pointer-events:none;animation:flash 1.2s ease-out forwards}
-@keyframes flash{0%{opacity:0}15%{opacity:1}100%{opacity:0}}
-#ui .pop{animation:pop .7s cubic-bezier(.2,1.6,.4,1) both}
-@keyframes pop{from{transform:scale(.3);opacity:0}to{transform:scale(1);opacity:1}}
+#ui .spin{width:46px;height:46px;margin:0 auto;animation:mgs-spin 1.2s linear infinite;font-size:44px;line-height:46px;color:#ffd86b;text-shadow:0 0 10px #fff}
+@keyframes mgs-spin{to{transform:rotate(360deg)}}
+#ui .flash{position:absolute;inset:0;background:#fff;pointer-events:none;animation:mgs-flash 1.2s ease-out forwards}
+@keyframes mgs-flash{0%{opacity:0}15%{opacity:1}100%{opacity:0}}
+#ui .pop{animation:mgs-pop .7s cubic-bezier(.2,1.6,.4,1) both}
+@keyframes mgs-pop{from{transform:scale(.3);opacity:0}to{transform:scale(1);opacity:1}}
 #ui .rk{display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:14px;background:#f6effd;border:2px solid #fff;text-align:left;font-weight:800}
 #ui .rk.me{background:linear-gradient(#fff0f7,#ffd9ea);border-color:#f48ab8}
 #ui .rk .no{width:34px;text-align:center;font-size:20px;font-weight:900;color:#a58bd0;flex:none}
@@ -132,7 +137,7 @@ const CSS = `
 #ui .rk .sc{font-size:14px;color:#e27aa9;white-space:nowrap;flex:none}
 #ui .rklist{display:flex;flex-direction:column;gap:6px;max-height:520px;overflow-y:auto;touch-action:pan-y}
 #ui .leader{flex:1;display:flex;justify-content:center;align-items:flex-end;min-height:0;overflow:hidden}
-#ui .leader img{height:100%;max-height:520px;animation:float 4s ease-in-out infinite;filter:drop-shadow(0 8px 18px rgba(150,110,210,.4))}
+#ui .leader img{height:100%;max-height:520px;animation:mgs-float 4s ease-in-out infinite;filter:drop-shadow(0 8px 18px rgba(150,110,210,.4))}
 `;
 
 function h(tag        , cls = '', html = '')              {

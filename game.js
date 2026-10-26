@@ -1,7 +1,7 @@
 // 少女战记 — boot, layout and wiring.
 import * as PIXI from 'pixi.js';
 import { mountDisplay } from '@makeplay/display';
-import { fxScreen } from './fx.js';
+import { fxScreen, resetFx } from './fx.js';
 import { loadSoundSystem } from '@makeplay/sound';
 import { core, W, loadMany, setMusic, resetCore } from './core.js';
 import { setStore, loadSave, save } from './state.js';
@@ -51,6 +51,9 @@ export async function start(opts = {}) {
   // `core.root` / `core.backdrop` 是模块级的，上一次卸载时被 destroy 了；
   // 不换新的就是「第二次挂载什么都画不出来，且一个错都不报」。
   resetCore();
+  // `fxScreen` / `fx` 也是模块级的，而且 `fxScreen` 挂在 app.stage 上会被
+  // `app.destroy({children:true})` 连坐销毁 —— 必须一起换新。
+  resetFx();
 
   // ---- 容器 ----
   // ★★ 判据用 **computed style**，不是 inline：宿主给的是 `<div class="absolute inset-0">`，
@@ -69,6 +72,20 @@ export async function start(opts = {}) {
   const backSprite = new PIXI.Sprite();
   const backTint = new PIXI.Graphics();
   let backUrl = '';
+
+  /**
+   * ★ 布局的唯一依据是**宿主容器**，不是 `window`。
+   *
+   * `mountDisplay` 的 `onResize` 报的是 window 尺寸（那套运行时本来是给独立网页写的），
+   * 而插件里容器只有 698 高（顶栏和底栏被宿主拿走了）。照 window 排版 ⇒
+   * `core.H` 算成 1168、整层 UI 往下溢出 146px，「冒险」按钮落到容器外：
+   * **看得见、点不到、一个错都不报**（真 App 的 e2e 就是这么红的，
+   * 而单看截图、单数颜色、单验 canvas 铺满 —— 三条全绿）。
+   */
+  const hostBox = () => {
+    const r = host.getBoundingClientRect();
+    return { w: Math.max(1, Math.round(r.width)), h: Math.max(1, Math.round(r.height)) };
+  };
 
   function relayout(width, height) {
     const h = Math.min(Math.max((W * height) / width, 960), 1200);
@@ -99,7 +116,8 @@ export async function start(opts = {}) {
     const tx = await PIXI.Assets.load(url).catch(() => null);
     if (!tx || backUrl !== url || !alive) return;
     backSprite.texture = tx;
-    relayout(app.screen.width, app.screen.height);
+    const b = hostBox();
+    relayout(b.w, b.h);
   }
 
   // loading screen painted in pixi before assets arrive
@@ -140,7 +158,18 @@ export async function start(opts = {}) {
     return async () => {};
   }
   host.appendChild(app.canvas);
-  display = mountDisplay({ orientation: 'portrait', onResize: ({ width, height }) => relayout(width, height) });
+  // ★ onResize 的参数（window 尺寸）**不能直接用** —— 见 `hostBox` 的注释。
+  display = mountDisplay({ orientation: 'portrait', onResize: () => { const b = hostBox(); relayout(b.w, b.h); } });
+  /**
+   * 容器尺寸会**在没有 window resize 的情况下**变：宿主切 tab、底栏高度变、
+   * 平板换布局都算。只听 window 会漏掉这些，UI 就停在旧尺寸上（不报错）。
+   */
+  const ro = new ResizeObserver(() => {
+    if (!alive) return;
+    const b = hostBox();
+    relayout(b.w, b.h);
+  });
+  ro.observe(host);
   display.attachPixi(app);
   backSprite.anchor.set(0.5);
   app.stage.addChild(core.backdrop, core.root, fxScreen);
@@ -157,7 +186,7 @@ export async function start(opts = {}) {
   localizeAssets();
   initUI(url => { void setBackdrop(url); }, { host, scope });
   setChargePlay(chargePlay);
-  relayout(app.screen.width, app.screen.height);
+  { const b = hostBox(); relayout(b.w, b.h); }
 
   placeLoad = () => { drawLoading(); title.position.set(W / 2, core.H * 0.3); lt.position.set(W / 2, core.H * 0.62 + 44); };
   placeLoad();
@@ -206,6 +235,7 @@ export async function start(opts = {}) {
    */
   async function destroy() {
     alive = false;
+    try { ro.disconnect(); } catch { /* ignore */ }
     try { destroyUI(); } catch (e) { console.warn('[moestrike] 摘 UI 失败', e); }
     try { if (spin) app.ticker.remove(spin); } catch { /* ignore */ }
     try { core.sound?.dispose?.(); } catch { /* ignore */ }

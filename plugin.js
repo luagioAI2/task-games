@@ -60,11 +60,15 @@ export const manifest = {
 
   // ⚠️ 宿主把 `coin` 当**必填**（`describeManifestProblem` 会拒），但本作
   //    **不发行游戏币** —— `mintGameCoin` / `spendGameCoin` 一次都没调。
-  //    游戏里那枚 💎 是存档里的一个数字，不是宿主账本。
+  //    游戏里那枚水晶是存档里的一个数字，不是宿主账本。
+  //
+  // ★ emoji **不能**用 🪙 / 🎟️ / 💎 / 🕹️ —— 那四个宿主已经占了，
+  //   `check-plugin.mjs` 的 TAKEN 表会直接拒（同屏会看不出在扣哪个币）。
+  //   游戏里的水晶是**彩虹色星星**，🔮 最接近，且没被占。
   coin: {
     id: 'mgs-gem',
     name: '元素水晶',
-    emoji: '💎',
+    emoji: '🔮',
   },
 
   economy: {
@@ -114,8 +118,16 @@ export async function mount(container, host, ctx = {}) {
   }
 
   // ---- 资源 ----
-  // `ctx.assetBase` 形如 `/games/moestrike/`；`game.js` 里所有 `assets/…` 都过 `A()`。
-  const assetBase = typeof ctx.assetBase === 'string' ? ctx.assetBase : ''
+  // `game.js` 里所有 `assets/…` 都过 `A()`，所以这里只要一个**以 `/` 结尾**的根。
+  // ★ 优先用 `ctx.assetUrl('')` 而不是直接读 `ctx.assetBase`：契约说得很明确
+  //   ——「插件应该**总是**用 `assetUrl()`，不要自己拼」。`assetUrl('')` 恰好
+  //   返回带尾斜杠的根（`assetUrlFor` 里 `clean=''` 那一条），本地 / CDN / file:// 三种形态都对。
+  const assetBase =
+    typeof ctx.assetUrl === 'function'
+      ? ctx.assetUrl('')
+      : typeof ctx.assetBase === 'string'
+        ? ctx.assetBase
+        : ''
 
   // ---- 存档 ----
   // ★ 必须 **await 完 preload** 再 start()：`start()` 里 `loadSave()` 读的就是这份缓存。
