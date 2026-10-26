@@ -1,16 +1,34 @@
-// 界面结构：由脚本注入 #app（MakePlay 的 index.html 是平台模板，只有 <div id="app">），并加载 styles.css。
+// 界面结构：注入到**宿主给的根元素**里（插件）或 `document.body` 里的 `#mng-root`（独立网页）。
 // 所有可见文字都经 i18n 的 t()；切换语言时 applyDomTexts() 重新填一遍。
+//
+// ⚠️ 这里**不许**再出现 `document.getElementById('app')` / `document.querySelector('.cash')`：
+//    插件挂载时页面里还有宿主的几十个 `.card` / `.cash` 之类，按 document 查会拿到宿主的节点
+//    （症状是「游戏 HUD 显示的是宿主的数字」或者「改了没反应」）。一律走 `q()` / `qa()`，
+//    它们只在 `ROOT` 里找。
 import { t } from '../i18n.js';
+import { loadStyles } from './scoped-css.js';
+
+/** 根选择器（CSS 作用域也用它）。 */
+export const ROOT_SEL = '#mng-root';
+
+let ROOT = null;
+/** 根元素。没挂载时是 null。 */
+export const rootEl = () => ROOT;
+const q = (s) => (ROOT ? ROOT.querySelector(s) : null);
+const qa = (s) => (ROOT ? ROOT.querySelectorAll(s) : []);
 
 const ICON = {
   gear: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 8.5a3.5 3.5 0 1 0 0 7 3.5 3.5 0 0 0 0-7Zm8.6 4.9-.1-2.8 2-1.6-2-3.5-2.4.9-2.3-1.4L15.4 2h-4l-.4 2.5-2.3 1.4-2.4-.9-2 3.5 2 1.6-.1 2.8-2 1.6 2 3.5 2.4-.9 2.3 1.4.4 2.5h4l.4-2.5 2.3-1.4 2.4.9 2-3.5Z"/></svg>',
   // 商城：带条纹遮阳棚的小店铺
   inv: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 3h16l2 6.2a3.2 3.2 0 0 1-5.2 2.4 3.3 3.3 0 0 1-4.8 0 3.3 3.3 0 0 1-4.8 0A3.2 3.2 0 0 1 2 9.2Zm3.1 1.8-1 4h2.6l.5-4Zm4.1 0-.3 4h2.2l-.3-4Zm4.6 0 .5 4h2.6l-1-4ZM4 13.6a5 5 0 0 0 1.8.3V19h5v-4.5h2.4V19h5v-5.1a5 5 0 0 0 1.8-.3V21H4Z"/></svg>',
-  rank: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 3h10v2h4v3a5 5 0 0 1-4.6 5A5 5 0 0 1 13 15.9V18h3v3H8v-3h3v-2.1A5 5 0 0 1 7.6 13 5 5 0 0 1 3 8V5h4Zm0 4H5v1a3 3 0 0 0 2 2.8Zm10 0v3.8A3 3 0 0 0 19 8V7Z"/></svg>',
   up: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5 4 14h5v5h6v-5h5Z"/></svg>',
   down: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 19 20 10h-5V5H9v5H4Z"/></svg>',
 };
 
+// 底栏按钮：商城（投资人 / 皮肤）、设置。
+// ⚠️ 原来还有第三个「排行」（全服排行榜 + 登录云同步），接进宿主时整块删掉了 ——
+//    那要联网，插件里只会转圈。删的是**按钮**，不是把它藏起来：藏起来还会被
+//    guide.js 的 `hud: 'rank'` 找到并高亮一个看不见的东西。
 const markup = () => `
   <div id="stage"></div>
   <div id="hud">
@@ -18,11 +36,9 @@ const markup = () => `
       <div class="hud-left">
         <div class="hud-cash"><i class="coin" aria-hidden="true"></i><div class="cash-txt"><b class="cash">0</b><small class="rate"></small></div></div>
         <div class="hud-depth"><i class="d-mark" aria-hidden="true"></i><b class="d-name"></b><small class="d-depth"></small></div>
-        <div class="hud-lang" role="group" data-aria="aria.lang" hidden></div>
       </div>
       <div class="hud-btns">
         <button class="ibtn" data-act="shop" data-aria="aria.investors" type="button">${ICON.inv}<span class="ib-l" data-t="dock.inv"></span><span class="badge" hidden>!</span></button>
-        <button class="ibtn" data-act="rank" data-aria="aria.rank" type="button">${ICON.rank}<span class="ib-l" data-t="dock.rank"></span></button>
         <button class="ibtn" data-act="settings" data-aria="aria.settings" type="button">${ICON.gear}<span class="ib-l" data-t="dock.set"></span></button>
       </div>
     </div>
@@ -64,45 +80,38 @@ const markup = () => `
   <div id="boot-error" hidden></div>`;
 
 export function applyDomTexts() {
-  for (const el of document.querySelectorAll('[data-aria]')) el.setAttribute('aria-label', t(el.dataset.aria));
-  for (const el of document.querySelectorAll('[data-t]')) el.textContent = t(el.dataset.t);
-  const gn = document.querySelector('.g-name'); if (gn) gn.textContent = t('guide.name');
-  document.title = 'ABYSS MINE';
+  for (const el of qa('[data-aria]')) el.setAttribute('aria-label', t(el.dataset.aria));
+  for (const el of qa('[data-t]')) el.textContent = t(el.dataset.t);
+  const gn = q('.g-name'); if (gn) gn.textContent = t('guide.name');
 }
 // 加载进度：升降篮沿绳下降、矿车沿轨道前进、底部显示百分比（画法在 styles.css 的 .ld-shaft 里）
 export function setLoading(p) {
   const v = Math.max(0, Math.min(1, p)), pct = Math.round(v * 100);
-  const root = document.querySelector('#loading');
+  const root = q('#loading');
   if (root) root.style.setProperty('--p', String(v));
-  const n = document.querySelector('.ld-pct'); if (n) n.textContent = pct + '%';
+  const n = q('.ld-pct'); if (n) n.textContent = pct + '%';
 }
 
-// 首次进入时挂在深度牌下面的一行小语言切换（母语名平铺，一点就切，不挡画面）。
-// 玩家第一次点世界或选过语言后收起；之后在设置里切。返回 { set, show, hide }。
-export function langStrip({ langs, label, onPick }) {
-  const el = document.querySelector('.hud-lang'); el.textContent = '';
-  const btns = new Map();
-  const set = (l) => { for (const [k, b] of btns) { const on = k === l; b.classList.toggle('on', on); b.setAttribute('aria-pressed', String(on)); } };
-  for (const l of langs) {
-    const b = document.createElement('button');
-    b.type = 'button'; b.lang = { ja: 'ja', zh: 'zh-CN', en: 'en' }[l] || l; b.textContent = label[l] || l;
-    b.addEventListener('pointerdown', (e) => e.stopPropagation());
-    b.addEventListener('click', () => { onPick(l); set(l); });
-    el.appendChild(b); btns.set(l, b);
-  }
-  return { set, show: () => { el.hidden = false; }, hide: () => { el.classList.add('out'); setTimeout(() => { el.hidden = true; }, 260); } };
-}
-
-export function mountDom() {
-  let app = document.getElementById('app');
-  if (!app) { app = document.createElement('div'); app.id = 'app'; document.body.appendChild(app); }
-  app.tabIndex = 0;
-  if (!document.getElementById('stage')) app.insertAdjacentHTML('beforeend', markup());
+/**
+ * 建界面 + 装样式。
+ *
+ * @param {HTMLElement} root  宿主容器里的那块（插件）或 `document.body` 里的 `#mng-root`
+ * @param {{ cssUrl: string, cssText?: string, assetUrl?: (rel: string) => string, safeArea?: boolean }} opts
+ */
+export async function mountDom(root, opts) {
+  ROOT = root;
+  root.textContent = '';
+  const app = document.createElement('div');
+  app.id = 'app';
+  app.tabIndex = 0;          // 键盘（方向键 / Esc）要在它上面才收得到
+  app.insertAdjacentHTML('beforeend', markup());
+  root.appendChild(app);
   applyDomTexts();
-  if (document.querySelector('link[data-game-css]')) return Promise.resolve();
-  const link = document.createElement('link');
-  link.rel = 'stylesheet'; link.href = new URL('../styles.css', import.meta.url).href; link.dataset.gameCss = '';
-  const done = new Promise((res) => { link.onload = res; link.onerror = res; setTimeout(res, 4000); });
-  document.head.appendChild(link);
-  return done;
+  await loadStyles(opts.cssUrl, { root: ROOT_SEL, assetUrl: opts.assetUrl, safeArea: opts.safeArea, cssText: opts.cssText });
+}
+
+/** 卸载：把根清空 + 让模块变量回到「没挂载」。 */
+export function unmountDom() {
+  if (ROOT) ROOT.textContent = '';
+  ROOT = null;
 }

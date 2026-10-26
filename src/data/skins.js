@@ -1,9 +1,26 @@
-// 皮肤商店的商品表。按“工种系列”分组售卖：矿工 / 改造娘 / 机械娘 / 地面职员 / 管理员。
-// 皮肤只换外观（每位角色一套立绘 + idle / 招牌动作 / 欢呼三段动画），不影响数值。
-// 购买走平台硬币（gp.pay）：购买 → 发放并存 paidIds → ack；启动时用 pending() 补发。
-// 存档里记 skins: { <角色 key>: <皮肤 id> }（已装备）与 ownedSkins: [<皮肤 id>]。
-// 目前上架的是管理员系列（制服统一后，她们原本的衣服成了“经典款式”）。
-// 其他工种的皮肤：在 SKIN_ROLES 的 series 里补条目、并把对应的动画表打进 assets/sprites 即可。
+// 皮肤表（2026-10-26 改造：原版是**平台硬币内购**，接进小任务农场后改成**按累计收入解锁**）。
+//
+// ## 为什么改
+//
+// 原版每套皮肤 `coins: 8`，走 `gp.pay.purchase()` —— 真钱。宿主（kid-quest-farm-2d）
+// 里没有任何接口能发起支付，也不该有：那是个给孩子做任务的 App。
+// 但皮肤本身是**纯外观**（每位角色一套立绘 + idle / 招牌动作 / 欢呼三段动画，不影响数值），
+// 直接删掉太可惜 —— 它是「玩久了有回报」的那部分。所以改成：
+//
+//   累计收入（`state.lifetime`）≥ `need` ⇒ 自动解锁，永久拥有
+//
+// 用 `lifetime` 而不是「当前现金」有两个原因：
+//   · 重开矿场（prestige）会把现金清零，但 `lifetime` 是累计的、只增不减；
+//   · 它就是界面上「我的累计收入」那个数，孩子看得见、对得上。
+//
+// ⚠️ 原版存档里的 `ownedSkins` / `paidIds` 不再决定能不能穿 —— 解锁状态**由进度现算**，
+//    所以老存档里花过钱的皮肤不会丢（进度到了自然还在），也不会有人靠改存档白拿。
+//
+// ## 门槛怎么定的
+//
+// 参照 `src/sim/economy.js` 的矿道价格表（第 1 条 $10 → 第 9 条 $4e10，认真玩 8 小时
+// 累计约 $32T）。所以阶梯从 $1K 铺到 $3T：第一条矿道附近解锁第一套，第 9 条矿道之后
+// 拿到最后几套。**改门槛只改下面这张表**，别在 ui.js 里写数字。
 export const SKIN_ROLES = [
   { id: 'manager', name: 'skin.role.manager', at: 'skin.role.manager.at' },
   { id: 'miner', name: 'skin.role.miner', at: 'skin.role.miner.at', soon: true },
@@ -14,34 +31,26 @@ export const SKIN_ROLES = [
 
 export const SKINS = [
   // —— 管理员 · 经典款式（制服统一前，每位自己的那身衣服）——
-  { id: 'aya@classic', role: 'manager', mgr: 'aya', name: 'skin.aya.cl', desc: 'skin.aya.cl.desc', coins: 8 },
-  { id: 'komitsu@classic', role: 'manager', mgr: 'komitsu', name: 'skin.komitsu.cl', desc: 'skin.komitsu.cl.desc', coins: 8 },
-  { id: 'yukimi@classic', role: 'manager', mgr: 'yukimi', name: 'skin.yukimi.cl', desc: 'skin.yukimi.cl.desc', coins: 8 },
-  { id: 'kuriko@classic', role: 'manager', mgr: 'kuriko', name: 'skin.kuriko.cl', desc: 'skin.kuriko.cl.desc', coins: 8 },
-  { id: 'sakura@classic', role: 'manager', mgr: 'sakura', name: 'skin.sakura.cl', desc: 'skin.sakura.cl.desc', coins: 10 },
-  { id: 'akari@classic', role: 'manager', mgr: 'akari', name: 'skin.akari.cl', desc: 'skin.akari.cl.desc', coins: 8 },
-  { id: 'shion@classic', role: 'manager', mgr: 'shion', name: 'skin.shion.cl', desc: 'skin.shion.cl.desc', coins: 12 },
+  { id: 'aya@classic', role: 'manager', mgr: 'aya', name: 'skin.aya.cl', desc: 'skin.aya.cl.desc', need: 1e3 },
+  { id: 'komitsu@classic', role: 'manager', mgr: 'komitsu', name: 'skin.komitsu.cl', desc: 'skin.komitsu.cl.desc', need: 1e4 },
+  { id: 'yukimi@classic', role: 'manager', mgr: 'yukimi', name: 'skin.yukimi.cl', desc: 'skin.yukimi.cl.desc', need: 1e5 },
+  { id: 'kuriko@classic', role: 'manager', mgr: 'kuriko', name: 'skin.kuriko.cl', desc: 'skin.kuriko.cl.desc', need: 1e6 },
+  { id: 'sakura@classic', role: 'manager', mgr: 'sakura', name: 'skin.sakura.cl', desc: 'skin.sakura.cl.desc', need: 1e7 },
+  { id: 'akari@classic', role: 'manager', mgr: 'akari', name: 'skin.akari.cl', desc: 'skin.akari.cl.desc', need: 1e8 },
+  { id: 'shion@classic', role: 'manager', mgr: 'shion', name: 'skin.shion.cl', desc: 'skin.shion.cl.desc', need: 1e9 },
   // —— 管理员 · 特别款式 ——
-  { id: 'aya@miko', role: 'manager', mgr: 'aya', name: 'skin.aya', desc: 'skin.aya.desc', coins: 15 },
-  { id: 'sakura@yukata', role: 'manager', mgr: 'sakura', name: 'skin.sakura', desc: 'skin.sakura.desc', coins: 15 },
-  { id: 'shion@battle', role: 'manager', mgr: 'shion', name: 'skin.shion', desc: 'skin.shion.desc', coins: 20 },
-  // 第二批特别款式：让 7 位管理员的款式数量一致（每人 = 标准制服 + 经典 + 特别，共 3 种）
-  { id: 'komitsu@taiko', role: 'manager', mgr: 'komitsu', name: 'skin.komitsu', desc: 'skin.komitsu.desc', coins: 15 },
-  { id: 'yukimi@snow', role: 'manager', mgr: 'yukimi', name: 'skin.yukimi', desc: 'skin.yukimi.desc', coins: 15 },
-  { id: 'kuriko@taisho', role: 'manager', mgr: 'kuriko', name: 'skin.kuriko', desc: 'skin.kuriko.desc', coins: 15 },
-  { id: 'akari@kitsune', role: 'manager', mgr: 'akari', name: 'skin.akari', desc: 'skin.akari.desc', coins: 15 },
+  { id: 'aya@miko', role: 'manager', mgr: 'aya', name: 'skin.aya', desc: 'skin.aya.desc', need: 3e9 },
+  { id: 'sakura@yukata', role: 'manager', mgr: 'sakura', name: 'skin.sakura', desc: 'skin.sakura.desc', need: 1e10 },
+  { id: 'shion@battle', role: 'manager', mgr: 'shion', name: 'skin.shion', desc: 'skin.shion.desc', need: 3e10 },
+  { id: 'komitsu@taiko', role: 'manager', mgr: 'komitsu', name: 'skin.komitsu', desc: 'skin.komitsu.desc', need: 1e11 },
+  { id: 'yukimi@snow', role: 'manager', mgr: 'yukimi', name: 'skin.yukimi', desc: 'skin.yukimi.desc', need: 3e11 },
+  { id: 'kuriko@taisho', role: 'manager', mgr: 'kuriko', name: 'skin.kuriko', desc: 'skin.kuriko.desc', need: 1e12 },
+  { id: 'akari@kitsune', role: 'manager', mgr: 'akari', name: 'skin.akari', desc: 'skin.akari.desc', need: 3e12 },
 ];
-
-// 所有皮肤统一售价：1 硬币（用户要求）。改价只改这一处，上面各条里的 coins 仅是旧价记录
-export const SKIN_PRICE = 1;
-for (const S of SKINS) S.coins = SKIN_PRICE;
 
 export const skinById = (id) => SKINS.find((s) => s.id === id) || null;
 export const skinsFor = (mgr) => SKINS.filter((s) => s.mgr === mgr);
 export const skinsByRole = (role) => SKINS.filter((s) => s.role === role);
 
-// 平台的 itemId 只允许 [A-Za-z0-9_.-]（不能有 @、空格等），所以付款用的 id 单独算一份：
-// 'shion@battle' → 'skin.shion.battle'。存档里记的仍是皮肤 id，付款回来时按这张表翻回去。
-for (const S of SKINS) S.pay = `skin.${S.id.replace('@', '.')}`;
-const BY_PAY = Object.fromEntries(SKINS.map((S) => [S.pay, S]));
-export const skinByPayId = (payId) => BY_PAY[payId] || null;
+/** 这套皮肤解锁了没有。`lifetime` 是累计收入（重开矿场不清零）。 */
+export const skinUnlocked = (S, lifetime) => !!S && (lifetime || 0) >= (S.need || 0);

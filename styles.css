@@ -321,8 +321,6 @@ button.shake { animation: btnshake .42s ease-in-out; }
 .pfloat.tier { top: 32%; font-size: 20px; color: var(--vermilion-d); }
 @keyframes pfloat { 0% { opacity: 0; transform: translate(-50%, 12px) scale(.8); } 20% { opacity: 1; transform: translate(-50%, 0) scale(1); } 100% { opacity: 0; transform: translate(-50%, -46px) scale(1); } }
 
-/* ══ 商城（原投资人面板）══ 左右两张介绍卡 + 对应的两列按钮；硬币一律用平台官方硬币图标 .pcoin（像素风，缩放保持硬边） */
-.pcoin { display: inline-block; width: 18px; height: 18px; flex: none; vertical-align: -4px; image-rendering: pixelated; image-rendering: crisp-edges; filter: drop-shadow(0 1px 0 rgba(0, 0, 0, .25)); }
 .shop-lead { margin: 0 0 2px; text-align: center; }
 /* 两张介绍卡左右并排，与底部两列按钮对齐（同样 1fr 1fr + 8px 间距），等高 */
 .shop-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; align-items: stretch; margin: 12px 0 4px; }
@@ -335,20 +333,10 @@ button.shake { animation: btnshake .42s ease-in-out; }
 .shop-card .mile { margin: auto 0 0; padding-top: 6px; font-size: 11px; }
 .shop-cols.one .shop-card .big { font-size: 30px; }
 .shop-cols.one .shop-card .big.dim { font-size: 20px; }
-/* 硬币卡：暖金底 + 金边，右上角挂一枚价格牌（官方硬币 + 数字） */
-.shop-card.paid { border-color: var(--gold-d); background: radial-gradient(120% 70% at 50% 0%, #fff3c4, transparent 70%), var(--washi-d); }
-.shop-card.paid .big { color: var(--vermilion-d); }
-.price-tag { position: absolute; top: -11px; right: 8px; display: inline-flex; align-items: center; gap: 3px; padding: 2px 8px 2px 4px; border-radius: 999px; background: #3a2804; border: 2px solid #ffdc16; box-shadow: 0 2px 0 rgba(0, 0, 0, .3); }
-.price-tag .pcoin { width: 18px; height: 18px; vertical-align: 0; }
-.price-tag b { font-family: var(--num); font-size: 14px; line-height: 1; color: #ffdc16; font-variant-numeric: tabular-nums; }
 /* 商城底部：硬币招募 + 免费重开并排两列，沿用游戏原本的绿色主按钮 / 描边按钮 */
 .shop-row { align-items: stretch; }
 .shop-row .btn { min-width: 0; padding: 6px 8px; font-size: 16px; line-height: 1.25; overflow-wrap: anywhere; }
 .shop-row .btn small { font-size: 13px; }
-/* 价格行：官方硬币 + 「10 硬币」，放在深色小胶囊里，绿底上也看得清 */
-.btn.pay small.price { display: inline-flex; align-items: center; justify-content: center; gap: 4px; margin-top: 3px; padding: 1px 9px 1px 4px; border-radius: 999px; background: rgba(24, 34, 20, .35); color: #ffdc16; font-weight: 800; }
-.btn.pay small.price .pcoin { width: 18px; height: 18px; vertical-align: 0; }
-.btn.pay:disabled small.price, .btn.pay[aria-disabled="true"] small.price { color: #e8e2d0; background: rgba(0, 0, 0, .2); }
 
 .btn.pay { background: linear-gradient(180deg, #ffdc16, #f2b200); border-color: #a87900; color: #3a2804; text-shadow: none; box-shadow: 0 4px 0 #a87900; }
 /* ══ 商城页签：标题下面一个紧凑的分段开关（不再是两条铺满整行的大按钮）══ */
@@ -412,9 +400,8 @@ button.shake { animation: btnshake .42s ease-in-out; }
 .sk-pill i { display: inline-flex; align-items: center; gap: 3px; font-style: normal; font-size: 11px; font-weight: 800; line-height: 1.35; padding: 2px 7px; border-radius: 999px; white-space: nowrap; box-shadow: 0 1px 0 rgba(0, 0, 0, .15); }
 .sk-pill .p-on { background: var(--vermilion); color: #fff; }
 .sk-pill .p-has { width: 22px; height: 22px; padding: 0; justify-content: center; font-size: 13px; background: var(--matcha); color: #fff; }
-.sk-pill .p-buy { padding: 1px 7px 1px 2px; background: #fff4c2; border: 2px solid #e0a800; color: #5a3c00; }
-.sk-pill .p-buy .pcoin { width: 16px; height: 16px; }
-.sk-pill .p-buy b { font-family: var(--num); font-size: 14px; }
+.sk-pill .p-lock { padding: 1px 8px; background: rgba(251, 244, 230, .95); border: 2px solid rgba(38, 53, 107, .38); color: var(--indigo); }
+.sk-pill .p-lock b { font-family: var(--num); font-size: 13px; }
 
 /* 宽屏 / 横屏：左 = 预览（跟着可用高度伸缩），右 = 列表（自己滚动） */
 @media not all and (orientation: portrait) and (max-width: 640px) {
@@ -438,14 +425,10 @@ button.shake { animation: btnshake .42s ease-in-out; }
 
 /* 底部动作按钮：购买（金色，带硬币）/ 换上（绿色）/ 换回标准制服（描边）/ 使用中（朱红状态，不可点） */
 .btn.sk-act.pay { background: linear-gradient(180deg, #ffdc16, #f2b200); border-color: #a87900; color: #3a2804; text-shadow: none; box-shadow: 0 4px 0 #a87900; }
-/* （旧的“价格前自动加硬币图标”规则已去掉：现在 small.price 里自己带了官方硬币图标，两个叠在一起就是重复） */
 .btn.sk-act.on[aria-disabled="true"] { background: #fbe3dd; border-color: var(--vermilion); color: var(--vermilion-d); box-shadow: 0 4px 0 rgba(160, 50, 40, .35); }
 .btn.sk-act.pay[aria-disabled="true"] { background: #e9dfb8; border-color: #b9a46a; color: #6b5a2a; box-shadow: 0 4px 0 #b9a46a; }
 /* 还没上架的工种：只放一个小锁，不再写“即将上架” */
 .sk-chip i.lock { min-width: 0; padding: 0; background: none; font-family: inherit; font-size: 12px; opacity: .7; }
-.sk-pill .p-buy b { font-size: 13px; }
-/* 试玩模式角标：一直挂在屏幕顶部正中，提醒“不会存档” */
-.sandbox-tag { position: fixed; z-index: 70; left: 50%; top: calc(env(safe-area-inset-top, 0px) + 4px); transform: translateX(-50%); padding: 3px 12px; border-radius: 999px; background: rgba(210, 70, 58, .92); color: #fff; font-size: 12px; font-weight: 800; white-space: nowrap; pointer-events: none; box-shadow: 0 2px 0 rgba(0, 0, 0, .25); }
 
 /* ══ 皮肤页 v4：预览 → 选人（一排头像）→ 她的服装大图，一屏装下 ══ */
 .card.is-skins .sk-frame { width: 128px; height: 160px; }
@@ -460,10 +443,6 @@ button.shake { animation: btnshake .42s ease-in-out; }
 /* 她的服装：固定 3 列大图（每人 2~3 套，一行放下） */
 .card.is-skins .sk-tiles { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
 .card.is-skins .sk-tile { border-radius: 16px; }
-/* 购买按钮里的价格：官方硬币图标 + 数字 */
-.btn.sk-act small.price { display: inline-flex; align-items: center; gap: 3px; margin-top: 1px; font-size: 13px; }
-.btn.sk-act small.price .pcoin { width: 16px; height: 16px; }
-.btn.sk-act small.price b { font-family: var(--num); }
 @media not all and (orientation: portrait) and (max-width: 640px) {
   .card.is-skins .sk-frame { width: auto; height: auto; }
   .card.is-skins .sk-people { justify-content: flex-start; }

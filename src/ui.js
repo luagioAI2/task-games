@@ -1,11 +1,15 @@
 // DOM 界面：顶部现金 / 闲置收入、深度指示、镜头按钮、向导气泡、提示条；
 // 面板：升级（数值行 + ×1/×10/×50/MAX）、管理员（雇佣 / 等级与培训 / 技能）、投资人、设置（含语言切换）、离线收益、新深层。
+//
+// ★★ 所有查询都从 `ROOT` 出发，**不是** `document`：插件挂载时页面里还有宿主自己的
+//    `.card` / `.cash` / `.badge` / `.overlay`，按 document 查会拿到宿主的节点
+//    （症状是「游戏 HUD 显示的是宿主的数字」或者「点了没反应」）。
 import * as E from './sim/economy.js';
 import * as W from './sim/world.js';
 import { LAYERS, SHAFTS_PER_LAYER } from './data/layers.js';
 import { fmt, fmtSec, fmtTime, fmtClock } from './format.js';
 import { portrait, guidePortrait, minerPortrait, mgrFace, mgrName, mgrJob, mgrTitled, mgrShafts, MANAGERS, faceCard, managerArt } from './art/chars.js';
-import { SKINS, skinById, SKIN_ROLES, skinsByRole, skinsFor } from './data/skins.js';
+import { SKINS, skinById, SKIN_ROLES, skinsByRole, skinsFor, skinUnlocked } from './data/skins.js';
 import * as P from './art/props.js';
 import { t, LANGS, LANG_LABEL, getLang } from '../i18n.js';
 
@@ -14,14 +18,14 @@ const MGR_INDEX = (key) => Math.max(0, MANAGERS.findIndex((m) => m.key === key))
 const FACE = {};
 const faceSrc = (mgr) => (FACE[mgr] ??= faceCard(mgr, MANAGERS[MGR_INDEX(mgr)].bg).toDataURL());
 
-const $ = (s, r = document) => r.querySelector(s);
+let ROOT = null;
+/** 由 `main.js` 的 `start()` 在挂载时注入；卸载后回到 `document`（独立网页的形态）。 */
+export function setUiRoot(el) { ROOT = el || null; }
+const $ = (s, r) => (r || ROOT || document).querySelector(s);
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const MGR_FACE = mgrFace;
 const place = (what) => t('place.' + what);
 const layerName = (li) => t(`L${li}.name`);
-const SHOP_PRICE = E.SHOP.investorCoins;
-// 榜单分数就是累计收入（美元整数），直接按游戏里的金额格式显示
-const rankText = (score) => '$' + fmt(Math.max(0, Number(score) || 0));
 
 export class UI {
   constructor(game) {
@@ -37,7 +41,7 @@ export class UI {
       const b = e.target.closest('button[data-act]'); if (!b) return;
       game.audio.play('click');
       const a = b.dataset.act;
-      if (a === 'shop') this.openShop(); else if (a === 'settings') this.openSettings(); else if (a === 'rank') this.openRank();
+      if (a === 'shop') this.openShop(); else if (a === 'settings') this.openSettings();
       else if (a === 'camUp') game.view.scrollTo(game.view.cam.y - game.view.viewH * 0.8, game.state);
       else if (a === 'camDown') game.view.scrollTo(game.view.cam.y + game.view.viewH * 0.8, game.state);
     });
@@ -59,7 +63,7 @@ export class UI {
     const o = this.open; if (!o) return;
     if (o.type === 'level') this.renderLevel(o.what, o.i, false); else if (o.type === 'mgr') this.renderMgr(o.what, o.i, false);
     else if (o.type === 'shop') this.openShop(); else if (o.type === 'settings') this.openSettings();
-    else if (o.type === 'layer') this.openLayer(o.li); else if (o.type === 'rank') this.openRank();
+    else if (o.type === 'layer') this.openLayer(o.li);
   }
 
   // —— HUD ——
@@ -160,18 +164,23 @@ export class UI {
   }
   // 按钮反馈（全局）：任何 <button> 按下时——指尖位置扩散一圈水波 + 按钮缩一下再弹回。
   // 挂在 document 上一次就够：HUD 图标、倍数切换、语言、设置、面板按钮（含之后新建的）都自动有。
-  // 水波放在一个裁切层里，不会把角标之类的外溢元素裁掉。
+  // ★★ 必须用 `ROOT.contains(b)` 兜一道：插件里 document 上还有**宿主**的几十个按钮，
+  //    不兜的话孩子点宿主的任务卡也会被塞进 `.rip-wrap` / `.fx-ring` 节点
+  //    （卸载后游戏样式已经摘了，宿主按钮上就留下几个不可见的空 span）。
   static wirePress() {
     if (UI._pressWired) return; UI._pressWired = true;
     document.addEventListener('pointerdown', (e) => {
       const b = e.target instanceof Element ? e.target.closest('button') : null;
-      if (!b || b.disabled || b.getAttribute('aria-disabled') === 'true') return;   // 不可点的按钮在 click 时左右晃，不出水波
+      if (!b || !ROOT?.contains(b) || b.disabled || b.getAttribute('aria-disabled') === 'true') return;   // 不可点的按钮在 click 时左右晃，不出水波
       UI.pressFx(b, e, 'press');
     }, { capture: true, passive: true });
     document.addEventListener('animationend', (e) => {
       const b = e.target;
-      if (!(b instanceof HTMLButtonElement)) return;
-      const cls = { btnpress: 'press', btndone: 'done', btnshake: 'shake' }[e.animationName];
+      if (!(b instanceof HTMLButtonElement) || !ROOT?.contains(b)) return;
+      // 动画名在 `scoped-css.js` 里被加了 `mng-` 前缀（`@keyframes` 的名字是全局的，
+      // 不加前缀会和宿主的同名动画互相顶掉）。两种都认，免得改前缀时忘了这里。
+      const n = String(e.animationName).replace(/^mng-/, '');
+      const cls = { btnpress: 'press', btndone: 'done', btnshake: 'shake' }[n];
       if (cls) b.classList.remove(cls);
     }, true);
   }
@@ -184,25 +193,30 @@ export class UI {
     b.classList.remove(cls); void b.offsetWidth; b.classList.add(cls);
     UI.ringFx(b, r);
   }
-  // 按钮外一圈向外扩的光环：挂在 body 上（fixed），不会被按钮 / 面板的 overflow 裁掉
+  // 按钮外一圈向外扩的光环：挂在**根元素**上（absolute），不会被按钮 / 面板的 overflow 裁掉。
+  // ⚠️ 原来挂在 `document.body` 上（`position:fixed`）。插件里那份样式已经收进
+  //    `#mng-root`，挂在 body 上的节点根本拿不到 `.fx-ring` 的样式 ⇒ 光环静默消失；
+  //    而且 `getBoundingClientRect()` 是视口坐标，得减去根的左上角才是根内坐标。
   static ringFx(b, r = b.getBoundingClientRect(), color) {
-    if (UI.reduced()) return;
+    if (UI.reduced() || !ROOT) return;
+    const base = ROOT.getBoundingClientRect();
     const el = document.createElement('div'); el.className = 'fx-ring'; el.setAttribute('aria-hidden', 'true');
-    Object.assign(el.style, { left: r.left + 'px', top: r.top + 'px', width: r.width + 'px', height: r.height + 'px', borderRadius: getComputedStyle(b).borderRadius });
+    Object.assign(el.style, { left: (r.left - base.left) + 'px', top: (r.top - base.top) + 'px', width: r.width + 'px', height: r.height + 'px', borderRadius: getComputedStyle(b).borderRadius });
     el.style.setProperty('--ring', color || (b.classList.contains('alt') || b.closest('.bulk, .hud-lang') ? '#9ab4ff' : '#fff3a0'));
-    el.addEventListener('animationend', () => el.remove()); document.body.appendChild(el);
+    el.addEventListener('animationend', () => el.remove()); ROOT.appendChild(el);
   }
   // 成功时从按钮四周迸出一圈小星星
   static sparkFx(b, colors = ['#fff3a0', '#7aff7a', '#ffffff', '#f2c95c']) {
-    if (UI.reduced() || !b?.isConnected) return;
-    const r = b.getBoundingClientRect(), cx = r.left + r.width / 2, cy = r.top + r.height / 2, n = 12;
+    if (UI.reduced() || !ROOT || !b?.isConnected) return;
+    const base = ROOT.getBoundingClientRect();
+    const r = b.getBoundingClientRect(), cx = r.left - base.left, cy = r.top - base.top, n = 12;
     for (let k = 0; k < n; k++) {
       const a = (k / n) * Math.PI * 2 + Math.random() * 0.4, d = Math.max(r.width, r.height) * 0.55 + 18 + Math.random() * 26;
       const el = document.createElement('div'); el.className = 'fx-spark'; el.setAttribute('aria-hidden', 'true');
       el.style.left = cx + Math.cos(a) * r.width * 0.42 + 'px'; el.style.top = cy + Math.sin(a) * r.height * 0.42 + 'px';
       el.style.setProperty('--dx', Math.cos(a) * d * 0.6 + 'px'); el.style.setProperty('--dy', Math.sin(a) * d * 0.6 + 'px');
       el.style.setProperty('--c', colors[k % colors.length]); el.style.animationDelay = (Math.random() * 0.06).toFixed(3) + 's';
-      el.addEventListener('animationend', () => el.remove()); document.body.appendChild(el);
+      el.addEventListener('animationend', () => el.remove()); ROOT.appendChild(el);
     }
   }
   static reduced() { try { return matchMedia('(prefers-reduced-motion: reduce)').matches; } catch { return false; } }
@@ -271,7 +285,7 @@ export class UI {
       for (const b of body.querySelectorAll('[data-bulk]')) b.addEventListener('click', () => { g.audio.play('click'); this.bulk = b.dataset.bulk === 'max' ? 'max' : Number(b.dataset.bulk); this.renderLevel(what, i, true); });
       $('.c-foot', this.panel).textContent = ''; this.hold();
       // 点击时再取当前的倍数 / 等级（不用建按钮时的旧值）
-      const up = this.footButton(t('lv.upgrade', { n: k }), fmt(cost), st.cash >= cost, () => {
+      const up = this.footButton(t('lv.upgrade', { n: k }), '$' + fmt(cost), st.cash >= cost, () => {
         const ob = what === 'shaft' ? st.shafts[i] : what === 'elev' ? st.elev : st.house, before = ob.level, beforeT = P.tierOf(before), bk = this.bulk;
         if (W.upgrade(st, what, i, bk === 'max' ? 'max' : bk)) {
           g.audio.play('upgrade'); g.onUpgrade(what, i); this.renderLevel(what, i, true);
@@ -289,7 +303,9 @@ export class UI {
     for (const b of D.bulk) { const on = String(this.bulk) === b.dataset.bulk; if (b.getAttribute('aria-pressed') !== String(on)) b.setAttribute('aria-pressed', String(on)); }
     // 满级：按钮变成“已满级”（灰，点了只会晃）
     if (maxed) this.setBtn(D.up, t('lv.maxed'), '', false);
-    else this.setBtn(D.up, t('lv.upgrade', { n: k }), fmt(cost), st.cash >= cost);
+    // ⚠️ 这里的副标题是**价格**，必须带 `$`：它每 0.2 秒覆盖一次建按钮时的那份，
+    //    漏了 `$` 就会出现「持有 $1.00M」旁边挂着一个「7.86」（2026-10-26 截图走查发现）。
+    else this.setBtn(D.up, t('lv.upgrade', { n: k }), '$' + fmt(cost), st.cash >= cost);
     this.syncHold();
   }
   // 钱不够时点不了的按钮：左右晃一下
@@ -362,58 +378,46 @@ export class UI {
   }
 
   // —— 商城（原投资人面板）——
-  // 投资人两种拿法：① 平台硬币直接招募 1 位（立即生效、不用重开、可重复买，只在平台开放购买时显示）；
-  // ② 照旧规则：累计收入够了就重开矿场，迎来 N 位。
+  // 投资人只剩一条路：累计收入够了就重开矿场，迎来 N 位。
+  // 原版还有「用平台硬币立即招募 1 位」（`gp.pay`，真钱）—— 宿主里没有支付通道，整块删掉。
+  // 皮肤页还在，但改成**按累计收入解锁**（见 `data/skins.js`），所以两页永远都有。
   openShop(live = false) {
-    const g = this.game, st = g.state, n = W.investorsClaimable(st), canPay = !!window.gp?.pay?.available;
-    const tab = this.shopTab = (this.shopTab === 'skins' && (canPay || (g.save.data.ownedSkins ?? []).length)) ? 'skins' : 'inv';
-    // 皮肤页：实时刷新只原地更新（使用中 / 已拥有 / 购买中），绝不重建，也绝不去改投资人的按钮文字
+    const g = this.game, st = g.state, n = W.investorsClaimable(st);
+    const tab = this.shopTab = this.shopTab === 'skins' ? 'skins' : 'inv';
+    // 皮肤页：实时刷新只原地更新（使用中 / 已解锁 / 还差多少），绝不重建 —— 预览动画不会被打断
     if (tab === 'skins') {
-      const sk = `${canPay}|${getLang()}`;
+      const sk = getLang();
       if (live && this._skSig === sk && this.panel.querySelector('.sk-shop')) { this.skinSync(); return; }
       this._skSig = sk;
     } else this._skSig = null;
-    const sig = `${tab}|${st.investors}|${n}|${canPay}|${getLang()}|${!!g.buying}`;
-    // 投资人页：购买中 / 结束只原地改硬币按钮的文字和可用状态，不重建面板
-    if (tab === 'inv' && live && this._invSig === sig) { if (this.shopBuy?.isConnected) this.setBtn(this.shopBuy, g.buying ? t('shop.buying') : t('shop.buy'), undefined, !g.buying); return; }
+    const sig = `${tab}|${st.investors}|${n}|${getLang()}`;
+    // 投资人页：实时刷新只原地改按钮文字，不重建面板
+    if (tab === 'inv' && live && this._invSig === sig) return;
     this._invSig = tab === 'inv' ? sig : null; this.open = { type: 'shop' };
     const p = Math.round(st.investors * E.INVESTOR.bonus * 100);
     const sub = t('shop.sub', { n: st.investors, p });
     // 投资人人数写在投资人页的第一行（.shop-stat），标题栏只留「商城」，给页签腾地方
     if (!live) this.show(t('shop.title'), '', guidePortrait(), 'gold');
-    // 页签：投资人 / 皮肤（平台不开放购买、也没已购皮肤时只显示投资人一页）
-    const tabs = canPay || (g.save.data.ownedSkins ?? []).length
-      ? `<div class="shop-tabs" role="tablist"><button type="button" role="tab" data-tab="inv" aria-selected="${tab === 'inv'}">${esc(t('shop.tabInv'))}</button><button type="button" role="tab" data-tab="skins" aria-selected="${tab === 'skins'}">${esc(t('shop.tabSkins'))}</button></div>`
-      : '';
+    // 页签：投资人 / 皮肤
+    const tabs = `<div class="shop-tabs" role="tablist"><button type="button" role="tab" data-tab="inv" aria-selected="${tab === 'inv'}">${esc(t('shop.tabInv'))}</button><button type="button" role="tab" data-tab="skins" aria-selected="${tab === 'skins'}">${esc(t('shop.tabSkins'))}</button></div>`;
     // 页签单独占标题下面一行（以前塞在标题那一行里，被挤得很窄）
     this.panel.querySelector('.c-tabs')?.remove();
-    if (tabs) $('.c-head', this.panel).insertAdjacentHTML('afterend', `<div class="c-tabs">${tabs}</div>`);
+    $('.c-head', this.panel).insertAdjacentHTML('afterend', `<div class="c-tabs">${tabs}</div>`);
     // 商城面板：标题 / 页签 / 底部按钮固定，只有中间内容滚动（宽屏也一样，按钮永远看得见）
     const card = $('.card', this.panel); card.classList.add('is-shop'); card.classList.toggle('is-skins', tab === 'skins');
     this.bindTabs();
     if (tab === 'skins') { this.renderSkins(); return; }
     const need = Math.pow(Math.floor(Math.sqrt(st.lifetime / E.INVESTOR.unit) - Math.sqrt(st.runStart / E.INVESTOR.unit)) + 1 + Math.sqrt(st.runStart / E.INVESTOR.unit), 2) * E.INVESTOR.unit;
-    // 两张介绍卡和底部两个按钮一一对应、左右并排：左 = 硬币招募，右 = 免费重开（平台不开放购买时只有右边一张，占整行）
-    // 硬币一律用平台官方硬币图标（assets/ui/platform-coin.svg）
-    const coin = () => `<img class="pcoin" src="assets/ui/platform-coin.svg" alt="" aria-hidden="true" draggable="false">`;
-    const paid = canPay ? `<div class="shop-card paid"><span class="price-tag">${coin()}<b>${SHOP_PRICE}</b></span><b>${esc(t('shop.paidHead'))}</b><div class="big">${esc(t('inv.big', { n: 1 }))}</div><p class="note">${esc(t('shop.paidDesc'))}</p></div>` : '';
     const free = `<div class="shop-card free"><b>${esc(t('shop.freeHead'))}</b><div class="big${n > 0 ? '' : ' dim'}">${esc(n > 0 ? t('inv.big', { n }) : t('inv.none'))}</div><p class="note">${esc(t('inv.p2'))}</p><p class="mile">${esc(t('inv.mile', { a: '$' + fmt(st.lifetime), b: '$' + fmt(need) }))}</p></div>`;
     $('.c-body', this.panel).innerHTML = `<p class="shop-stat">${esc(sub)}</p><p class="shop-lead">${esc(t('inv.p1', { p: E.INVESTOR.bonus * 100 })).replace('&lt;b&gt;', '<b>').replace('&lt;/b&gt;', '</b>')}</p>
-      <div class="shop-cols${canPay ? '' : ' one'}">${paid}${free}</div>`;
+      <div class="shop-cols one">${free}</div>`;
     $('.c-foot', this.panel).textContent = '';
-    // 按钮不再是底部的两大条：各自放进对应的介绍卡底部（左 = 硬币招募，右 = 免费重开）
     const cards = this.panel.querySelectorAll('.shop-card');
-    if (canPay) {
-      const buy = this.shopBuy = this.footButton(g.buying ? t('shop.buying') : t('shop.buy'), '', !g.buying, () => g.buyInvestor());
-      buy.classList.add('pay', 'in-card');
-      const sm = document.createElement('small'); sm.className = 'price'; sm.innerHTML = `${coin()}<span>${esc(t('shop.price', { c: SHOP_PRICE }))}</span>`; buy.appendChild(sm);
-      this.panel.querySelector('.shop-card.paid').appendChild(buy);
-    }
     let armed = false;
     const b = this.footButton(n > 0 ? t('inv.go', { n }) : t('inv.cant'), n > 0 ? '' : t('inv.next', { b: '$' + fmt(need) }), n > 0, () => {
       if (!armed) { armed = true; this.setBtn(b, t('inv.confirm'), t('inv.confirmSub')); b.classList.add('warn'); this.denyFx(b); return; }
       g.prestige(); this.close();
-    }, canPay);
+    });
     b.classList.add('in-card');
     (cards[cards.length - 1] || $('.c-foot', this.panel)).appendChild(b);
   }
@@ -485,18 +489,21 @@ export class UI {
   skinState(id) {
     const r = this.skinRow(id); if (!r) return null;
     const d = this.game.save.data, worn = (d.skins ?? {})[r.mgr] || null;
-    return { ...r, on: r.S ? worn === r.S.id : !worn, has: r.S ? (d.ownedSkins ?? []).includes(r.S.id) : true };
+    // ★ 解锁**由累计收入现算**，不读存档里的 ownedSkins：
+    //   原版是「花硬币买过才 has」，现在是「累计收入够了就 has」，所以重开矿场也不掉，
+    //   而改存档白拿也白不了（`state.lifetime` 就在世界状态里）。
+    const life = this.game.state.lifetime || 0;
+    return { ...r, on: r.S ? worn === r.S.id : !worn, has: r.S ? skinUnlocked(r.S, life) : true, need: r.S?.need ?? 0 };
   }
   // 原地刷新：头像 / 服装的选中与状态、预览下的文字、动作按钮
   skinSync() {
-    const g = this.game, canPay = !!window.gp?.pay?.available, d = g.save.data;
-    const coin = '<img class="pcoin" src="assets/ui/platform-coin.svg" alt="" aria-hidden="true" draggable="false">';
+    const g = this.game, life = g.state.lifetime || 0;
     const s = this.skinState(this.skinSel); if (!s) return;
-    // 头像：选中的那位高亮；还有没买的衣服的人带一个小金点
+    // 头像：选中的那位高亮；还有没解锁的衣服的人带一个小金点
     for (const b of this.panel.querySelectorAll('.sk-who-b')) {
       const on = b.dataset.mgr === s.mgr; b.classList.toggle('sel', on);
       if (b.getAttribute('aria-pressed') !== String(on)) b.setAttribute('aria-pressed', String(on));
-      const more = skinsFor(b.dataset.mgr).some((S) => !(d.ownedSkins ?? []).includes(S.id));
+      const more = skinsFor(b.dataset.mgr).some((S) => !skinUnlocked(S, life));
       b.classList.toggle('more', more);
     }
     for (const row of this.panel.querySelectorAll('.sk-tile')) {
@@ -504,34 +511,34 @@ export class UI {
       const sel = r.id === this.skinSel;
       row.classList.toggle('sel', sel); row.classList.toggle('on', r.on);
       if (row.getAttribute('aria-pressed') !== String(sel)) row.setAttribute('aria-pressed', String(sel));
-      // 角标只用最短的形式：使用中 / ✓（已拥有）/ 硬币 + 价格
-      const html = r.on ? `<i class="p-on">${esc(t('skin.worn'))}</i>` : !r.S ? '' : r.has ? '<i class="p-has" aria-hidden="true">✓</i>' : `<i class="p-buy">${coin}<b>${r.S.coins}</b></i>`;
+      // 角标只用最短的形式：使用中 / ✓（已解锁）/ 解锁门槛 $X
+      const html = r.on ? `<i class="p-on">${esc(t('skin.worn'))}</i>` : !r.S ? '' : r.has ? '<i class="p-has" aria-hidden="true">✓</i>' : `<i class="p-lock" title="${esc(t('skin.need', { v: '$' + fmt(r.need) }))}"><b>$${fmt(r.need)}</b></i>`;
       const pill = row.querySelector('.sk-pill'); if (pill._h !== html) { pill._h = html; pill.innerHTML = html; }
     }
     const setT = (sel, v) => { const el = this.panel.querySelector(sel); if (el && el.textContent !== v) el.textContent = v; };
     setT('.sk-who', mgrTitled(MGR_INDEX(s.mgr)));
     setT('.sk-what', s.S ? t(s.S.name) : t('skin.thumbDefault'));
     const b = this.skinBtn; if (!b?.isConnected) return;
-    let label, en = true, cls = '', price = 0;
-    if (g.buying) { label = t('shop.buying'); en = false; cls = 'pay'; }
-    else if (s.on) { label = t('skin.worn'); en = false; cls = 'on'; }
+    let label, sub = '', en = true, cls = '';
+    if (s.on) { label = t('skin.worn'); en = false; cls = 'on'; }
     else if (!s.S) { label = t('skin.equipDefault'); cls = 'alt'; }
     else if (s.has) { label = t('skin.wear'); }
-    else { label = t('skin.buy'); en = canPay; cls = 'pay'; price = s.S.coins; }
-    this.setBtn(b, label, '', en);
+    // 没解锁：按钮**不置灰**，副标题写「累计收入到 $X」。
+    // ★ 这里故意 `en = true`：`footButton` 对「软禁用」的按钮是「晃一下 + 一声 deny」，
+    //   孩子只会觉得坏了；让它可点，`skinAct` 里弹一句「累计收入到 $X 就解锁」才说得清楚。
+    else { label = t('skin.locked'); sub = t('skin.need', { v: '$' + fmt(s.need) }); }
+    this.setBtn(b, label, sub, en);
     for (const c of ['pay', 'on', 'alt']) b.classList.toggle(c, c === cls);
-    // 价格：官方硬币图标 + 数字（不写“1 coins”这种字）
-    let pr = b.querySelector(':scope > small.price');
-    if (price) { if (!pr) { pr = document.createElement('small'); pr.className = 'price'; b.appendChild(pr); } const h = `${coin}<b>${price}</b>`; if (pr._h !== h) { pr._h = h; pr.innerHTML = h; } }
-    else if (pr) pr.remove();
   }
   // 底部按钮：按“此刻”的选中项决定做什么（不用创建时的旧状态）
   skinAct() {
     const g = this.game, s = this.skinState(this.skinSel), b = this.skinBtn;
-    if (!s || g.buying || s.on) return;
+    if (!s || s.on) return;
     if (!s.S) { g.equipSkin(null, true, s.mgr); this.doneFx(b); this.skinSync(); return; }
     if (s.has) { g.equipSkin(s.S.id, true); this.doneFx(b); this.skinSync(); return; }
-    g.buySkin(s.S.id);   // 成功后 grantPurchase 会自动穿上，refresh → skinSync，buyItem 再在 shopBuy（就是这颗按钮）上放生效动效
+    // 没解锁：不是「买不起」，是「还没挖到那儿」—— 提示要说清楚，别让孩子以为是故障
+    g.audio.play('deny'); this.denyFx(b);
+    this.toast(t('skin.need', { v: '$' + fmt(s.need) }));
   }
   // 预览：一张画布，自动轮播 待机 → 招牌动作 → 待机 → 欢呼。三段动画按同一比例画（不会忽大忽小），脚踩在底边上。
   paintSkinPreview() {
@@ -565,51 +572,9 @@ export class UI {
     this.skRaf = requestAnimationFrame(tick);
   }
   // —— 设置 ——
-  // —— 全服排行榜：按累计收入（平台榜单只存一个数：floor(1000·log10(1+累计收入))，这里还原成金额显示）——
-  async openRank() {
-    const g = this.game, token = {}; this._rankTok = token;
-    this.open = { type: 'rank' };
-    this.show(t('rank.title'), t('rank.sub'), guidePortrait(), 'gold');
-    const body = $('.c-body', this.panel), foot = $('.c-foot', this.panel);
-    const mine = `<p class="rk-mine">${esc(t('rank.mine', { v: '$' + fmt(g.state.lifetime) }))}</p>`;
-    body.innerHTML = `${mine}<p class="note">${esc(t('rank.loading'))}</p>`;
-    foot.textContent = '';
-    const P = window.gp?.player;
-    const sub = await g.submitRank();   // 先把自己的最新成绩交上去（只在比上次交的高时才真的提交）
-    const top = P?.topScores ? await P.topScores(20).catch(() => null) : null;
-    if (this._rankTok !== token || this.open?.type !== 'rank') return;
-    const me = P?.user;
-    let html = mine;
-    if (sub && sub.best != null && sub.rank != null) html += `<p class="rk-best">${esc(t('rank.me', { v: rankText(sub.best), r: sub.rank }))}</p>`;
-    if (!Array.isArray(top)) html += `<p class="note">${esc(t('rank.offline'))}</p>`;
-    else if (!top.length) html += `<p class="note">${esc(t('rank.empty'))}</p>`;
-    else html += `<ol class="rk-list">${top.map((e, k) => {
-      const name = e.isMe ? (me?.name || e.name || t('rank.you')) : (e.name || t('rank.anon'));
-      const init = esc(String(name).trim().charAt(0).toUpperCase() || '?');
-      const av = e.avatar ? `<img class="rk-av" src="${esc(e.avatar)}" alt="" loading="lazy" data-init="${init}">` : `<i class="rk-av">${init}</i>`;
-      const cls = [e.isMe ? 'me' : '', k < 3 ? `top${k + 1}` : ''].filter(Boolean).join(' ');
-      return `<li class="${cls}"><b class="rk-n">${k + 1}</b>${av}<span class="rk-name">${esc(name)}${e.isMe ? ` <em>${esc(t('rank.you'))}</em>` : ''}</span><span class="rk-v num">${esc(rankText(e.score))}</span></li>`;
-    }).join('')}</ol>`;
-    if (!me && P) html += `<p class="note">${esc(t('rank.guest'))}</p>`;
-    body.innerHTML = html;
-    // 头像加载失败时换成首字母圆徽
-    for (const img of body.querySelectorAll('img.rk-av')) img.addEventListener('error', () => { const i = document.createElement('i'); i.className = 'rk-av'; i.textContent = img.dataset.init || '?'; img.replaceWith(i); }, { once: true });
-    foot.textContent = '';
-    if (!me && P?.requestLogin) this.footButton(t('rank.login'), '', true, () => { g.audio.play('click'); P.requestLogin(); });
-    this.footButton(t('rank.refresh'), '', true, () => { g.audio.play('click'); this.openRank(); }, !me);
-  }
   openSettings() {
     const g = this.game; this.open = { type: 'settings' };
     this.show(t('set.title'), t('set.sub'), guidePortrait());
-    // 隐藏开关：在设置里 2 秒内连点左上角葵的头像 5 下 → 试玩模式（不存档、不上榜）
-    if (!this._sbWired) {
-      this._sbWired = true; let n = 0, t0 = 0;
-      $('.c-icon', this.panel).addEventListener('pointerdown', () => {
-        if (this.open?.type !== 'settings') return;
-        const now = performance.now(); if (now - t0 > 2000) n = 0; t0 = now;
-        if (++n >= 5) { n = 0; this.game.startSandbox(); } else this.game.audio.play('tap');
-      });
-    }
     $('.c-body', this.panel).innerHTML = `<p class="note">${esc(t('set.body'))}</p>
       <div class="lang"><span>${esc(t('set.lang'))}</span><div class="seg" role="group">${LANGS.map((l) => `<button type="button" data-lang="${l}" aria-pressed="${getLang() === l}">${esc(LANG_LABEL[l])}</button>`).join('')}</div></div>`;
     for (const b of this.panel.querySelectorAll('[data-lang]')) b.addEventListener('click', () => {

@@ -42,7 +42,6 @@ export const TIPS = [
   { id: 'nap', when: (s, g) => g.napT > 12, at: (s) => { const x = s.shafts.find((v) => !v.mgr && allSleep(v)); return x ? { k: 'miner', i: x.i } : null; } },
   { id: 'deeper', when: canBuyNext, at: () => ({ k: 'newShaft' }) },
   { id: 'invest', when: (s) => W.investorsClaimable(s) > 0, hud: 'shop' },
-  { id: 'rank', when: (s) => s.lifetime >= 2e4, hud: 'rank' },
 ];
 const TIP = Object.fromEntries(TIPS.map((x) => [x.id, x]));
 
