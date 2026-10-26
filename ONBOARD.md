@@ -40,7 +40,7 @@
 | 7 | 宿主登记五处 | ✅ | `index.json` / `localGames.ts` / `storefront.ts` / `build-store-shots.py` 的 `PLAN` / `GameIcon.tsx` 的 `ART`；`npm run check:registry` → **四处一致**（9 款）；`GameIcon.test.tsx` 5 条绿；`tsc -b --noEmit` exit 0 |
 | 8 | 商城详情页图 | ✅ | 4 张（`shots/store-1..4.png` → `public/store/ropeland/1..4.webp`，22/33/21/21 KB）；**逐张看过**：标题 / 对局（604 分、×3.0、完美+24、收编×8）/ 结算 / 牧场升级。第 4 张的羊毛先设 420 —— 260 时「第 4 枚铃铛（300）」是灰的，家长会以为按钮坏了 |
 | 9 | 五层验收 | ✅ | ① `check-plugin.mjs` 通过（manifest 24 条哈希逐条对上）；② `lint` exit 0 + `npm test` **774/774**；③ `plugin-test.cjs` 全绿；④ `e2e-ropeland.mjs` **手机 + 平板各全绿**（见下）；⑤ 截图逐张看过。回归：`e2e-plugin-local.mjs … prizepark` 全绿 |
-| 10 | 提交 | ⬜ | 宿主仓库 + 游戏仓库各一条 |
+| 10 | 提交 | ✅ | 游戏仓库 `b562423` / `9efa944` / `077b741`；宿主 `f6e4c57`（+ 收尾 `localGames.ts` 修正）。两侧 `git status` 干净 |
 
 ### 第 9 步的实测值（手机 390×844）
 
@@ -55,6 +55,49 @@
 | 切回后 | 画面 110 色（WebGL 上下文没耗尽）· 羊毛读回 4242 |
 | 卸载后 | 已装清单空 · `gameKv` 空 |
 | 全程 | 4xx/5xx 0 · pageerror 0 · console.error 0 |
+
+### 收尾复验（2026-10-27 01:30，提交后从 HEAD 重跑一遍）
+
+不是「上次跑过就算」，而是**从已提交的状态**重新构建再验一次 —— 因为 `check:registry`
+当时是红的，红的原因恰好不在 ropeland 上（见坑 16）。
+
+| 环节 | 结果 |
+| --- | --- |
+| `check:registry` | ✓ 四处一致（9 款）—— 修掉 minergirl 的过期哈希后 |
+| `tsc -b --noEmit` / `npm test` | exit 0 / **774 通过（37 文件）** |
+| `npm run build` | `✓ built in 19.76s`；预览服务的 `index-Bc9lHyjq.js` 与 `dist/` 一致 |
+| e2e 手机 390×844 | 全绿：教学局 50→50 · 正式局 50→30 且 600ms 后仍 30 · 对局 219 色 · 币 3→26 · 切回 110 色 · 羊毛读回 4242 |
+| e2e 平板 834×1112 | 全绿：正式局 50→30 · 对局 148 色 · 币 3→28 · 切回 78 色 · 羊毛读回 4242 |
+| 回归 prizepark | 全绿（`e2e-plugin-local.mjs` 被这次改过，必须回归） |
+| 商城 4 张图 | **逐张重看**：标题（跳绳羊群 / 开始跳绳 / 牧场）/ 对局（563 分 ×3.0、完美+24、收编×3）/ 结算（563、跳跃 47、羊毛+13）/ 牧场升级（羊毛 420，300 的「第 4 枚铃铛」可点）。图和 caption 对得上 |
+
+> 第 2 张图这次是 563 分 / 收编×3，上一版是 604 / ×8 —— 只是抓拍时机不同，不是回归。
+> 判据是「图和说明讲的是同一件事」，不是「数字和上次一样」。
+
+## 已接入完成 · 下次要改时怎么走
+
+十步全完，`ropeland` 已经是商城里可装的一款。以后改这个游戏只有两条路：
+
+**改游戏本身**（玩法 / 画面 / 经济）
+
+```bash
+cd E:/plan/test25/task-games/ropeland
+# 改 src/ 或 game.js
+CODEBUDDY_SAFE_DELETE_ENABLED=0 node scripts/build-plugin.mjs
+node scripts/plugin-test.cjs 4455            # 假宿主，先过这一关
+node scripts/check-i18n.mjs                  # 新加的字有没有漏键
+# ⚠️ 改了行为就要升 manifest.version，否则界面说「已是最新」
+node scripts/install-to-host.mjs             # 拷包 + 改 index.json + 重算哈希
+```
+
+**只改商城里怎么介绍它**（文案 / 图 / 分类）
+
+改 `kid-quest-farm-2d/src/games/storefront.ts` 与 `scripts/build-store-shots.py` 的 `PLAN`，
+然后 `python scripts/build-store-shots.py && npm run check:registry`。
+**图必须自己看** —— 结构断言查不出「图是牧场、说明写的是对局」。
+
+收尾永远一样：`npm run check:registry` → `npm run lint` → `npm test` →
+`npm run build` → `node scripts/e2e-ropeland.mjs <url> phone` 与 `tablet`。
 
 ## 本机环境坑（这次真踩到的）
 
@@ -76,6 +119,14 @@
 13. **`npm run build` 会被 safe-delete 闸门拦**：vite 清空 `dist/` 算批量删除，报 `SAFE_DELETE_BULK_CONFIRM_REQUIRED`。加 `CODEBUDDY_SAFE_DELETE_ENABLED=0`。
 14. ★ **卸载按钮不在列表行上**，收在「详情」弹层里（列表底部原话就是「卸载在『详情』里」）。只按锚点找会报「找不到按钮」，而功能完全正常 —— 这条是**看截图**才发现的。
 15. **压缩后常量会改名**：产物里是 `playCost: Uq`，不是 `playCost: 20`。脚本要读数值就从**源码**读 `const PLAY_COST = 20`。
+16. ★★ **`check:registry` 红了，先看红的是不是自己这一款**。这次红的是 minergirl
+    （清单 1170500 ≠ 实际 1168546），ropeland 那条完全正确。
+    真因：`make-local-catalog.mjs` 是**从工作区**读包算哈希的，而上一次提交用
+    `git add <具体路径>` 时**漏掉了那个重打的包** ⇒ 清单记下的是「一个没入库的构建」的哈希，
+    随后 `public/games` 被恢复成 HEAD 版本，清单就成了孤儿。
+    判据：`git cat-file -s HEAD:public/games/<id>/<包>` 与 `localGames.ts` 里的 `bytes` 比 ——
+    比的是 **HEAD 里那份**，不是磁盘上那份（磁盘那份可能正是没入库的）。
+    修法：`node scripts/make-local-catalog.mjs` 重算，**不要**为了「让清单对」去把没入库的重打包装进去。
 
 ## 平板上的已知表现（不是缺陷）
 
@@ -85,7 +136,7 @@
   **这是玩法**（「看影子起跳」的教练提示就是这么写的），不是画面坏了。原版一致。
 - 抓拍时如果正好卡在「完美起跳」的粒子爆发帧，羊群会被白光盖住。那是 0.5 秒的瞬时效果。
 
-## 要拆掉的东西（`game.js` / `platform.js` 清单）
+## 已拆掉的东西（`game.js` / `platform.js` 清单，备查）
 
 - `platform.js` 整个文件：`gp.player.saves` 存读档 → `host.storage`；`gp.pay.purchase` 真实货币购买 → 删；`topScores/submitScore` 排行榜 → 删；`weekIndex()` 本周特殊羊（时间闸门）→ 删。
 - `game.js` 里的 `simModal` / `doBuy` / `buying` / `SHOP_ITEMS` 硬币商店 → 改成游戏内羊毛购买或直接删。
