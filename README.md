@@ -12,7 +12,7 @@
 | 扒取来源 | https://zetwsserdm.mkplay.zone/v/7/index.html |
 | 扒取日期 | 2026-10-26 |
 | 入口模块 | `./game.js`（`start(opts)`，独立网页与插件同一个函数） |
-| 原始镜像 | `_originals/2026-10-26/`（不入 git） |
+| 原始镜像 | `_originals/2026-10-26/`（静态一遍）+ `_originals/2026-10-26-browse/`（`--browse` 跑出来的运行时资源，4 个 GLB 只在这一份里）。都不入 git |
 | 经济形态 | **B 型 · 只花积分**（一次进场 15 积分，不发行币、不发券，10 分钟内回来不重复收） |
 | 宿主清单 | `kid-quest-farm-2d/public/games/index.json` → 自动生成 `src/games/localGames.ts` |
 | 商城详情 | `kid-quest-farm-2d/src/games/storefront.ts` → `id: 'anthill'`（分类 `chill`） |
