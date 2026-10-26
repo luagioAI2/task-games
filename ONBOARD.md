@@ -6,7 +6,7 @@
 - 经济：**B 只花积分** · 进场 15（`mount()` 里扣一次 + 10 分钟宽限，同 anthill）
 - 拆改：删内购（`gp.pay` 皮肤商店 / 用硬币招募投资人）、删全服排行榜与登录云同步；
   **皮肤保留，改成按累计收入解锁**
-- 当前：**步骤 1–8 全部完成**，只差提交（步骤 9）
+- 当前：**步骤 1–9 全部完成**（宿主 `338ea7b` + `2dcd90a`，本仓库 `90feb81` + `cb84b69`）
 
 | # | 步骤 | 状态 | 判据 / 产物 |
 | --- | --- | --- | --- |
@@ -14,11 +14,11 @@
 | 2 | 立工程 | ✅ | `index.html` 重写；`smoke.mjs` 8 条全绿（889 色） |
 | 3 | 压资源 | ✅ **决定不压** | 见下「尺寸决定」 |
 | 4 | 改造（去内购/排行/云存档 + 经济） | ✅ | `window.gp` / `rank` / `sandbox` 计数归零；皮肤改阶梯 |
-| 5 | 打包 | ✅ | `=== 打包校验通过 ===`（1125 KB · 406 条规则 0 漏网） |
+| 5 | 打包 | ✅ | `=== 打包校验通过 ===`（1141 KB · 408 条规则 0 漏网） |
 | 6 | 落库 | ✅ | `check:registry` 四处一致（8 款）+ `--self-test` 8 类变异全红 |
 | 7 | 商城详情 | ✅ | 4 张图逐张看过；`public/store/minergirl/1..4.webp` |
-| 8 | 五层验收 | ✅ | `mount-test` 33/33 · `e2e-minergirl` phone+tablet 全绿 · prizepark 老款回归全绿 |
-| 9 | 提交 | ⬜ | `git status` 干净（宿主工作区现有 11 项改动，见末尾） |
+| 8 | 五层验收 | ✅ | `mount-test` 34/34 · `e2e-minergirl` phone+tablet 全绿 · prizepark 老款回归全绿 |
+| 9 | 提交 | ✅ | 宿主 `338ea7b`（含从未提交过的 melonjar）+ `2dcd90a`；本仓库 `90feb81` + `cb84b69` |
 
 ## 尺寸决定：**不重新压图**（2026-10-26）
 
@@ -41,8 +41,8 @@
 
 ## 尺寸以外的实测数字
 
-- 包：`dist-plugin/minergirl.plugin.mjs` **1125 KB**（gzip 0.29 MB），pixi + sound 都内联
-- 样式：`styles.css` 49 KB **内联进包**（`src/styles-inline.js` 是生成物，gitignore）
+- 包：`dist-plugin/minergirl.plugin.mjs` **1141 KB**（gzip 0.29 MB），pixi + sound 都内联
+- 样式：`styles.css` 51 KB **内联进包**（`src/styles-inline.js` 是生成物，gitignore）
 - 皮肤：14 套，门槛 $1K → $3T（`src/data/skins.js` 的 `need`，只改这张表）
 - 画布：`#stage` 里 1 个 WebGL，另有 2 个 2D 画布（`.g-face` 引导头像、`.c-icon` 面板图标）
   ⇒ **断言不能写「容器里只有 1 个 canvas」**，要指到 `#stage canvas`
@@ -87,9 +87,14 @@
 
 ## 下次从这继续
 
-步骤 9：宿主工作区现在有 11 项改动 —— 4 个已跟踪文件 + 4 个未跟踪目录 + 2 个新 e2e 脚本。
-⚠️ 其中 **melonjar（爆汁瓜瓜罐）那次接入从来没提交过**（`HEAD` 里没有它），
-所以一次提交会把两款游戏一起带上；要分开就先只 stage `melonjar` 相关路径。
+接入本身已经收尾（9 步全绿、两边工作区干净），剩下的是**可选**的后续：
+
+- 商城详情页那 4 张图是「有矿工在干活 / 等级 20 / 投资人 3 位 / 5 套皮肤解锁」的状态。
+  改了界面或数值之后重跑 `node scripts/capture.mjs` + `build-store-shots.py`，
+  **两处登记（`PLAN`）不改就会拿到旧图且零报错**。
+- 想再验一次全链路：`node scripts/build-plugin.mjs` → 拷进宿主 →
+  `make-local-catalog.mjs` → `check-game-registry.mjs` → 宿主 `lint`/`test` → `e2e-minergirl`。
+  顺序不能乱，`e2e` 跑的是宿主 `dist`，**先 `npm run build` 再跑**，否则验的是旧包。
 
 ## 环境坑
 
