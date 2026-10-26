@@ -5,6 +5,8 @@ import { createPixiFx } from "@makeplay/fx";
 import { loadSoundSystem } from "@makeplay/sound";
                                                            
 import { T, LANGS, pickLang, setLang, currentLang,           } from "./i18n.js";
+import { installGp, makeLocalStore } from "./src/host.js";
+import { scopeCss } from "./scope-css.js";
 import {
   UPGRADES, CONSUMABLES, consumDef, emptyMeta, normalizeMeta, gemReward, nextCost,
   dailyKey, seedFrom, mulberry32,
@@ -44,9 +46,53 @@ const FIT = [
   { cw: 497, ay: 0.5034 }, { cw: 522, ay: 0.6309 }, { cw: 525, ay: 0.5015 },
   { cw: 594, ay: 0.5000 }, { cw: 597, ay: 0.5347 },
 ];
+
+/**
+ * 纹理相对**设计稿**的缩放系数。
+ *
+ * 原始素材是 1024²，压资源时缩到 512²（14.1 MB → 402 KB）。`FIT.cw` 记的是
+ * **设计稿像素宽**（416~597），而 `scale = 目标宽 / 纹理实际宽` —— 纹理缩了一半
+ * 就必须把分母也乘 0.5，否则精灵**小一半**，而且一个错都不报（只有看截图能发现）。
+ * 判据：`scale × texture.width` 才是屏幕上的宽度。
+ */
+const ART_SCALE = 0.5;
 const DROP_WEIGHTS = [30, 26, 20, 14, 10];
 const FONT_STACK = '"MpFontDisplay","SmileySans",system-ui,sans-serif';
-const fruitUrl = (l        ) => `assets/fruits/f${String(l).padStart(2, "0")}.png`;
+
+/**
+ * 资源根。独立网页是 `""`（相对 `index.html`），插件里由 `start({ assetBase })` 注入。
+ *
+ * ★ 为什么不能在插件里继续用相对路径：插件的模块是 `blob:` URL，但 `img.src` /
+ *   `fetch()` 的基准是**文档**（宿主页面）而不是模块 —— 于是 `assets/…` 会解析到
+ *   宿主根目录 ⇒ 全部 404，而 404 的响应体是 HTML，`res.json()` 抛的是
+ *   `Unexpected token '<'`，看着完全不像「路径错了」。
+ */
+let ASSET = "";
+const A = (p) => ASSET + p.replace(/^\.\//, "");
+const fruitUrl = (l) => A(`assets/fruits/f${String(l).padStart(2, "0")}.webp`);
+
+/**
+ * 一局的票钱。宿主（插件形态）会注入 `chargePlay`；独立网页不注入 = 免费。
+ *
+ * ★ 收费点选在「开始游戏 / 再来一局 / 每日挑战」这三个**明确的开局动作**上 ——
+ *   这款有清晰的「一局」边界（罐口溢出就结算），所以按局收，不设宽限期。
+ * ★ 扣款失败一律**不放行**（否则就是白玩），但也不让界面崩掉。
+ */
+let chargeRun = null;
+async function payForRun() {
+  if (!chargeRun) return true;
+  try {
+    return (await chargeRun()) !== false;
+  } catch (e) {
+    console.error("[melonjar] 开局扣分失败", e);
+    return false;
+  }
+}
+/** 把「先收费、再开局」包成事件处理器 */
+const gate = (fn) => async () => {
+  if (!(await payForRun())) return;
+  fn();
+};
 
 /* ---------- 状态 ---------- */
                                        
@@ -64,6 +110,11 @@ let world              ;
 let eventQueue                   ;
 let sound                  ;
 let fx                                          ;
+// 输入层挂在 **window** 上的三个监听（pointerup / pointercancel / blur）的摘除函数。
+// ★ 它们必须跟着卸载一起摘：`release()` 会走到 `dropCurrent()`，而那条路最终读 `app.stage`。
+//   卸载后 `app = null`，宿主随后随便一次点按就报 `Cannot read properties of null (reading 'stage')`
+//   —— 是**宿主**在切 tab 时的正常点击触发的，看着像宿主坏了。
+let detachInput                                  = null;
 let impulse = { offsetX: 0, offsetY: 0, roll: 0, fovPunch: 0 };
 // 庆典震屏增幅:只是把 FX 镜头冲击放大,不另写第二套震屏
 let impactPunch = 0;
@@ -83,19 +134,14 @@ let lastDrop               = null;
 const pendingAnnih                   = [];
 
 let score = 0, best = 0, mergeCount = 0, biggest = 0;
-// 摇一摇:每次花 2 枚**平台金币**(gp.pay),即买即用的消耗品。
-// shakeCredits = 已付款但尚未使用的次数(只会来自启动时的 pending 补发);
-// delivered = 已发放的 purchaseId,仅用于发放去重,不是账本。
-const SHAKE_PRICE = 2;
-const SHAKE_ITEM = "shake";
-// 复活也走平台金币(每次 4 枚),不再由宝石升级白送
-const REVIVE_PRICE = 4;
-const REVIVE_ITEM = "revive";
+// 【改造】原版这两项花的是**平台金币**(gp.pay),宿主插件不允许在游戏内花平台币
+// (插件没有任何 HostApi 能扣正数),所以统一改成**宝石**——宝石只能靠玩挣,
+// 于是「便利」依旧是挣来的,而不是白送,也没有任何跨进程扣款。
+// 价格按 gemReward 的量级定:一局普通成绩约 10~14 宝石,所以 12 宝石≈一局。
+const SHAKE_GEMS = 12;
+const REVIVE_GEMS = 25;
 // 上抛高度 = ky²/(2g),重力从 3200 提到 3840 后冲量需乘 √1.2 才能保持同样幅度
 const SHAKE_G_SCALE = 1.0954;
-// delivered = 已发放的 purchaseId(仅用于发放去重,不是账本);
-// 已购次数本身存在 meta.consum(__sys_meta)。
-let delivered           = [];
 let buying = false, payOff = false, lastSellable = false;
 let tipTimer = 0;
 let current = 1, nextLv = 1;
@@ -126,6 +172,7 @@ const pops        = [];
 const floaters            = [];
 
 /* DOM refs */
+let rootEl = null;
 let hud             , scoreVal             , bestVal             , nextImg                  ;
 let titleEl             , startBtn                   , freshBtn                   ;
 let resultsEl             , finalScoreEl             , finalBestEl             ,
@@ -149,7 +196,23 @@ let resumeGrace = 0;
 
 // 音效调用统一走这里:playCue 同步返回 receipt(不是 Promise),
 // 而且不能让它抛错打断调用方后续的 UI 逻辑。
-function tap(eventId = "tap") { if (sound) sound.playCue("sfx.tap", { eventId }); }
+//
+// ★ 实测会抛:音频**没解锁**时 `playCue` 同步抛
+//   `SoundRuntimeError: sound runtime must be unlocked from a user gesture`。
+//   解锁要真实手势,而宿主里「切进游戏先点一下强化 / 成就」这种顺序很常见 ——
+//   不包 try/catch 的话整块面板的事件处理器当场中断,画面却看着好好的。
+function cue(id, opts) {
+  if (!sound) return;
+  try {
+    // ★ `playCue` 是 **async**：没解锁时它返回的是**被 reject 的 Promise**，
+    //   不是同步抛 —— 所以 try/catch 抓不到，必须在返回值上挂 catch，
+    //   否则每次点击都会冒一条未捕获 rejection（画面正常，只有控制台红）。
+    const p = sound.playCue(id, opts);
+    if (p && typeof p.catch === "function") p.catch(() => {});
+  } catch { /* 没解锁 / 该 cue 不存在:不响就是了 */ }
+}
+
+function tap(eventId = "tap") { cue("sfx.tap", { eventId }); }
 
 // 音效运行时在素材加载完才就绪;未就绪时调用方用 `if (sound)` 跳过。
 
@@ -161,22 +224,25 @@ function unlockAudio()       {
   gestureSeen = true;
   if (!sound || unlocked) return;
   unlocked = true;
-  void sound.unlock();
-  void sound.preload("gameplay");
-  void sound.setMusicState("bgm", { eventId: "session-start" });
+  // ★ 三个都是 async：`.catch` 必须挂，否则解锁失败会变成未捕获 rejection
+  sound.unlock().catch(() => {});
+  sound.preload("gameplay").catch(() => {});
+  sound.setMusicState("bgm", { eventId: "session-start" }).catch(() => {});
 }
 
 /* ---------- CSS ---------- */
 function injectCss() {
   const css = `
-#ui-root{position:fixed;inset:0;pointer-events:none;z-index:10;
+/* ★ absolute 而不是 fixed：UI 根节点在宿主容器里，fixed 会以视口定位，
+   把 HUD 和面板铺到宿主的顶栏底栏上去。 */
+#ui-root{position:absolute;inset:0;pointer-events:none;z-index:10;
   font-family:'MpFontDisplay','SmileySans',system-ui,sans-serif;
   -webkit-user-select:none;user-select:none;color:#eaf7fb}
 #ui-root button{pointer-events:auto;font-family:inherit;cursor:pointer;touch-action:manipulation}
 [hidden]{display:none !important}
 #hud{position:absolute;top:10px;left:50%;
   transform:translateX(-50%) translate3d(var(--sx,0px),var(--sy,0px),0);
-  width:min(94vw,43vh);display:flex;align-items:center;gap:8px;visibility:hidden}
+  width:min(calc(var(--cw)*.94),calc(var(--ch)*.43));display:flex;align-items:center;gap:8px;visibility:hidden}
 .chip{flex:1;display:flex;align-items:center;justify-content:center;gap:6px;height:48px;
   background:#0b222c;border:1px solid #2e5a68;border-radius:14px;color:#9fc3cf;font-size:13px;white-space:nowrap}
 .chip b{color:#ffd76a;font-size:20px;line-height:1}
@@ -187,12 +253,21 @@ function injectCss() {
   display:flex;align-items:center;justify-content:center;padding:0}
 .icon-btn img{width:24px;height:24px}
 .icon-btn:active{transform:scale(.94)}
-.panel{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:min(88vw,340px);
-  max-height:94vh;overflow-y:auto;background:#0b222c;border:1px solid #2e5a68;border-radius:22px;padding:28px 24px;
+.panel{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:min(calc(var(--cw)*.88),340px);
+  max-height:calc(var(--ch)*.94);overflow-y:auto;background:#0b222c;border:1px solid #2e5a68;border-radius:22px;padding:28px 24px;
   text-align:center;box-shadow:0 18px 60px rgba(0,0,0,.5);pointer-events:auto;z-index:1}
 /* 榜单必须在其他面板之上:否则从结算屏点开会“打开但被盖住”,看起来像点不开 */
 /* 二级面板(商店/强化/成就/每日)必须在结算屏之上:否则从结算屏点开会“打开但被盖住”,看起来像点不开 */
 #board-screen,#shop-screen,#up-screen,#ach-screen,#daily-screen{z-index:6}
+/* ★ 弹层面板底下压一层暗色。
+   原版没有这一层:面板和标题屏都用 panel 类、都 top:50%,于是打开「强化」时
+   标题那行大字从面板上下各露出一截,看着像排版坏了。
+   ★ 这段注释在**模板字符串**里,不能出现反引号(会把模板提前闭合,
+     而 node --check 居然还能过,只有打包器报 PARSE_ERROR)。
+   0 0 0 100vmax 是画在**边框盒外面**的一圈巨大阴影 —— 容器 overflow:hidden
+   会把它裁到容器内,正好当遮罩用,不用多加一个 DOM 节点。
+   （只给弹层,不给标题屏:标题屏要透出罐子背景。） */
+#board-screen,#shop-screen,#up-screen,#ach-screen,#daily-screen{box-shadow:0 0 0 100vmax rgba(4,12,16,.82)}
 .panel h1{margin:0 0 10px;font-size:42px;color:#ffd76a;line-height:1.15;
   text-shadow:0 3px 0 rgba(122,74,0,.55),0 8px 24px rgba(0,0,0,.45)}
 .panel h2{margin:0 0 6px;font-size:30px;color:#eaf7fb}
@@ -207,7 +282,7 @@ function injectCss() {
 .btn.ghost{background:transparent}
 .gold-btn{background:#1a3b47;border-color:#ffd76a;color:#ffd76a;font-weight:700}
 .board{margin:12px 0 4px;text-align:left}
-#board-list{max-height:min(56vh,360px);overflow-y:auto;overscroll-behavior:contain}
+#board-list{max-height:min(calc(var(--ch)*.56),360px);overflow-y:auto;overscroll-behavior:contain}
 .board .br{display:flex;align-items:center;gap:10px;padding:7px 4px;border-bottom:1px solid rgba(46,90,104,.5);font-size:15px}
 .board .br:last-child{border-bottom:none}
 .board .pos{flex:none;width:26px;text-align:center;color:#9fc3cf;font-weight:700;font-size:15px}
@@ -228,7 +303,7 @@ function injectCss() {
 .gem-mini.poor{background:#2e5a68;color:#9fc3cf}
 #daily-btn b{width:9px;height:9px;border-radius:50%;background:#ff4d5e;margin-left:8px;display:inline-block}
 .up-list,.ach-list{margin:10px 0 4px;text-align:left}
-#up-list,#ach-list{max-height:min(58vh,380px);overflow-y:auto;overscroll-behavior:contain}
+#up-list,#ach-list{max-height:min(calc(var(--ch)*.68),520px);overflow-y:auto;overscroll-behavior:contain}
 .up-row{display:flex;align-items:center;gap:10px;padding:9px 4px;border-bottom:1px solid rgba(46,90,104,.5)}
 .up-row:last-child{border-bottom:none}
 .up-info{flex:1;min-width:0}
@@ -253,7 +328,11 @@ function injectCss() {
 /* 摇一摇:在顶部 HUD 里,不再遮挡罐子。长按蓄力 1.2s 才触发。 */
 .shake-ico-btn{position:relative;overflow:hidden;border-color:#ffd76a;color:#ffd76a;
   background:linear-gradient(#1c4a58,#123240);flex-direction:column;gap:0}
-.shake-ico-btn .sk-ico{font-size:24px;line-height:1}
+/* ★ 图标用**内联 SVG**，不用 emoji：🫙 是 Unicode 14（2021）才有的字形，
+   Android 11 及更早的系统字体里没有 ⇒ 直接显示成一个空心方框（豆腐块），
+   而且**截图里也一样**，商城详情页会带着豆腐块发出去。 */
+.shake-ico-btn .sk-ico{display:block;width:24px;height:24px;color:#9fc3cf}
+.shake-ico-btn .sk-ico svg{display:block}
 .shake-ico-btn .sk-cost{position:absolute;right:2px;bottom:1px;display:inline-flex;align-items:center;gap:1px;
   font-size:11px;font-weight:700;color:#4a2f00;background:#ffd76a;border-radius:8px;padding:0 4px 0 3px}
 .shake-ico-btn .sk-cost img{width:13px;height:13px}
@@ -269,12 +348,12 @@ function injectCss() {
   transform:translate(-50%,8px);opacity:0;transition:opacity .18s ease,transform .18s ease;
   background:#0b222c;border:1px solid #ffd76a;color:#ffd76a;border-radius:14px;
   padding:9px 16px;font-size:15px;font-weight:700;line-height:1.35;text-align:center;
-  width:max-content;max-width:min(86vw,360px);pointer-events:none;
+  width:max-content;max-width:min(calc(var(--cw)*.86),360px);pointer-events:none;
   box-shadow:0 8px 22px rgba(0,0,0,.5)}
 #coin-tip.show{opacity:1;transform:translate(-50%,0)}
 /* 矮窗口(手机横屏/小屏):压缩标题面板,保证内容完整放下、不出滚动条 */
 @media (max-height:600px){
-  .panel{width:min(92vw,620px);padding:16px 20px;border-radius:18px;max-height:92vh}
+  .panel{width:min(calc(var(--cw)*.92),620px);padding:16px 20px;border-radius:18px;max-height:calc(var(--ch)*.92)}
   .panel h1{font-size:28px;margin-bottom:5px}
   .panel h2{font-size:24px}
   .panel .sub{font-size:13px;margin-bottom:4px}
@@ -286,9 +365,9 @@ function injectCss() {
   #title-screen .btn{display:inline-block;width:auto;min-width:150px;margin:7px 5px 0;
     min-height:48px;font-size:17px;border-radius:14px}
   .btn.small{min-height:48px;font-size:14px;margin-top:5px}
-  .rules{margin-top:6px;font-size:12px;line-height:1.5;max-height:24vh;overflow-y:auto;overscroll-behavior:contain}
+  .rules{margin-top:6px;font-size:12px;line-height:1.5;max-height:calc(var(--ch)*.24);overflow-y:auto;overscroll-behavior:contain}
   .board{margin:8px 0 2px}
-  #board-list{max-height:44vh}
+  #board-list{max-height:calc(var(--ch)*.44)}
   .board .br{padding:4px 4px;font-size:14px}
   .board .av{width:26px;height:26px}
   .board-empty{padding:12px 0;font-size:14px}
@@ -307,15 +386,18 @@ function injectCss() {
   text-shadow:0 4px 0 rgba(122,74,0,.6),0 10px 30px rgba(0,0,0,.55);
   opacity:0;transition:opacity .18s ease,transform .18s ease;pointer-events:none}
 #banner.show{opacity:1;transform:translate(-50%,-50%) scale(1)}
-#loading{position:fixed;inset:0;z-index:40;display:flex;flex-direction:column;
+#loading{position:absolute;inset:0;z-index:40;display:flex;flex-direction:column;
   align-items:center;justify-content:center;gap:20px;
   background:linear-gradient(#0e2f38,#071a24);
   font-family:'MpFontDisplay','SmileySans',system-ui,sans-serif}
 .load-ball{width:46px;height:46px;border-radius:50%;
   background:radial-gradient(circle at 32% 28%,#ffd9e2,#ff7a9e 58%,#d94f70);
   box-shadow:0 10px 26px rgba(255,122,158,.35);
-  animation:bob .85s ease-in-out infinite alternate}
-@keyframes bob{from{transform:translateY(-18px) scale(1.06,.94)}to{transform:translateY(14px) scale(.94,1.06)}}
+  animation:mj-bob .85s ease-in-out infinite alternate}
+/* ★ 关键帧名是**全局**的（作用域化管不到），必须加前缀：bob 这种名字撞上宿主
+   或别的插件时，后注入的那份会赢，而症状是「别人家的动画变怪了」。
+   ⚠️ 这段注释在模板字符串里，不能出现反引号（会把 CSS 字符串提前闭合）。 */
+@keyframes mj-bob{from{transform:translateY(-18px) scale(1.06,.94)}to{transform:translateY(14px) scale(.94,1.06)}}
 .load-track{width:200px;height:10px;border-radius:5px;background:#071a24;border:1px solid #2e5a68;overflow:hidden}
 #load-fill{height:100%;width:0%;background:#ffd76a;border-radius:5px;transition:width .2s}
 .load-txt{color:#9fc3cf;font-size:14px}
@@ -325,27 +407,47 @@ function injectCss() {
 .lang-btn.on{background:#ffd76a;border-color:#ffd76a;color:#4a2f00;font-weight:700}
 `;
   const style = document.createElement("style");
-  style.textContent = css;
+  // ★ 给个 id：卸载时要能把自己那份样式摘掉（切几次游戏会叠十几份，选择器互相覆盖）
+  style.id = "mj-style";
+  // ★★ 必须**收进 #ui-root**：这份样式里全是 `.btn` / `.chip` / `.panel` / `[hidden]`
+  //    这种通用类名，直接进 `document.head` 会盖掉宿主的 Tailwind（未分层的样式
+  //    胜过 `@layer`）—— 症状是**宿主别的页面排版全乱**，而游戏自己看着好好的。
+  style.textContent = scopeCss(css, "#ui-root");
   document.head.appendChild(style);
 }
 
 /* ---------- DOM ---------- */
-function buildDom() {
+/**
+ * ★ UI 根节点挂在**容器里**，不是 `document.body`。
+ *
+ * 挂 body 的话，`position:fixed` 的 HUD 与各个面板会盖住宿主的顶栏底栏
+ * （`z-index` 再高也没用，它根本不在容器那棵树里），而且卸载时
+ * `container.replaceChildren()` 清不掉它 —— 切两次游戏就有两份 UI 叠着。
+ */
+function buildDom(container) {
   const root = document.createElement("div");
   root.id = "ui-root";
-  document.body.appendChild(root);
+  // ★ 留着引用：`relayout()` 要往它身上写 `--cw/--ch`（样式里所有尺寸都按容器算，
+  //   不按视口 —— 宿主里容器比视口小，用 vw/vh 会让面板顶到宿主的顶栏底栏上）
+  rootEl = root;
+  container.appendChild(root);
   root.innerHTML = `
   <div id="hud">
     <div class="chip"><span data-i18n="score">${T.score}</span><b id="score-val">0</b></div>
     <div class="chip" id="next-chip"><span data-i18n="next">${T.next}</span><img id="next-img" src="${fruitUrl(1)}" alt=""></div>
-    <div class="chip"><img class="gold" src="assets/lib/kenney-game-icons/icons/trophy.png" alt=""><b id="best-val">0</b></div>
+    <div class="chip"><img class="gold" src="${A("assets/lib/kenney-game-icons/icons/trophy.webp")}" alt=""><b id="best-val">0</b></div>
     <div class="chip gem-chip"><span class="gem-ico"></span><b id="gem-val">0</b></div>
     <button class="icon-btn shake-ico-btn" id="shake-btn" hidden aria-label="">
       <span class="sk-ring" id="shake-ring"></span>
-      <span class="sk-ico">🫙</span>
+      <span class="sk-ico"><svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true">
+        <rect x="7" y="7.4" width="10" height="12.6" rx="2.4" fill="none" stroke="currentColor" stroke-width="1.8"/>
+        <rect x="6" y="4" width="12" height="3" rx="1.2" fill="currentColor" opacity=".85"/>
+        <path d="M4.2 11.6c-.9 1.2-.9 2.9 0 4.1M19.8 11.6c.9 1.2.9 2.9 0 4.1"
+          fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
+      </svg></span>
       <span class="sk-cost" id="shake-cost"></span>
     </button>
-    <button class="icon-btn" id="mute-btn" aria-label="sound"><img id="mute-img" src="assets/lib/kenney-game-icons/icons/audioOn.png" alt=""></button>
+    <button class="icon-btn" id="mute-btn" aria-label="sound"><img id="mute-img" src="${A("assets/lib/kenney-game-icons/icons/audioOn.webp")}" alt=""></button>
   </div>
   <div id="coin-tip"></div>
   <div id="banner" data-i18n="watermelon">${T.watermelon}</div>
@@ -358,10 +460,9 @@ function buildDom() {
     <ul class="rules" id="rules-list" data-mp-scroll hidden></ul>
     <button class="btn primary" id="start-btn">${T.start}</button>
     <button class="btn" id="fresh-btn" hidden>${T.newGame}</button>
-    <button class="btn gold-btn" id="rank-btn" data-i18n="rank">${T.rank}</button>
+    <button class="btn gold-btn" id="rank-btn" hidden data-i18n="rank">${T.rank}</button>
     <button class="btn" id="daily-btn"><span data-i18n="daily">${T.daily}</span><b id="daily-dot" hidden></b></button>
     <button class="btn" id="up-btn"><span data-i18n="upgrade">${T.upgrade}</span><b class="gem-mini" id="up-gems">0</b></button>
-    <button class="btn" id="shop-btn" data-i18n="shop">${T.shop}</button>
     <button class="btn" id="ach-btn" data-i18n="achievements">${T.achievements}</button>
   </div>
   <div class="panel" id="daily-screen" hidden>
@@ -377,12 +478,6 @@ function buildDom() {
     <h2 data-i18n="upgradeTitle">${T.upgradeTitle}</h2>
     <div class="up-list" id="up-list" data-mp-scroll></div>
     <button class="btn" id="up-close" data-i18n="close">${T.close}</button>
-  </div>
-  <div class="panel" id="shop-screen" hidden>
-    <h2 data-i18n="shopTitle">${T.shopTitle}</h2>
-    <div class="up-list" id="shop-list" data-mp-scroll></div>
-    <div class="board-note" data-i18n="shopNote">${T.shopNote}</div>
-    <button class="btn" id="shop-close" data-i18n="close">${T.close}</button>
   </div>
   <div class="panel" id="ach-screen" hidden>
     <h2 data-i18n="achievementsTitle">${T.achievementsTitle}</h2>
@@ -407,7 +502,7 @@ function buildDom() {
     <button class="btn primary" id="retry-btn">${T.retry}</button>
     <button class="btn gold-btn" id="revive-btn" hidden>${T.revive}</button>
     <button class="btn" id="share-btn" hidden>${T.share}</button>
-    <button class="btn gold-btn" id="rank-btn2" data-i18n="rank">${T.rank}</button>
+    <button class="btn gold-btn" id="rank-btn2" hidden data-i18n="rank">${T.rank}</button>
     <button class="btn ghost" id="login-btn" hidden data-i18n="loginToRank">${T.loginToRank}</button>
   </div>
   <div id="loading">
@@ -452,19 +547,15 @@ function buildDom() {
   finalGemsEl = root.querySelector("#final-gems") ;
   root.querySelector("#daily-btn") .addEventListener("pointerdown", () => { openDaily(); });
   root.querySelector("#up-btn") .addEventListener("pointerdown", () => { upEl.hidden = false; renderUpgrades(); tap("tap-up"); });
-  shopEl = root.querySelector("#shop-screen") ;
-  shopList = root.querySelector("#shop-list") ;
-  root.querySelector("#shop-btn") .addEventListener("pointerdown", () => { shopEl.hidden = false; renderShop(); tap("tap-shop"); });
-  root.querySelector("#shop-close") .addEventListener("pointerdown", () => { shopEl.hidden = true; tap(); });
   root.querySelector("#ach-btn") .addEventListener("pointerdown", () => { achEl.hidden = false; void renderAchievements(); tap("tap-ach"); });
   root.querySelector("#up-close") .addEventListener("pointerdown", () => { upEl.hidden = true; tap(); });
   root.querySelector("#ach-close") .addEventListener("pointerdown", () => { achEl.hidden = true; tap(); });
   root.querySelector("#daily-close") .addEventListener("pointerdown", () => { dailyEl.hidden = true; tap(); });
-  dailyStart.addEventListener("pointerdown", () => {
+  dailyStart.addEventListener("pointerdown", gate(() => {
     if (meta.daily.date === dailyKey()) return;
     dailyEl.hidden = true; titleEl.hidden = true; hud.style.visibility = "visible";
     beginDaily(); phase = "play"; updateHud(); unlockAudio(); tap("tap-daily");
-  });
+  }));
   reviveBtn.addEventListener("pointerdown", () => { doRevive(); });
   rankBtn = root.querySelector("#rank-btn") ;
   rankBtn2 = root.querySelector("#rank-btn2") ;
@@ -496,13 +587,14 @@ function buildDom() {
     muted = !muted;
     void (sound ? sound.settings.setMuted(muted) : undefined);
     muteImg.src = muted
-      ? "assets/lib/kenney-game-icons/icons/audioOff.png"
-      : "assets/lib/kenney-game-icons/icons/audioOn.png";
+      ? A("assets/lib/kenney-game-icons/icons/audioOff.webp")
+      : A("assets/lib/kenney-game-icons/icons/audioOn.webp");
   });
-  startBtn.addEventListener("pointerdown", () => { startGame(true); });
-  freshBtn.addEventListener("pointerdown", () => { startGame(false); });
-  retryBtn.addEventListener("pointerdown", () => {
-    if (sound) sound.playCue("sfx.tap", { eventId: "tap-retry" });
+  // 开局收费：三个开局动作（开始 / 再来一局 / 每日挑战）都过 gate
+  startBtn.addEventListener("pointerdown", gate(() => { startGame(true); }));
+  freshBtn.addEventListener("pointerdown", gate(() => { startGame(false); }));
+  retryBtn.addEventListener("pointerdown", gate(() => {
+    cue("sfx.tap", { eventId: "tap-retry" });
     fx.clear();
     resultsEl.hidden = true;
     // 从每日挑战出来的,回到普通无尽模式
@@ -510,9 +602,9 @@ function buildDom() {
     newRun();
     phase = "play";
     updateHud();
-  });
+  }));
   shareBtn.addEventListener("pointerdown", () => {
-    if (sound) sound.playCue("sfx.tap", { eventId: "tap-share" });
+    cue("sfx.tap", { eventId: "tap-share" });
     const sh = (gp       ).share;
     if (!shareBlob || sharing || !sh) return;
     sharing = true;
@@ -655,7 +747,7 @@ function spawnFruit(level        , x        , y        , opts                   
   );
   const sprite = new PIXI.Sprite(fruitTex[level - 1]);
   const fit = FIT[level - 1];
-  const base = (r * 2) / fit.cw;
+  const base = (r * 2) / (fit.cw * ART_SCALE);
   sprite.anchor.set(0.5, fit.ay);
   sprite.scale.set(opts.pop ? base * 0.55 : base);
   sprite.position.set(x, y);
@@ -719,7 +811,7 @@ function drainContacts() {
     const d = lastDrop;
     if (d && !d.landed && !d.dead && (a === d || b === d)) {
       d.landed = true;
-      if (sound) sound.playCue("sfx.drop", { eventId: `land-${dropSeq}` });
+      cue("sfx.drop", { eventId: `land-${dropSeq}` });
       fx.play("pickup-pop", { pos: { x: d.x, y: d.y + d.r * 0.7 }, scale: 0.35 });
     }
     // 结算后不再合成 —— 否则物理继续跑,分数会在结算屏出现后被偷偷改写
@@ -795,7 +887,7 @@ function execMerge(a       , b       ) {
   else if (nl <= 4) fx.play("pickup-pop", { pos, scale: 0.7 + nl * 0.25, power: 0.5 + ch * 0.12 });
   else if (nl <= 8) fx.play("pickup-pop", { pos, scale: 1.1 + nl * 0.1, power: 0.6 + ch * 0.12 });
   else fx.play("heavy-hit", { pos, power: 0.55 + nl * 0.06 });
-  if (sound) sound.playCue("sfx.merge", {
+  cue("sfx.merge", {
     eventId: `m${fruitSeq}`,
     // 每段升半音 + 连击再层层升高,耳朵能听出节拍在加速
     pitchSemitones: Math.max(-12, Math.min(24, 11 - nl + (chain - 1) * 2)),
@@ -821,7 +913,7 @@ function execAnnih(a       , b       ) {
   removeFruit(a); removeFruit(b);
   score += 1000; mergeCount++;
   fx.play("explosion-impact", { pos: { x: cx, y: cy }, power: 1 });
-  if (sound) sound.playCue("sfx.merge", { eventId: `x${fruitSeq}`, pitchSemitones: -10 });
+  cue("sfx.merge", { eventId: `x${fruitSeq}`, pitchSemitones: -10 });
   floater("+1000", cx, cy - 60);
   impulseAround(cx, cy, 11);
   void gp.player.achievements.unlock("double_watermelon");
@@ -834,7 +926,7 @@ function watermelonCeremony(x        , y        ) {
   impactPunch = 1.6;
   fx.play("explosion-impact", { pos: { x, y }, power: 1 });
   fx.play("confetti-burst", { pos: { x, y }, power: 1 });
-  if (sound) sound.playCue("sfx.watermelon", { eventId: `wm${fruitSeq}` });
+  cue("sfx.watermelon", { eventId: `wm${fruitSeq}` });
   bannerEl.classList.add("show");
   window.clearTimeout(bannerTimer);
   bannerTimer = window.setTimeout(() => bannerEl.classList.remove("show"), 1500);
@@ -856,7 +948,7 @@ function updateWarning(dt        ) {
     warnT += dt; warnTick += dt;
     if (warnTick >= 0.5) {
       warnTick = 0;
-      if (sound) sound.playCue("sfx.tick", { eventId: `tk${Math.floor(time * 2)}` });
+      cue("sfx.tick", { eventId: `tk${Math.floor(time * 2)}` });
     }
     if (warnT >= WARN_SECONDS) { gameOver(); return; }
   } else {
@@ -890,7 +982,7 @@ function gameOver() {
   mergeQueue.length = 0;
   chain = 0; chainPop = 0;
   clearAutosave();
-  if (sound) sound.playCue("sfx.gameover", { eventId: `over-${Date.now()}` });
+  cue("sfx.gameover", { eventId: `over-${Date.now()}` });
   const isRecord = score > best;
   if (isRecord) { best = score; void persistBest(); }
   void settleMetaRewards();
@@ -928,47 +1020,26 @@ function showResults(isRecord         ) {
 }
 
 /** 复活:移除罐口附近(警戒线以上)的果,回到对局 */
-// 结算屏:复活改成**每次花 4 枚平台金币**(不再白送次数)
+// 【改造】原版花 4 枚平台金币;现在花 25 宝石,或消耗已存的复活次数
 async function doRevive() {
   if (phase !== "over" || buying) return;
-  // 已购次数优先
-  if (meta.consum.revive <= 0 && (!gp.pay?.available || payOff)) { flashTip(T.shakeUnavailable); return; }
-  if (meta.consum.revive <= 0) {
-    buying = true;
-    try { if (sound) sound.setHold("purchase", true); } catch { /* ignore */ }
-    updateHud();
-    let r                                                     = null;
-    try {
-      r = await gp.pay.purchase({ itemId: REVIVE_ITEM, title: T.shopRevive, desc: T.shopReviveDesc, price: REVIVE_PRICE });
-    } catch { r = null; }
-    buying = false;
-    try { if (sound) sound.setHold("purchase", false); } catch { /* ignore */ }
-    if (r && r.ok) {
-      if (!delivered.includes(r.purchaseId)) { delivered.push(r.purchaseId); void persistShop(); }
-      void gp.pay.ack(r.purchaseId);
-      meta.consum.revive++; // 计一次,马上用掉
-    } else if (r) {
-      switch (r.error) {
-        case "declined": case "insufficient": case "need_login": case "busy": break;
-        case "pending": flashTip(T.payPending); break;
-        // 作者试玩:免费预览一次复活
-        case "self_purchase": meta.consum.revive++; flashTip(T.authorPreview); break;
-        case "rate_limited": flashTip(T.shakeLater); break;
-        case "bad_request": console.error("gp.pay: bad revive call", r); break;
-        default: payOff = true; flashTip(T.shakeUnavailable); break;
-      }
-    }
+  // 已存的次数优先,其次现花宝石
+  if (meta.consum.revive > 0) {
+    meta.consum.revive--;
+  } else if (meta.gems >= REVIVE_GEMS) {
+    meta.gems -= REVIVE_GEMS;
+  } else {
+    flashTip(T.gemsShort);
+    return;
   }
-  if (meta.consum.revive <= 0) { updateHud(); return; }
-
-  meta.consum.revive--;
   void persistMetaNow();
+  refreshMetaUI();
   gp.player.achievements.unlock("revive_used");
   const wy = warnY();
   const doomed = fruits.filter((f) => !f.dead && f.y - f.r < wy + 60);
   for (const f of doomed) removeFruit(f);
   fx.play("explosion-impact", { pos: { x: CX, y: wy }, power: 0.9 });
-  if (sound) sound.playCue("sfx.watermelon", { eventId: `revive-${Date.now()}` });
+  cue("sfx.watermelon", { eventId: `revive-${Date.now()}` });
   resultsEl.hidden = true;
   warnT = 0; warnTick = 0;
   resumeGrace = 1.5;
@@ -1072,63 +1143,8 @@ function buyUpgrade(key       )          {
   meta.up[key] = lv + 1;
   void persistMetaNow();
   refreshMetaUI();
-  if (sound) sound.playCue("sfx.tap", { eventId: `buy-${key}-${meta.up[key]}` });
+  cue("sfx.tap", { eventId: `buy-${key}-${meta.up[key]}` });
   return true;
-}
-
-/* ---------- 平台金币商店(摇一摇) ---------- */
-// 发放去重记录与未用完的补发次数存独立槽位 __sys_shop,**不进 run 自动存档**。
-// 是否付过款以平台 pending() 为准,这里只是防重复发放。
-async function loadShop() {
-  try {
-    const list = await gp.player.saves.list(100);
-    const hit = list.find((r) => r.name === "__sys_shop");
-    if (hit) {
-      const full = await gp.player.saves.get(hit.id);
-      const d = full?.data;
-      if (typeof d?.credits === "number") { /* 旧版遗留字段:不再使用,交给 meta 管理 */ }
-      if (Array.isArray(d?.delivered)) delivered = d.delivered.filter((x         ) => typeof x === "string");
-    }
-  } catch { /* 读失败:去重表为空 */ }
-}
-
-async function persistShop() {
-  try {
-    delivered = delivered.slice(-60);
-    const list = await gp.player.saves.list(100);
-    const hit = list.find((r) => r.name === "__sys_shop");
-    const data = { v: 1, delivered: delivered };
-    if (hit) await gp.player.saves.update(hit.id, data, "__sys_shop");
-    else await gp.player.saves.create(data, "__sys_shop");
-  } catch { /* 写失败不影响游戏 */ }
-}
-
-// 启动补发:付了款但页面在发放前关掉的摇一摇,转成一次免费摇一摇。
-// 可能被调用两次(启动时 + 平台握手完成后),用标志串行化,成功一次就不再跑。
-let settleRunning                       = null, settledOk = false, shopLoaded = false;
-function settlePendingPurchases()                {
-  if (settledOk) return Promise.resolve();
-  if (!settleRunning) settleRunning = settleOnce().finally(() => { settleRunning = null; });
-  return settleRunning;
-}
-async function settleOnce() {
-  if (!shopLoaded) { await loadShop(); shopLoaded = true; }
-  if (!gp.pay?.available) { updateHud(); return; }
-  let r                                            ;
-  try { r = await gp.pay.pending(); } catch { updateHud(); return; }
-  if (!r.ok) { updateHud(); return; } // 查询失败 ≠ 空列表,下次启动再试
-  settledOk = true;
-  let restored = 0;
-  for (const p of r.items) {
-    if (delivered.includes(p.purchaseId)) { void gp.pay.ack(p.purchaseId); continue; }
-    // 按 itemId 发对应消耗品;未知商品只 ack 不发放
-    if (p.itemId === SHAKE_ITEM) { meta.consum.shake++; restored++; delivered.push(p.purchaseId); }
-    else if (p.itemId === REVIVE_ITEM) { meta.consum.revive++; restored++; delivered.push(p.purchaseId); }
-    else { delivered.push(p.purchaseId); }
-    void gp.pay.ack(p.purchaseId);
-  }
-  if (restored) { await persistShop(); await persistMetaNow(); flashTip(T.shakeRestored); }
-  updateHud();
 }
 
 async function loadBest() {
@@ -1165,7 +1181,7 @@ function shakeImpulse() {
 
 function playShake() {
   shakeImpulse();
-  if (sound) sound.playCue("sfx.shake", { eventId: `shk${Date.now()}` });
+  cue("sfx.shake", { eventId: `shk${Date.now()}` });
 }
 
 // 一次点击只发起一次支付;支付弹窗打开期间游戏冻结(buying),避免玩家看弹窗时被判负。
@@ -1230,7 +1246,7 @@ async function doShake() {
     updateHud();
     return;
   }
-  // 2) 已购次数(金币已经花过了)
+  // 2) 已存的次数(宝石早就花过了)
   if (meta.consum.shake > 0) {
     meta.consum.shake--;
     void persistMetaNow();
@@ -1238,36 +1254,12 @@ async function doShake() {
     updateHud();
     return;
   }
-  if (!gp.pay?.available || payOff) { flashTip(T.shakeUnavailable); return; }
-  buying = true;
-  try { if (sound) sound.setHold("purchase", true); } catch { /* ignore */ }
-  updateHud();
-  let r                                                     = null;
-  try {
-    r = await gp.pay.purchase({ itemId: SHAKE_ITEM, title: T.shakeTitle, desc: T.shakeDesc, price: SHAKE_PRICE });
-  } catch { r = null; }
-  buying = false;
-  try { if (sound) sound.setHold("purchase", false); } catch { /* ignore */ }
-  if (r && r.ok) {
-    if (!delivered.includes(r.purchaseId)) {
-      delivered.push(r.purchaseId);
-      // 弹窗期间游戏已冻结,理应仍在对局;万一不在就存成一次可用次数
-      if (phase === "play") playShake(); else meta.consum.shake++;
-      void persistShop();
-      void persistMetaNow();
-    }
-    void gp.pay.ack(r.purchaseId);
-  } else if (r) {
-    switch (r.error) {
-      case "declined": case "insufficient": case "need_login": case "busy": break; // 平台弹窗已处理
-      case "pending": flashTip(T.payPending); break; // 不发放;下次启动 pending() 补发
-      case "bad_request": console.error("gp.pay: bad call", r); break;
-      // 作者在试玩自己的游戏:平台不让自己付自己,改为免费预览一次
-      case "self_purchase": if (phase === "play") playShake(); flashTip(T.authorPreview); break;
-      case "rate_limited": flashTip(T.shakeLater); break;
-      default: payOff = true; flashTip(T.shakeUnavailable); break;
-    }
-  }
+  // 3) 现花宝石摇一次
+  if (meta.gems < SHAKE_GEMS) { flashTip(T.gemsShort); return; }
+  meta.gems -= SHAKE_GEMS;
+  void persistMetaNow();
+  refreshMetaUI();
+  playShake();
   updateHud();
 }
 
@@ -1438,7 +1430,7 @@ async function begin(useSave         ) {
   phase = "play";
   updateHud();
   unlockAudio();
-  if (sound) sound.playCue("sfx.tap", { eventId: "tap-begin" });
+  cue("sfx.tap", { eventId: "tap-begin" });
 }
 
 /* ---------- HUD / 瞄准 ---------- */
@@ -1455,7 +1447,6 @@ function refreshMetaUI() {
   }
   if (dailyDot) dailyDot.hidden = meta.daily.date === dailyKey();
   if (upEl && !upEl.hidden) renderUpgrades();
-  if (shopEl && !shopEl.hidden) renderShop();
   // 结算屏的复活按钮文案也跟次数/价格走(否则买了次数按钮不更新)
   if (reviveBtn && phase === "over") refreshReviveLabel();
 }
@@ -1463,76 +1454,12 @@ function refreshMetaUI() {
 /** 复活按钮文案:有已购次数显示“剩余 N”,否则显示金币单价 */
 function refreshReviveLabel() {
   const have = meta.consum.revive;
-  reviveBtn.textContent = have > 0
-    ? `${T.revive} (${T.reviveLeft} ${have})`
-    : `${T.revive} · ${REVIVE_PRICE}`;
+  // 【改造】原来显示的是平台金币价,现在显示宝石价(图标就是 HUD 里那颗钻石)
+  reviveBtn.innerHTML = have > 0
+    ? `${esc(T.revive)} (${esc(T.reviveLeft)} ${have})`
+    : `${esc(T.revive)} · <span class="gem-ico"></span> ${REVIVE_GEMS}`;
 }
 
-/* ---------- 金币商店(便利功能,不白送) ---------- */
-// 平台金币买的是“便利”:每次摇一摇 2 枚、每次复活 4 枚。
-// 不在面板里直接扣款——点购买弹出平台确认框,成功后才入账。
-let shopBuying = false;
-
-function renderShop() {
-  shopList.innerHTML = "";
-  for (const c of CONSUMABLES) {
-    const have = meta.consum[c.key];
-    const sellable = !!gp.pay?.available && !payOff;
-    const row = document.createElement("div");
-    row.className = "up-row";
-    row.innerHTML =
-      `<div class="up-info">` +
-      `<div class="up-name">${esc((T       )[c.i18n])}</div>` +
-      `<div class="up-desc">${esc((T       )[`${c.i18n}Desc`])}</div>` +
-      `<div class="up-lv">${esc(T.shopOwned)} ${have}</div>` +
-      `</div>` +
-      `<button class="up-buy${sellable ? "" : " off"}">` +
-      `<img src="assets/ui/icon_coin_selected.svg" alt="" aria-hidden="true"><span>${c.price}</span></button>`;
-    const btn = row.querySelector("button")                     ;
-    // 支付不可用时**不隐藏也不禁用**——仍可点,点了会告诉玩家原因
-    btn.addEventListener("pointerdown", () => { void buyConsumable(c.key); });
-    shopList.appendChild(row);
-  }
-}
-
-async function buyConsumable(key           ) {
-  if (shopBuying || buying) return;
-  if (!gp.pay?.available || payOff) { flashTip(T.shakeUnavailable); return; }
-  const def = consumDef(key);
-  shopBuying = true;
-  renderShop();
-  let r                                                     = null;
-  try {
-    r = await gp.pay.purchase({
-      itemId: key === "shake" ? SHAKE_ITEM : REVIVE_ITEM,
-      title: (T       )[def.i18n]          ,
-      desc: (T       )[`${def.i18n}Desc`]          ,
-      price: def.price,
-    });
-  } catch { r = null; }
-  shopBuying = false;
-  if (r && r.ok) {
-    if (!delivered.includes(r.purchaseId)) {
-      delivered.push(r.purchaseId);
-      meta.consum[key] += def.pack;
-      await persistMetaNow();
-      await persistShop();
-    }
-    void gp.pay.ack(r.purchaseId);
-  } else if (r) {
-    switch (r.error) {
-      case "declined": case "insufficient": case "need_login": case "busy": break;
-      case "pending": flashTip(T.payPending); break;
-      case "self_purchase": flashTip(T.authorPreview); break;
-      case "rate_limited": flashTip(T.shakeLater); break;
-      case "bad_request": console.error("gp.pay: bad shop call", r); break;
-      default: payOff = true; flashTip(T.shakeUnavailable); break;
-    }
-  }
-  renderShop();
-  refreshMetaUI();
-  updateHud();
-}
 function renderUpgrades() {
   upList.innerHTML = "";
   for (const u of UPGRADES) {
@@ -1575,7 +1502,7 @@ async function renderAchievements() {
     const got = r?.unlocked === true;
     const target = r?.target ?? null;
     const prog = target ? ` (${Math.min(r?.progress ?? 0, target)}/${target})` : "";
-    const icon = r?.icon ?? `assets/achievements/${key}.png`;
+    const icon = r?.icon ?? A(`assets/achievements/${key}.webp`);
     const row = document.createElement("div");
     row.className = "ach-row";
     row.innerHTML =
@@ -1602,14 +1529,14 @@ function updateHud() {
   scoreVal.textContent = String(score);
   bestVal.textContent = String(best);
   if (shakeBtn) {
-    // 对局中始终显示(用户曾因按钮被隐藏而“找不到摇一摇”);
-    // 平台支付不可用时变灰,点击说明原因
-    const sellable = !!gp.pay?.available && !payOff;
+    // 对局中始终显示(用户曾因按钮被隐藏而"找不到摇一摇");
+    // 【改造】宝石不够时变灰,点击说明原因(原来判断的是平台支付可用性)
+    const sellable = meta.gems >= SHAKE_GEMS;
     lastSellable = sellable;
     const have = meta.consum.shake;
     const free = freeShake;
     shakeBtn.hidden = phase !== "play";
-    // 有免费 或 有已购次数 都算可用(不变灰)
+    // 有免费 或 有已存次数 都算可用(不变灰)
     shakeBtn.classList.toggle("off", !sellable && have <= 0 && free <= 0);
     shakeBtn.classList.toggle("busy", buying || shaking > 0);
     shakeBtn.classList.toggle("ready", free > 0 || have > 0);
@@ -1617,7 +1544,7 @@ function updateHud() {
       ? `<span class="sk-free">${T.shakeFree}</span>`
       : have > 0
         ? `×${have}`
-        : `<img src="assets/ui/icon_coin_selected.svg" alt="" aria-hidden="true"><span>${SHAKE_PRICE}</span>`;
+        : `<span class="gem-ico"></span><span>${SHAKE_GEMS}</span>`;
     if (shakeCostEl.innerHTML !== label) shakeCostEl.innerHTML = label;
     shakeBtn.setAttribute(
       "aria-label",
@@ -1634,7 +1561,7 @@ function showAim() {
   const fit = FIT[current - 1];
   aimSprite.texture = fruitTex[current - 1];
   aimSprite.anchor.set(0.5, fit.ay);
-  aimSprite.scale.set((RADII[current - 1] * 2) / fit.cw);
+  aimSprite.scale.set((RADII[current - 1] * 2) / (fit.cw * ART_SCALE));
   aimSprite.x = aimX; aimSprite.y = DROP_Y;
   aimLayer.visible = true;
 }
@@ -1755,8 +1682,6 @@ function frame(ticker             ) {
   }
   if (chainPop > 0) chainPop -= realDt;
   updateHold(realDt);
-  // 平台支付可用性可能在握手后才变为 true:变化时刷新按钮状态
-  if ((!!gp.pay?.available && !payOff) !== lastSellable) updateHud();
   // 摇罐冷却:必须递减,否则第一次之后会被永久锁住
   if (shaking > 0) { shaking = Math.max(0, shaking - realDt); if (shaking === 0) updateHud(); }
   updatePops(realDt);
@@ -1809,7 +1734,7 @@ function buildScene() {
   eventQueue = new RAPIER.EventQueue(true);
   buildWalls();
 
-  bgSprite = new PIXI.Sprite(PIXI.Texture.from("assets/bg.png"));
+  bgSprite = new PIXI.Sprite(PIXI.Texture.from(A("assets/bg.webp")));
   bgSprite.anchor.set(0.5);
   app.stage.addChild(bgSprite);
 
@@ -1818,7 +1743,7 @@ function buildScene() {
 
   // 罐身按原图比例摆放(717x709 会把罐子压扁);内容顶对齐到 y=208,内底即 JAR_FLOOR=714
   // 罐身按原图比例摆放(非等比缩放会把罐子压扁);内容顶对齐 JAR_TOP_Y,内底即 JAR_FLOOR
-  const jar = new PIXI.Sprite(PIXI.Texture.from("assets/jar.png"));
+  const jar = new PIXI.Sprite(PIXI.Texture.from(A("assets/jar.webp")));
   // 罐身按原图比例摆放(非等比缩放会把罐子压扁);内容顶对齐 JAR_TOP_Y,内底即 JAR_FLOOR
   jar.anchor.set(0.5, 0);
   jar.scale.set(JAR_SCALE);
@@ -1878,16 +1803,38 @@ function wireInput() {
   window.addEventListener("pointerup", release);
   window.addEventListener("pointercancel", release);
   window.addEventListener("blur", release);
+  detachInput = () => {
+    window.removeEventListener("pointerup", release);
+    window.removeEventListener("pointercancel", release);
+    window.removeEventListener("blur", release);
+  };
 }
 
 /* ---------- 启动 ---------- */
-async function boot() {
+/**
+ * 启动。独立网页与插件**调的是同一个函数**，差别全部通过 `opts` 注入 ——
+ * 所以这里没有任何 `if (isPlugin)` 分支（那种分支会随版本漂移，而且永远只有一种被跑到）。
+ *
+ * @param {{ container?: HTMLElement, store?: ReturnType<typeof makeStore> }} [opts]
+ * @returns {Promise<() => void>} 卸载函数
+ */
+export async function start(opts = {}) {
+  const container = opts.container ?? document.getElementById("app") ;
+  const store = opts.store ?? makeLocalStore();
+  // ★ 必须在任何读存档之前 await 完，否则读到的永远是空 Map（症状：进度从没被恢复，且不报错）
+  await store.preload();
+  installGp(store);
+
+  // 插件形态才有的两件事，独立网页（index.html）两个都不传
+  ASSET = opts.assetBase ?? "";
+  chargeRun = typeof opts.chargePlay === "function" ? opts.chargePlay : null;
+
   setLang(pickLang(navigator.language));
   setupFont();
   injectCss();
-  buildDom();
+  buildDom(container);
   const fill = document.getElementById("load-fill") ;
-  const host = document.getElementById("app") ;
+  const host = container;
 
   app = new PIXI.Application();
   try {
@@ -1896,20 +1843,55 @@ async function boot() {
     console.error("pixi init failed", err);
   }
   host.appendChild(app.canvas);
-  const display = mountDisplay({ orientation: "portrait", onResize: ({ width, height }) => layout(width, height) });
+  /**
+   * ★ 布局的唯一依据是**宿主容器**，不是 `window`。
+   *
+   * `mountDisplay` 的 `onResize` 报的是 window 尺寸（那套运行时本来是给独立网页写的），
+   * 而插件里容器比 window 矮（顶栏底栏被宿主拿走了）。照 window 排版 ⇒
+   * 逻辑高度算大、整层 UI 往下溢出到容器外：**看得见、点不到、一个错都不报**。
+   * 另加 ResizeObserver —— 切 tab / 平板换布局**不会**触发 window resize。
+   */
+  const box = () => {
+    const r = host.getBoundingClientRect();
+    return { w: Math.max(1, Math.round(r.width)), h: Math.max(1, Math.round(r.height)) };
+  };
+  const relayout = () => {
+    const b = box();
+    // ★ 样式里所有尺寸都读这两个变量（`min(calc(var(--cw)*.94), …)`）：
+    //   宿主里容器 ≠ 视口，用 vw/vh 算出来的面板会比容器还高。
+    if (rootEl) {
+      rootEl.style.setProperty("--cw", b.w + "px");
+      rootEl.style.setProperty("--ch", b.h + "px");
+    }
+    layout(b.w, b.h);
+  };
+  /*
+   * 屏幕适配器。它干两件我们干不了的事：按 dpr 算 renderer 的 resolution、
+   * 在尺寸变化时 `renderer.resize()`（★ **renderer 的实际尺寸是它定的**，`layout()` 只算缩放）。
+   *
+   * ★ `host` 必须显式给容器：默认它量 `document.body`，而宿主里 body ≠ 容器
+   *   （上面还有顶栏、下面还有底栏），renderer 会比容器高出一截。
+   * ★ `orientation` 给 `'both'`：它声明的 `'portrait'` 会在横屏时往 **document.body**
+   *   塞一个 `inset:0` 的「请旋转屏幕」遮罩（z-index 两亿多），
+   *   在宿主里那就是**盖住整个 App**，连底栏都点不到 —— 孩子只能硬转回来。
+   *   本作是容器自适应的，横屏只是留白多，没必要拦。
+   */
+  const display = mountDisplay({ orientation: "both", host, onResize: () => relayout() });
   display.attachPixi(app);
-  // 双保险:窗口/方向变化时重算逻辑世界缩放与居中(字母box)
-  window.addEventListener("resize", () => layout(app.screen.width, app.screen.height), { passive: true });
-  window.addEventListener("orientationchange", () => layout(app.screen.width, app.screen.height), { passive: true });
+  relayout();
+  const ro = new ResizeObserver(() => relayout());
+  ro.observe(host);
+  window.addEventListener("resize", relayout, { passive: true });
+  window.addEventListener("orientationchange", relayout, { passive: true });
   window.__gpReady = true;
 
-  const urls = ["assets/bg.png", "assets/jar.png"];
+  const urls = [A("assets/bg.webp"), A("assets/jar.webp")];
   for (let i = 1; i <= 11; i++) urls.push(fruitUrl(i));
   const rapierReady = RAPIER.init();
   await PIXI.Assets.load(urls, (p) => { fill.style.width = `${Math.round(p * 85)}%`; });
   await rapierReady;
   fill.style.width = "92%";
-  sound = (await loadSoundSystem({ manifestUrl: "./sound.manifest.json" }))                    ;
+  sound = (await loadSoundSystem({ manifestUrl: A("sound.manifest.json") }))                    ;
   // 若玩家在素材就绪前已经点过屏幕,这里补上解锁(BGM 与音效从这里开始)
   if (gestureSeen) { unlocked = false; unlockAudio(); }
   fill.style.width = "100%";
@@ -1933,12 +1915,9 @@ async function boot() {
   refreshTexts();
   void loadBest();
   void loadMeta();
-  // 商店可用前先跑启动补发(pending → 发放 → ack)
-  void settlePendingPurchases();
 
   // 登录玩家可能晚一步才握手完成:locale 就绪后跟随平台语言,并重读一次自动存档
   gp.player.ready.then(({ user }) => {
-    void settlePendingPurchases(); // 支付可用性可能在握手后才就绪
     if (user?.locale) {
       const k = pickLang(user.locale);
       if (k !== currentLang()) applyLang(k);
@@ -1949,13 +1928,53 @@ async function boot() {
     }
   }).catch(() => {});
 
-  window.addEventListener("pagehide", () => { if (sound) void sound.dispose(); fx.dispose(); }, { once: true });
+  // ★ 这个监听是 `{once:true}`，卸载时**摘不掉也不需要摘**，但回调里的 `fx` 可能已经被
+  //   卸载 dispose 过了 ⇒ 必须空安全 + try，否则「切走之后再切后台」会冒一个 pageerror。
+  window.addEventListener("pagehide", () => {
+    try { if (sound) void sound.dispose(); } catch { /* ignore */ }
+    try { fx?.dispose?.(); } catch { /* ignore */ }
+  }, { once: true });
 
   document.getElementById("loading")?.remove();
   titleEl.hidden = false;
   window.__gpPlayable = true;
+
+  /**
+   * 卸载。宿主切走游戏时会调它。
+   *
+   * ★ 必须把 Pixi 应用、特效层、音频、DOM 都拆干净，否则第二次挂载会
+   *   「空白」或「看着正常但没声音」，而且**一个错都不报**。
+   * ★ 调试钩子（`__gpPlayable`）要摘掉：留着会让下一次挂载立刻判「就绪」，假通过。
+   */
+  return () => {
+    try { ro.disconnect(); } catch { /* ignore */ }
+    try { window.removeEventListener("resize", relayout); } catch { /* ignore */ }
+    try { window.removeEventListener("orientationchange", relayout); } catch { /* ignore */ }
+    // ★★ display 适配器自己挂了 resize / orientationchange / visualViewport 三个 window 监听
+    //   和一个 ResizeObserver，还会往 document.body 塞旋转遮罩。不 dispose 的话它们活着，
+    //   下一次窗口尺寸变化就回调 `relayout()` → `layout()` → `app.stage` ⇒ 一片
+    //   `reading 'stage'`，而 `app` 这时候已经是 null 了。
+    try { display?.dispose(); } catch { /* ignore */ }
+    try { detachInput?.(); } catch { /* ignore */ }
+    try { app?.destroy({ children: true, texture: false, baseTexture: false }); } catch { /* ignore */ }
+    try { fx?.dispose(); } catch { /* ignore */ }
+    try { if (sound) void sound.dispose(); } catch { /* ignore */ }
+    try { document.getElementById("mj-style")?.remove(); } catch { /* ignore */ }
+    try { if (container) container.replaceChildren(); } catch { /* ignore */ }
+    try {
+      // 两个都要摘：`__gpReady` 留着会让「挂载测试」在还没加载完时就判就绪，
+      // `__gpPlayable` 留着会让第二次挂载立刻「可玩」⇒ 假通过。
+      delete window.__gpPlayable;
+      delete window.__gpReady;
+    } catch { /* ignore */ }
+    app = null; sound = null;
+    detachInput = null;
+    // 下一份挂载会重新注入；留着会让「第二次挂载」用上一次的资源根和收费函数
+    chargeRun = null;
+    ASSET = "";
+  };
 }
-void boot();
+
 
 
 

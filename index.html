@@ -9,4 +9,7 @@
     "@makeplay/display": "./runtime/display-1.js"
   }
 }
-</script></head><body><div id="app"></div><script type="module" src="./game.js"></script></body></html>
+</script></head><body><div id="app"></div><script type="module">
+  import { start } from './game.js'
+  start({ container: document.getElementById('app') })
+</script></body></html>
