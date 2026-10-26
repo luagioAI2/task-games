@@ -31,8 +31,9 @@ node scripts/build-plugin.mjs
 
 # 三层自检
 node scripts/smoke.mjs        # 独立网页：8 条
-node scripts/mount-test.mjs   # 假宿主：33 条（遮挡 / 收费 / 宽限 / 存档 / 平板）
+node scripts/mount-test.mjs   # 假宿主：34 条（遮挡 / 收费 / 宽限 / 存档 / 平板 / 模板完整性）
 node scripts/capture.mjs      # 商城详情页那 4 张图的源图
+node scripts/capture-loading.mjs  # 加载页走查：手机竖/平板竖/平板横三档，出图 + 量「吊笼在不在框里」
 ```
 
 宿主那边：

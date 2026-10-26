@@ -176,6 +176,21 @@ check('★ 没盖住宿主顶栏（`fixed` 已改 `absolute`）', g1.topHit === 
 check('★ 没盖住宿主底栏', g1.navHit === 'nav', `底栏中心命中 ${g1.navHit}`)
 check('样式只注入一份', g1.css === 1, `${g1.css} 份`)
 
+// ⚠️ 这条防的是「HTML 模板字符串被提前闭合」：dom.js 里整页 HTML 是一个反引号模板，
+//    在里面写注释时手滑打一个反引号（例如给 slice 加引号）就会把它闭合，
+//    后面的标签变成 JS 表达式。**`node --check` 照样通过**（尾部落到合法语法上），
+//    症状是加载页只剩上半截、`#boot-error` 整个没了 —— 静默的。
+//    所以这里必须查「模板末尾的节点在不在」，不能只查开头。
+const domShape = await page.evaluate(() => ({
+  loading: !!document.querySelector('#loading'),
+  cage: !!document.querySelector('#loading .ld-cage'),
+  bar: !!document.querySelector('#loading .ld-bar > i'),
+  dust: !!document.querySelector('#loading .ld-dust'),
+  bootErr: !!document.querySelector('#boot-error'),
+}))
+check('加载页结构完整（模板没被截断）',
+  domShape.loading && domShape.cage && domShape.bar && domShape.dust && domShape.bootErr, JSON.stringify(domShape))
+
 const s1 = await shot('host-1-phone.png')
 check('画面画出来了（颜色种类）', s1.colors >= 20, `${s1.colors} 种 · shots/host-1-phone.png`)
 

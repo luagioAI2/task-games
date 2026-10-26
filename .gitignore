@@ -12,3 +12,6 @@ node_modules/
 
 # smoke.mjs 的调试截图（临时，别当商城截图用）
 shots/smoke-*.png
+
+# capture-loading.mjs 的调试截图（临时，别当商城截图用）
+shots/_loading/
