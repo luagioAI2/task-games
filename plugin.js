@@ -77,7 +77,10 @@ export const manifest = {
   emoji: '⛏️',
   // 底栏格子约 5 个字宽（2026-10-26 起从 3 放宽）。「挖矿」两个字最稳，也不会和商城名对不上。
   tabLabel: '挖矿',
-  version: '1.0.0',
+  // 1.0.1：加载页第四版（去掉「深渊矿业公司」小字 + 整体从暗改暖 + 平板裁切修复）。
+  // ⚠️ 改了包就必须升这里 —— 宿主只比 `installed.version === g.version` 判断要不要更新，
+  //    不升的话界面说「已是最新」，用户装到的还是旧画面，而且零报错。
+  version: '1.0.1',
   minHostApi: NEED_HOST_API,
 
   // ⚠️ 宿主把 `coin` 当**必填**（`describeManifestProblem` 会拒），但本作

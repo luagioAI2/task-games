@@ -127,21 +127,25 @@ button:focus-visible { outline: 3px solid #ffffff; outline-offset: 2px; box-shad
 #loading.done { opacity: 0; pointer-events: none; }
 .ld-stage { position: relative; z-index: 1; display: flex; flex-direction: column; width: 100%; height: 100%; }
 
-/* 标题卡：品牌小字 → 公司名 → 一道金线 */
-.ld-head { flex: none; padding: calc(var(--safe-t) + 26px) 20px 0; text-align: center; }
-.ld-brand { font-family: var(--num); font-size: 11px; font-weight: 800; letter-spacing: .3em; text-indent: .3em; color: var(--gold-d); }
-.ld-title { margin: 9px 0 0; font-size: clamp(25px, 7.2vw, 33px); line-height: 1.16; font-weight: 900; letter-spacing: .03em; color: var(--indigo); }
+/* 标题卡：只有游戏名 + 一道金线。
+   原来上面还有一行小字「深渊矿业公司 / Abyss Mining Co.」——用户明确不要，
+   删掉之后标题就是唯一的一行，字号相应放大一档。 */
+.ld-head { flex: none; padding: calc(var(--safe-t) + 30px) 20px 0; text-align: center; }
+.ld-title { margin: 0; font-size: clamp(28px, 8vw, 37px); line-height: 1.16; font-weight: 900; letter-spacing: .04em; color: var(--indigo); }
 .ld-rule { display: flex; align-items: center; justify-content: center; gap: 7px; margin-top: 11px; }
 .ld-rule::before, .ld-rule::after { content: ""; width: 46px; height: 2px; border-radius: 1px; background: linear-gradient(90deg, rgba(184, 134, 42, 0), rgba(184, 134, 42, .55)); }
 .ld-rule::after { transform: scaleX(-1); }
 .ld-rule b { width: 7px; height: 7px; transform: rotate(45deg); background: var(--gold); box-shadow: 0 0 0 2.5px rgba(242, 201, 92, .28); }
 
 /* 剖面：铺满中间剩余高度，`slice` 让它裁边而不是留白。
-   ⚠️ `max-width` 不能省：平板上容器 834 宽、剖面只有 ~700 高，`slice` 会按宽度放大
-   ⇒ 上下各裁掉 100 多个 viewBox 单位，天轮和吊笼起点直接被裁没了。卡到 470 之后
-   容器宽高比永远比 viewBox（320/460）更窄，`slice` 只裁左右。
-   两侧再做一道横向渐隐，岩体的硬边就化进纸色里（平板上看着像一张居中插图，不是贴片）。 */
-.ld-art { position: relative; flex: 1 1 auto; min-height: 0; margin: 12px auto 0; max-width: 470px;
+   ⚠️ 这里的 `max-width` 只能是「保险丝」，不能真的卡死：
+   `.ld-art` 左右是 `margin: auto`，而 **flex 项只要有一侧外边距是 auto 就不做拉伸**，
+   宽度退化成「内容固有宽度」= 高度 × viewBox 比例（320/460）。
+   所以盒子天然就是「不裁切的宽度」，再被容器宽度和这条 max-width 夹一道。
+   写死 `470px` 的时候，平板竖屏（高 898 ⇒ 天然宽 625）被硬夹到 470 ⇒ 左右各裁
+   约 40 个 viewBox 单位，贴着边放的金块被切掉半个 —— 截图走查量出来的。
+   改成 `min(100%, 640px)`：只在超大屏上兜一下，正常尺寸下不参与裁切。 */
+.ld-art { position: relative; flex: 1 1 auto; min-height: 0; margin: 12px auto 0; max-width: min(100%, 640px);
   -webkit-mask-image: linear-gradient(90deg, transparent 0, #000 7%, #000 93%, transparent 100%);
   mask-image: linear-gradient(90deg, transparent 0, #000 7%, #000 93%, transparent 100%); }
 .ld-svg { display: block; width: 100%; height: 100%;
@@ -159,8 +163,8 @@ button:focus-visible { outline: 3px solid #ffffff; outline-offset: 2px; box-shad
 .ld-cage { transform: translateY(calc(56px + var(--p) * 284px)); transition: transform .42s cubic-bezier(.3, .85, .35, 1); }
 .ld-lamp { animation: ldLamp 2.6s ease-in-out infinite; }
 @keyframes ldLamp { 0%, 100% { opacity: .62; } 50% { opacity: 1; } }
-.ld-abyss { animation: ldAbyss 3.4s ease-in-out infinite; }
-@keyframes ldAbyss { 0%, 100% { opacity: .5; } 50% { opacity: .95; } }
+.ld-haze { animation: ldHaze 3.4s ease-in-out infinite; }
+@keyframes ldHaze { 0%, 100% { opacity: .72; } 50% { opacity: 1; } }
 .ld-dust circle { animation: ldDust 3.8s linear infinite; }
 .ld-dust circle:nth-child(2) { animation-delay: -1.2s; } .ld-dust circle:nth-child(3) { animation-delay: -2.4s; }
 .ld-dust circle:nth-child(4) { animation-delay: -.7s; } .ld-dust circle:nth-child(5) { animation-delay: -1.9s; }
@@ -193,7 +197,7 @@ button:focus-visible { outline: 3px solid #ffffff; outline-offset: 2px; box-shad
   .ld-tip { margin-top: 8px; min-height: 0; }
 }
 @media (prefers-reduced-motion: reduce) {
-  .ld-lamp, .ld-abyss, .ld-dust circle, .ld-bar > i::after { animation: none; }
+  .ld-lamp, .ld-haze, .ld-dust circle, .ld-bar > i::after { animation: none; }
 }
 #boot-error { position: fixed; left: 16px; right: 16px; bottom: 16px; z-index: 40; padding: 12px; border-radius: 10px; background: #a02020; color: #fff; }
 
