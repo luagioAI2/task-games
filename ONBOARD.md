@@ -20,7 +20,7 @@
 | 3 | 压资源 | ✅ | 24 张图 **14.10 MB → 402 KB（−97%）**，最差 PSNR **30.39 dB**；`assets/` 里只剩 webp（26 个文件 / 2.8 MB） |
 | 4 | 改造：去内购 / 排行；定经济 | ✅ | `grep -c "gp\.pay" game.js` = **0**（只剩注释里一句）；复活 / 摇一摇改花宝石；`#shop-btn` / `#rank-btn` / `#board-screen` 已删 |
 | 5 | 打包 | ✅ | `dist-plugin/melonjar.plugin.mjs` **5852 KB**，裸说明符 0 · 动态 import 0 · 五引擎全内联 |
-| 6 | 落库（四处登记） | ✅ | `npm run check:registry` → **本地包 7 款 · 哈希 7 条 · 商城 7 条 · PLAN 7 行，四处一致** |
+| 6 | 落库（四处登记） | ✅ | `npm run check:registry` → **四处一致**（接这款时是 7 款，2026-10-27 复核为 **9 款**：本地包 9 · 哈希 9 · 商城 9 · PLAN 9 行） |
 | 7 | 商城详情（文案 + 4 张图） | ✅ | `public/store/melonjar/1..4.webp`（22/29/19/21 KB）；文案见 `storefront.ts` |
 | 8 | 五层验收 | ✅ | 静态 ✅ / 假宿主挂载 ✅ / `lint` exit 0 + `npm test` **774/774** / `e2e-melonjar` **手机 + 平板全绿** / 截图走查 ✅（实测值见下） |
 | 9 | 提交（两个仓库） | ✅ | 宿主 `338ea7b`（含 minergirl）；本仓库 `webp 转换 + game.js 改造` 一条（见「资源改 webp」一节） |
@@ -139,3 +139,21 @@ node <skill>/scripts/scrape.mjs <地址> <项目>/_originals/<日期> --proxy ht
 ```
 
 `mkplay.zone` 直连是 000，Node 的 `fetch` 不读 `HTTPS_PROXY`；沙箱自带的代理（62xxx）对这个站 exit 56。
+
+### 源站有没有更新？（2026-10-27 02:16 查过：没有）
+
+有人再拿 `https://r7y9bq7hrp.mkplay.zone/v/12/index.html` 来问「扒一下接进商城」时，
+先跑这一条再决定要不要重扒 —— **这款已经接完并验过了**：
+
+```bash
+curl -sS -x http://127.0.0.1:7897 -o _originals/_live/index.html \
+  "https://r7y9bq7hrp.mkplay.zone/v/12/index.html"
+md5sum _originals/2026-10-26/index.html _originals/_live/index.html
+```
+
+实测两份 **md5 都是 `d90e724d58f61695fc79fcc693c6779a`**（44707 字节，逐字节相同）
+⇒ 站点从 10-26 到现在一个字节都没变，没有可搬的东西。
+查完把 `_originals/_live/` 删掉，别让它混进以后 `diff -rq _originals/<日期>` 的对比里。
+
+⚠️ `curl` 是 Windows 程序，`-o /tmp/x` 会写到 **bash 看不见的地方**（`stat` 报不存在）。
+一律下到工作区内的路径。
