@@ -923,7 +923,8 @@ export async function start(opts = {}) {
       stars: save.stars.slice(), totalStars: totalStars(), page, muted: save.muted,
       // `q` / `r` 是六边形坐标：截图脚本按它把「算出来的解」对回屏幕上的格子，
       // 不依赖数组顺序（顺序变了不报错，只会点错格子、看起来像「解错了」）
-      lang: getLang(), tiles: tiles.map((tl) => ({ x: tl.x, y: tl.y, q: tl.def.q, r: tl.def.r, kind: tl.def.kind, powered: !!tl.powered })),
+      // `need` = 这一格还要顺时针转几下才对 —— e2e 靠它打通一关，不用在测试里复制关卡数据
+      lang: getLang(), tiles: tiles.map((tl) => ({ x: tl.x, y: tl.y, q: tl.def.q, r: tl.def.r, kind: tl.def.kind, powered: !!tl.powered, need: stepsTo(tl.def.mask, tl.rot, tl.def.mask) })),
     }),
     buttons: () => btns.map((b) => ({ label: b.label || '', x: b.x, y: b.y, w: b.w, h: b.h })),
     /** e2e 想直接进某一关时用（会走同一道扣费闸门） */
