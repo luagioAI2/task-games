@@ -7,6 +7,33 @@ import { createPixiFx, FX_PRESETS } from "@makeplay/fx";
 import { MAIN_PUZZLES, POOL_PUZZLES } from "./puzzles.js";
                                               
 import { LANGS, pickLang, LANG_LABELS, LANG_ORDER } from "./i18n.js";
+import { installGp, makeLocalStore } from "./src/host.js";
+
+/**
+ * 资源前缀。独立网页（`index.html`）是 `""`；插件形态由 `start()` 传进来
+ * （`ctx.assetUrl('')`，带尾斜杠）。
+ *
+ * ★ 插件跑在 `blob:` 模块里，`"assets/x.png"` 会以 `blob:` 为基准解析 ⇒ 全 404，
+ *   而报错长得像「资源没打包进去」。
+ */
+let ASSET = "";
+const A = (p) => ASSET + p.replace(/^\.\//, "");
+/** 插件形态注入的「扣一局积分」；独立网页是 `null`（免费） */
+let chargeRun = null;
+
+/**
+ * 开局收费（一局 10 积分）。
+ *
+ * ★ 收费点就在这里 —— 两个入口（选题卡 / 计时挑战·开始）都过这一个函数，
+ *   所以不会漏掉某一条路。**每一局都扣，不设宽限期**：本作有清晰的「一局」边界
+ *   （一道题填满 = 一局），不像放置类那样「进去就一直待着」。
+ * ★ 独立网页没有 `chargePlay` ⇒ 直接放行（`npm run dev` 时不用攒积分）。
+ */
+async function gate() {
+  if (!chargeRun) return true;
+  const ok = await chargeRun();
+  return ok !== false;
+}
                                                
 
 // ---------- constants ----------
@@ -152,13 +179,8 @@ function migrateLegacyBest()       {
   }
 }
 
-// ---------- share (gp.share is not in the typed contract yet) ----------
-;                  
-                                                 
-                                    
-                                                               
- 
-const gpShare                      = (gp                                  ).share;
+// 分享（`gp.share`）与在线排行榜已删：宿主里既没有分享目标，也没有账号体系。
+// 相关按钮整块拆掉，不留「点了必然失败」的入口。
 
 // ---------- module state ----------
 let app                  ;
@@ -187,22 +209,36 @@ function after(sec        , fn            )       { tw(0.001, () => { /* wait */
 const eoQ = (k        )         => 1 - Math.pow(1 - k, 3);
 const eoBack = (k        )         => { const c = 1.70158; return 1 + (c + 1) * Math.pow(k - 1, 3) + c * Math.pow(k - 1, 2); };
 
+/**
+ * 播一个音效，**失败就当没播**。
+ *
+ * ★ 为什么必须兜：音频运行时要求「先有一次用户手势」才解锁（`sound.unlock()`）。
+ *   程序化开局（e2e 里直接调 `__debug.start()`）没有手势 ⇒ `playCue()` 返回一个
+ *   rejected promise ⇒ `void` 吃掉返回值但**吃不掉 rejection** ⇒ 变成未捕获的
+ *   `SoundRuntimeError`，以 pageerror 形式炸出来，看着像插件坏了。
+ *   真实用户点了才有手势，所以这条只在自动化里出现 —— 但它同样是真 bug 的温床
+ *   （孩子快速连点、或在解锁前切进来）。
+ */
+function safePlay(id       )       {
+  try { Promise.resolve(sound.playCue(id)).catch(() => { /* 没解锁，忽略 */ }); } catch { /* 同步抛也忽略 */ }
+}
+
 function cue(id       )       {
   // literal cue IDs (catalog contract)
   switch (id) {
-    case "music.think": void sound.playCue("music.think"); break;
-    case "sfx.button": void sound.playCue("sfx.button"); break;
-    case "sfx.clear": void sound.playCue("sfx.clear"); break;
-    case "sfx.flip": void sound.playCue("sfx.flip"); break;
-    case "sfx.hint": void sound.playCue("sfx.hint"); break;
-    case "sfx.invalid": void sound.playCue("sfx.invalid"); break;
-    case "sfx.pickup": void sound.playCue("sfx.pickup"); break;
-    case "sfx.rotate": void sound.playCue("sfx.rotate"); break;
-    case "sfx.snap": void sound.playCue("sfx.snap"); break;
-    case "sfx.undo": void sound.playCue("sfx.undo"); break;
-    case "sfx.drop": void sound.playCue("sfx.drop"); break;
-    case "sfx.stamp": void sound.playCue("sfx.stamp"); break;
-    case "sfx.record": void sound.playCue("sfx.record"); break;
+    case "music.think": safePlay("music.think"); break;
+    case "sfx.button": safePlay("sfx.button"); break;
+    case "sfx.clear": safePlay("sfx.clear"); break;
+    case "sfx.flip": safePlay("sfx.flip"); break;
+    case "sfx.hint": safePlay("sfx.hint"); break;
+    case "sfx.invalid": safePlay("sfx.invalid"); break;
+    case "sfx.pickup": safePlay("sfx.pickup"); break;
+    case "sfx.rotate": safePlay("sfx.rotate"); break;
+    case "sfx.snap": safePlay("sfx.snap"); break;
+    case "sfx.undo": safePlay("sfx.undo"); break;
+    case "sfx.drop": safePlay("sfx.drop"); break;
+    case "sfx.stamp": safePlay("sfx.stamp"); break;
+    case "sfx.record": safePlay("sfx.record"); break;
   }
 }
 function saveNow()       { void gp.player.saves.putLatest(save); }
@@ -249,14 +285,33 @@ let lastW = 0, lastH = 0;
 // ==========================================================================
 // boot
 // ==========================================================================
-async function boot()                {
-  const host = document.getElementById("app")               ;
+/**
+ * 启动。独立网页（`index.html`）和插件调的是**同一个函数**，差别全部通过 `opts` 注入 ——
+ * 所以这里没有任何 `if (isPlugin)` 分支（那种分支会随版本漂移，且两种形态永远只有一种被跑到）。
+ *
+ * @param {{ container?: HTMLElement, store?: any, assetBase?: string, chargePlay?: () => Promise<boolean> }} [opts]
+ * @returns {Promise<() => void>} 卸载函数
+ */
+export async function start(opts = {}) {
+  const container = opts.container ?? document.getElementById("app");
+
+  // 插件形态才有的两件事：资源前缀（blob: 模块里相对路径会失效）与「开局收费」钩子。
+  ASSET = typeof opts.assetBase === "string" ? opts.assetBase : "";
+  chargeRun = typeof opts.chargePlay === "function" ? opts.chargePlay : null;
+
+  // 存档：宿主 storage（或独立网页的 localStorage）→ 内存缓存 → 本地 gp。
+  // ★ 必须 await 完 preload 再往下走：`gp.player.saves.latestSync` 读的就是这份缓存，
+  //   不 await 的话读到的永远是空档，症状是「进度从来没被恢复过」且不报错。
+  const store = opts.store ?? makeLocalStore();
+  try { await store.preload(); } catch (e) { console.warn("[blockfit] 读存档失败，按新档开始", e); }
+  installGp(store);
+
   app = new PIXI.Application();
   await app.init({
-    resizeTo: host, background: PAL.bg, antialias: true,
+    resizeTo: container, background: PAL.bg, antialias: true,
     resolution: Math.min(window.devicePixelRatio || 1, 2), autoDensity: true,
   });
-  host.appendChild(app.canvas);
+  container.appendChild(app.canvas);
 
   // loading frame (own visible loading UI), then hand off to the platform
   const loadT = new PIXI.Text({ text: LANGS[pickLang(navigator.language)].loading, style: { fontFamily: FONT, fontSize: 22, fill: PAL.ink, fontWeight: "700" } });
@@ -267,30 +322,33 @@ async function boot()                {
 
   // save + language
   save = parseSave(gp.player.saves.latestSync) ?? defaultSave();
-  lang = pickLang(save.lang ?? navigator.language);
-  document.title = "四角にハマる";
-  document.documentElement.lang = lang;
-  document.documentElement.dir = "ltr";
+  // ★ 默认 **zh**：宿主是中文 App。原版按 `navigator.language` 走，在这台机器上会落到
+  //   ja（日文界面），孩子看不懂。存档里选过语言就以存档为准。
+  lang = save.lang ?? "zh";
   T = LANGS[lang];
   migrateLegacyBest();
+  /**
+   * 第一次进游戏时自动建一个玩家档案。
+   *
+   * 原版是「点选题目 → 弹一个输入框让你起名字」，对 6 岁孩子是一道键盘门槛，
+   * 而且那个输入框是 DOM 弹层（`position:fixed` 盖住整屏），在宿主里长得和 App 不像。
+   * 现在默认建一个「我」，「玩家」页仍可改名 / 加人（最多 8 个，一家人轮流刷榜）。
+   */
+  if (!save.profiles.length) addProfile(T.me ?? "我");
   loadT.text = T.loading;
-  let uiReady = false;
-  void gp.player.ready.then(({ user }) => {
-    if (!save.lang && user?.locale) { lang = pickLang(user.locale); T = LANGS[lang]; if (uiReady && scene === "title") buildTitle(); }
-  });
 
   // assets
   const [fiber, bg, stamp, pencil, eraser] = await Promise.all([
-    PIXI.Assets.load("assets/paper-fiber.png"),
-    PIXI.Assets.load("assets/bg-paper.png"),
-    PIXI.Assets.load("assets/stamp.png"),
-    PIXI.Assets.load("assets/prop-pencil.png"),
-    PIXI.Assets.load("assets/prop-eraser.png"),
+    PIXI.Assets.load(A("assets/paper-fiber.webp")),
+    PIXI.Assets.load(A("assets/bg-paper.webp")),
+    PIXI.Assets.load(A("assets/stamp.webp")),
+    PIXI.Assets.load(A("assets/prop-pencil.webp")),
+    PIXI.Assets.load(A("assets/prop-eraser.webp")),
   ]);
   texFiber = fiber                ; texStamp = stamp                ;
   texPencil = pencil                ; texEraser = eraser                ;
 
-  sound = (await loadSoundSystem({ manifestUrl: "./sound.manifest.json" }))                    ;
+  sound = (await loadSoundSystem({ manifestUrl: A("sound.manifest.json") }))                    ;
   sound.settings.setVolumes({ music: save.volM, sfx: save.volS });
   sound.settings.setMuted(save.muted);
 
@@ -323,7 +381,7 @@ async function boot()                {
 
   // audio unlock on the first real user gesture (DOM-level)
   const unlockOnce = ()       => {
-    void sound.unlock();
+    try { Promise.resolve(sound.unlock()).catch(() => {}); } catch { /* ignore */ }
     void ensureAudio();
   };
   window.addEventListener("pointerdown", unlockOnce, { once: true });
@@ -340,7 +398,8 @@ async function boot()                {
   app.stage.on("pointerup", onStageUp);
   app.stage.on("pointerupoutside", onStageUp);
   window.addEventListener("keydown", onKey);
-  window.addEventListener("pagehide", () => { try { void sound.dispose(); fx?.dispose(); } catch { /* noop */ } }, { once: true });
+  const onHide = () => { try { void sound.dispose(); fx?.dispose(); } catch { /* noop */ } };
+  window.addEventListener("pagehide", onHide);
 
   // ticker
   app.ticker.add((tk) => {
@@ -359,7 +418,6 @@ async function boot()                {
   lastW = app.screen.width; lastH = app.screen.height;
 
   buildTitle();
-  uiReady = true;
   window.__gpPlayable = true;
 
   // debug hooks for self-testing (read-only + deterministic solver step)
@@ -371,7 +429,7 @@ async function boot()                {
         inner: [window.innerWidth, window.innerHeight], dpr: window.devicePixelRatio,
         screen: [app.screen.width, app.screen.height], res: app.renderer.resolution,
         canvasAttr: [cv.width, cv.height], canvasCss: [cv.style.width, cv.style.height],
-        host: [(document.getElementById("app")               ).clientWidth, (document.getElementById("app")               ).clientHeight],
+        host: [container.clientWidth, container.clientHeight],
       };
     },
     get state() {
@@ -414,6 +472,8 @@ async function boot()                {
     },
     start(i        )       { startMain(i); },
     startTa()       { startTa(); },
+    /** 只给截图 / e2e 用：直接进选题目录（原版只能点「选择题目」） */
+    select()       { buildSelect(); },
     resetNow()       { doReset(); },
     hint()       { doHint(); },
     overlayCount()         { return overlayRoot.children.length; },
@@ -452,14 +512,48 @@ async function boot()                {
       return null;
     },
   };
+
+  /**
+   * 卸载。宿主切走游戏时调它。
+   *
+   * ★ 必须拆干净：Pixi 应用 / 特效 / 音频 / window 监听 / DOM 输入框 / 调试钩子。
+   *   留一个 ⇒ 第二次挂载「看着正常但没声音 / 特效没了 / 立刻判就绪」，且**一个错都不报**。
+   * ★★ 调试钩子必须删：`__gpPlayable` 留着会让下一次挂载立刻判「就绪」⇒ 挂载测试假通过。
+   * ★★ `texture:false`：纹理来自模块级 `texFiber / texStamp / ...`，
+   *   销毁纹理后第二次挂载是**白屏且零报错**。
+   */
+  return () => {
+    try { window.removeEventListener("pointerdown", unlockOnce); } catch { /* ignore */ }
+    try { window.removeEventListener("keydown", unlockOnce); } catch { /* ignore */ }
+    try { window.removeEventListener("keydown", onKey); } catch { /* ignore */ }
+    try { window.removeEventListener("pagehide", onHide); } catch { /* ignore */ }
+    try { promptEl?.remove(); promptEl = null; } catch { /* ignore */ }
+    try { sound?.dispose?.(); } catch { /* ignore */ }
+    try { fx?.dispose?.(); } catch { /* ignore */ }
+    try { app?.destroy({ children: true, texture: false, baseTexture: false }); } catch { /* ignore */ }
+    try { if (container) container.replaceChildren(); } catch { /* ignore */ }
+    try {
+      delete window.__gpPlayable;
+      delete window.__gpReady;
+      delete window.__app;
+      delete window.__debug;
+    } catch { /* ignore */ }
+    tweens.length = 0;
+    app = null; sound = null; fx = null;
+    ASSET = ""; chargeRun = null;
+  };
 }
 
 async function ensureAudio()                {
   if (audioOn) return;
-  audioOn = true;
-  await sound.unlock();
-  await sound.preload("gameplay");
-  void sound.setMusicState("calm", { eventId: "session-start" });
+  // ★ `audioOn` 要**成功之后**才置位：解锁失败（还没手势）时保持 false，
+  //   下一次手势会再试一次。写在前面的后果是「第一次失败 = 这一局永远没声音」。
+  try {
+    await sound.unlock();
+    await sound.preload("gameplay");
+    await sound.setMusicState("calm", { eventId: "session-start" });
+    audioOn = true;
+  } catch { /* 没解锁就先静音，下一次手势重试 */ }
 }
 
 function stepTweens(dt        )       {
@@ -583,37 +677,6 @@ function addDeskProps(parent                )       {
   parent.addChild(pencil, eraser);
 }
 
-async function captureShare()                       {
-  if (gpShare && typeof gpShare.snap === "function") {
-    try { const b = await gpShare.snap(); if (b) return b; } catch { /* fall through */ }
-  }
-  try {
-    const src = app.renderer.extract.canvas({ target: app.stage, frame: new PIXI.Rectangle(0, 0, app.screen.width, app.screen.height) })                                ;
-    const k = Math.min(1, 1280 / Math.max(src.width, src.height));
-    const c = document.createElement("canvas");
-    c.width = Math.max(1, Math.round(src.width * k)); c.height = Math.max(1, Math.round(src.height * k));
-    const g = c.getContext("2d"); if (!g) return null;
-    g.drawImage(src, 0, 0, c.width, c.height);
-    return await new Promise             ((r) => c.toBlob((b) => r(b), "image/webp", 0.85));
-  } catch { return null; }
-}
-function addShareRow(panel                , y        , text        )       {
-  if (!gpShare || gpShare.available === false || typeof gpShare.image !== "function") return;
-  let blob              = null; let sharing = false;
-  void captureShare().then((b) => {
-    blob = b;
-    if (!blob) return;
-    const w = 150;
-    const btn = mkButton(T.share, w, 46, () => {
-      if (!blob || sharing) return;
-      sharing = true;
-      void gpShare.image (blob, { text }).then(() => { sharing = false; });
-    });
-    btn.position.set((panel.width / panel.scale.x - w) / 2, y);
-    panel.addChild(btn);
-  });
-}
-
 // ==========================================================================
 // title / select / ending scenes
 // ==========================================================================
@@ -653,7 +716,10 @@ function buildTitle()       {
   }
   sceneRoot.addChild(deco);
 
-  const title = mkText("四角にハマる", Math.min(W * 0.11, 64));
+  // 标题跟着语言走。原版只有一句写死的日文（`四角にハマる`），
+  // 中文界面下会变成「中文按钮 + 日文大标题」—— 孩子第一眼看到的是看不懂的字。
+  const TITLE = { ja: "四角にハマる", en: "Block Fit", zh: "方块填空" };
+  const title = mkText(TITLE[lang] ?? TITLE.zh, Math.min(W * 0.11, 64));
   title.anchor.set(0.5); title.position.set(W / 2, H * 0.24);
   const sub = mkText(lang === "ja" ? "つないで、返して、ぴたりと埋めよう" : (lang === "zh" ? "旋转、翻面，把长方形填满" : "Rotate, flip, fill the rectangle"), Math.max(14, Math.min(W * 0.035, 20)), shade(PAL.ink, 1.6));
   sub.anchor.set(0.5); sub.position.set(W / 2, H * 0.24 + title.height * 0.75);
@@ -846,17 +912,17 @@ function buildRanking()       {
   back.position.set(16, 16);
   sceneRoot.addChild(back);
 
-  const tabW = Math.min(180, (W - 44) / 2);
-  const tl = mkButton(T.localRanking, tabW, 48, () => { rankTab = "local"; buildRanking(); }, { small: true, fill: rankTab === "local" ? 0xdcf1ec : PAL.white });
-  const to = mkButton(T.onlineRanking, tabW, 48, () => { rankTab = "online"; buildRanking(); }, { small: true, fill: rankTab === "online" ? 0xdcf1ec : PAL.white });
-  tl.position.set(W / 2 - tabW - 6, 116); to.position.set(W / 2 + 6, 116);
-  sceneRoot.addChild(tl, to);
+  // 只剩「本机排行榜」一个榜，不再有页签（在线榜已删）
+  const tabW = Math.min(220, W - 44);
+  const tl = mkButton(T.localRanking, tabW, 48, () => { rankTab = "local"; buildRanking(); }, { small: true, fill: 0xdcf1ec });
+  tl.position.set((W - tabW) / 2, 116);
+  sceneRoot.addChild(tl);
 
   const short = H < 560 && W > 600;
   const listW = Math.min(short ? 370 : 520, short ? (W - 60) / 2 : W - 32);
   const lx = (W - (short ? listW * 2 + 16 : listW)) / 2, ly = 198;
   const rowH = Math.min(44, (H - ly - 20) / (short ? 5 : 10));
-  const scope = mkText(rankTab === "local" ? T.taScope : T.taOnlineNote, 14);
+  const scope = mkText(T.taScope, 14);
   scope.anchor.set(0.5); scope.position.set(W / 2, 181); sceneRoot.addChild(scope);
   const bg = new PIXI.Graphics();
   bg.roundRect(lx, ly - 4, short ? listW * 2 + 16 : listW, rowH * (short ? 5 : 10) + 8, 14).fill({ color: 0xfffdf6, alpha: 0.92 }).stroke({ width: 2, color: PAL.line });
@@ -877,30 +943,12 @@ function buildRanking()       {
     sceneRoot.addChild(num, nm, tm);
   };
 
-  if (rankTab === "local") {
-    const ranked = localRanking().filter((p) => p.ta1Best !== null).slice(0, 10);
-    if (!ranked.length) {
-      const t = mkText(T.noRuns, 15, 0x9a958a);
-      t.anchor.set(0.5); t.position.set(W / 2, ly + rowH * 1.5);
-      sceneRoot.addChild(t);
-    } else ranked.forEach((p, i) => addRow(i, p.name, fmtTime(p.ta1Best ?? 0), p.id === save.curProfile, `${p.ta1Runs.length} ${T.runs}`));
-  } else {
-    const wait = mkText("…", 18, 0x9a958a);
-    wait.anchor.set(0.5); wait.position.set(W / 2, ly + rowH * 1.5);
-    sceneRoot.addChild(wait);
-    void gp.player.topScores(10).then((rows) => {
-      if (scene !== "ranking" || rankTab !== "online" || !wait.parent) return;
-      wait.destroy();
-      const onePuzzleRows = rows.filter(r => r.score > 3600000 && r.score < TA_SCORE_BASE);
-      if (!onePuzzleRows.length) {
-        const t = mkText(T.noScores, 15, PAL.ink);
-        t.anchor.set(0.5); t.position.set(W / 2, ly + rowH * 1.5);
-        sceneRoot.addChild(t);
-        return;
-      }
-      onePuzzleRows.forEach((r, i) => addRow(i, r.name, fmtTime(TA_SCORE_BASE - r.score), r.isMe));
-    });
-  }
+  const ranked = localRanking().filter((p) => p.ta1Best !== null).slice(0, 10);
+  if (!ranked.length) {
+    const t = mkText(T.noRuns, 15, 0x9a958a);
+    t.anchor.set(0.5); t.position.set(W / 2, ly + rowH * 1.5);
+    sceneRoot.addChild(t);
+  } else ranked.forEach((p, i) => addRow(i, p.name, fmtTime(p.ta1Best ?? 0), p.id === save.curProfile, `${p.ta1Runs.length} ${T.runs}`));
 }
 
 /** entry from the title: progress is per player, so make sure one exists first */
@@ -1008,19 +1056,8 @@ function buildEnding()       {
   const menuB = mkButton(T.menu, bw, 48, () => buildTitle());
   menuB.position.set(W / 2 - bw - 10, H * 0.87);
   sceneRoot.addChild(menuB);
-  if (gpShare && gpShare.available !== false && typeof gpShare.image === "function") {
-    let blob              = null; let sharing = false;
-    void captureShare().then((b) => { blob = b; });
-    const shareB = mkButton(T.share, bw, 48, () => {
-      if (!blob || sharing) return;
-      sharing = true;
-      void gpShare.image (blob, { text: T.shareEnd }).then(() => { sharing = false; });
-    });
-    shareB.position.set(W / 2 + 10, H * 0.87);
-    sceneRoot.addChild(shareB);
-  } else {
-    menuB.position.set((W - bw) / 2, H * 0.87);
-  }
+  // 没有分享按钮 ⇒ 「菜单」居中
+  menuB.position.set((W - bw) / 2, H * 0.87);
   if (fx && confettiId) {
     fx.play(confettiId, { pos: { x: W / 2, y: H * 0.35 }, power: 1 });
     after(0.5, () => { if (fx && confettiId) fx.play(confettiId, { pos: { x: W * 0.3, y: H * 0.3 }, power: 0.7 }); });
@@ -1097,13 +1134,15 @@ function rebuildPiece(p            )       {
 // ==========================================================================
 // play scene
 // ==========================================================================
-function startMain(i        )       {
+async function startMain(i        )       {
+  if (!(await gate())) return;
   mode = "main"; qIndex = i; taRun = null;
   loadPuzzle(MAIN_PUZZLES[i]);
 }
-function startTa()       {
+async function startTa()       {
   const prof = curProfile();
   if (!prof) { openTaIntro(); return; }
+  if (!(await gate())) return;
   const pool = POOL_PUZZLES.filter(p => p !== lastTaPuzzle);
   const next = pool[Math.floor(Math.random() * pool.length)];
   lastTaPuzzle = next;
@@ -1177,8 +1216,17 @@ function buildHud()       {
 
   let hintB                        = null, resetB                        = null, timerT                   = null;
   if (mode === "main") {
-    hintB = mkButton("", 108, 40, () => doHint(), { small: true });
-    resetB = mkButton(T.reset, 96, 40, () => confirmReset(), { small: true });
+    /**
+     * ★ 窄屏（390 及以下）放不下原版的 108 + 96 两个按钮：
+     *   实测 W=390 时「提示」按钮的左边缘算到 166，而「第1 · 4×4」+「步数」已经排到 ~215
+     *   ⇒ 步数被压在按钮下面（截图里只剩半个「步」字）。这不是插件引入的，
+     *   独立网页同样宽度也一样 —— 是原版按更宽的屏设计的。
+     *   收窄按钮即可让开：84 + 72，加上 10 的间距一共省下 58px。
+     *   文字由 `mkButton` 自己按宽度缩，不会溢出。
+     */
+    const narrow = app.screen.width < 430;
+    hintB = mkButton("", narrow ? 84 : 108, 40, () => doHint(), { small: true });
+    resetB = mkButton(T.reset, narrow ? 72 : 96, 40, () => confirmReset(), { small: true });
     bar.addChild(hintB, resetB);
   } else {
     timerT = mkText("0:00.0", 24, PAL.ink);
@@ -1235,10 +1283,17 @@ function relayoutPlay()       {
   hr.back.position.set(10, 10);
   hr.label.position.set(66, 30);
   if (mode === "main") {
-    hr.movesT.position.set(66 + Math.max(90, hr.label.width + 14), 30);
+    // ★ 从右往左排，宽度读按钮自己的 `__bw` —— 写死 96 / 118 的话，
+    //   窄屏换成 84 + 72 之后位置就全错了（按钮之间会留一道缝、或盖住步数）。
+    const rw = hr.resetB?.__bw ?? 96;
+    const hw = hr.hintB?.__bw ?? 108;
     const rx = W - 10;
-    if (hr.resetB) hr.resetB.position.set(rx - 96, 10);
-    if (hr.hintB) hr.hintB.position.set(rx - 96 - 118, 10);
+    if (hr.resetB) hr.resetB.position.set(rx - rw, 10);
+    if (hr.hintB) hr.hintB.position.set(rx - rw - 10 - hw, 10);
+    // 步数**右对齐**贴着「提示」的左边：它只有 1~2 位数，右对齐才不会随位数变化去撞标签
+    const movesRight = (hr.hintB ? hr.hintB.x : rx) - 10;
+    hr.movesT.anchor.set(1, 0.5);
+    hr.movesT.position.set(movesRight, 30);
   } else {
     hr.movesT.position.set(66 + Math.max(90, hr.label.width + 14), 30);
     if (hr.timerT) hr.timerT.position.set(W - 14, 30);
@@ -1334,7 +1389,14 @@ function reparentKeepPos(v                , parent                )       {
 function updateHud()       {
   if (!hudRefs || !puzzle) return;
   if (mode === "main") {
-    hudRefs.label.text = `${T.q}${qIndex + 1}・${puzzle.w}×${puzzle.h}`;
+    /**
+     * ★ 窄屏只写「第1」，不写「第1・4×4」：390 宽的容器里
+     *   返回(46) + 标签 + 「步数 3/6」+ 提示(84) + 重置(72) 排不下，
+     *   实测两者会顶到一起（截图里「步」字被压在「提示」按钮下面）。
+     *   棋盘是几乘几，棋盘自己写着 —— 标签不必重复。
+     */
+    const narrow = app.screen.width < 430;
+    hudRefs.label.text = narrow ? `${T.q}${qIndex + 1}` : `${T.q}${qIndex + 1}・${puzzle.w}×${puzzle.h}`;
     hudRefs.movesT.text = `${T.moves} ${moves}/${puzzle.par}`;
     if (hudRefs.hintB) {
       const lt = (hudRefs.hintB                                      ).__label             ;
@@ -1771,7 +1833,8 @@ function startClear()       {
 function showClearPanel()       {
   if (!puzzle) return;
   const W = Math.min(360, app.screen.width - 24);
-  const panel = mkPanel(W, 330);
+  // 330 → 302：分享按钮那一行删掉之后底部空了 28px（内容到 290 就结束了）
+  const panel = mkPanel(W, 302);
   const head = mkText(T.clear, 32, PAL.ok);
   head.anchor.set(0.5); head.position.set(W / 2, 38);
   panel.addChild(head);
@@ -1817,7 +1880,6 @@ function showClearPanel()       {
   const listB = mkButton(T.list, W - 40, 42, () => { closeOverlay(); buildSelect(); }, { small: true });
   listB.position.set(20, 248);
   panel.addChild(nextB, retryB, listB);
-  addShareRow(panel, 296 - 8, T.shareClear(qIndex + 1, moves));
   openOverlay(panel);
 }
 
@@ -1911,17 +1973,7 @@ function showTaResult()       {
   const recent = prof?.ta1Runs.slice(-3).reverse().map(r => fmtTime(r.t)).join("  /  ") ?? "—";
   text(T.recent, 14, tableX + tableW / 2, tableY + 150);
   text(recent, 14, tableX + tableW / 2, tableY + 172);
-  const rankT = text("", 14, left, wide ? 193 : 402);
-  const shouldSubmit = !taRun.submitted;
-  taRun.submitted = true;
-  void (async () => {
-    if (!shouldSubmit || total >= 3600000) return;
-    const r = await gp.player.submitScore(TA_SCORE_BASE - total);
-    if (panel.destroyed) return;
-    if (r.needLogin) rankT.text = T.loginForRank;
-    else if (typeof r.rank === "number") rankT.text = `${T.onlineRanking} ${T.rank}: #${r.rank}`;
-    if (rankT.width > 310) rankT.style.fontSize = 14;
-  })();
+  // 在线成绩提交已删（宿主里没有账号体系）
   const actionX = wide ? 20 : 20, actionY = wide ? 218 : 426;
   const actionW = wide ? 300 : W - 40, bw = (actionW - 12) / 2;
   const againB = mkButton(T.taAgain, bw, 48, () => { closeOverlay(); startTa(); });
@@ -1931,13 +1983,6 @@ function showTaResult()       {
   const rankB = mkButton(T.leaderboard, bw, 48, () => { closeOverlay(); taRun = null; rankTab = "local"; buildRanking(); }, { small: true });
   rankB.position.set(wide ? 360 : actionX, wide ? 250 : 486);
   panel.addChild(againB, menuB, rankB);
-  if (gpShare?.image && gpShare.available !== false) {
-    let captured              = null;
-    const shareB = mkButton(T.share, bw, 48, () => { if (captured) void gpShare.image (captured, { text: T.shareTA(fmtTime(total)) }); }, { small: true });
-    shareB.position.set(wide ? 360 + bw + 12 : actionX + bw + 12, wide ? 250 : 486);
-    panel.addChild(shareB);
-    after(0.25, () => { if (!panel.destroyed) void captureShare().then(b => { captured = b; }); });
-  }
   openOverlay(panel);
 }
 
@@ -1998,7 +2043,6 @@ function openSettings()       {
     const i = LANG_ORDER.indexOf(lang);
     lang = LANG_ORDER[(i + 1) % LANG_ORDER.length];
     T = LANGS[lang];
-    document.documentElement.lang = lang;
     save.lang = lang;
     saveNow();
     openSettings();
@@ -2012,7 +2056,3 @@ function openSettings()       {
   openOverlay(panel);
 }
 
-// ==========================================================================
-void boot().catch((err) => {
-  console.error("boot failed", err);
-});

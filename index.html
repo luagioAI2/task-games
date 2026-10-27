@@ -1,5 +1,5 @@
 <!doctype html><html><head>
-<title>方块填空</title><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>html,body,#app{margin:0;width:100%;height:100%;overflow:hidden;background:#0b0d12;}#app{position:fixed;inset:0}canvas{display:block}</style><script type="importmap">
+<title>方块填空</title><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>html,body,#app{margin:0;width:100%;height:100%;overflow:hidden;background:#f7f3e8;}#app{position:fixed;inset:0}canvas{display:block}</style><script type="importmap">
 {
   "imports": {
     "pixi.js": "./engines/pixi.min.mjs",
@@ -7,4 +7,9 @@
     "@makeplay/sound": "./runtime/sound-1.js"
   }
 }
-</script></head><body><div id="app"></div><script type="module" src="./game.js"></script></body></html>
+</script></head><body><div id="app"></div><script type="module">
+  // 独立网页入口：和插件调的是同一个 start()，只是不传 assetBase / chargePlay。
+  // 背景色跟游戏的纸感底色一致（原来抄的是模板里的 #0b0d12，深色会先闪一下）。
+  import { start } from './game.js'
+  start({ container: document.getElementById('app') }).catch((e) => console.error('start failed', e))
+</script></body></html>
