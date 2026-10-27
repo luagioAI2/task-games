@@ -11,8 +11,8 @@
 - 玩法：**养成**（撸狗 / 投喂 / 换装 / 羁绊值 `bond` / 零食 `snack` / 舞台 `stage` / 选美转生）
 - 经济：**C 型 / `chill`** —— `mount()` 收一次 10 积分 + 10 分钟宽限，`paidAt` 写存档；
   `expectedPayout: 0`、不写 `voucherPerCoin`（一分产出都没有）
-- 开始：2026-10-27 15:40 · 完成：2026-10-27 17:0x
-- 当前：**步骤 9 提交**
+- 开始：2026-10-27 15:40 · 完成：2026-10-27 17:05
+- 当前：**全部完成**（十二款之一，已提交两个仓库）
 
 ## 步骤表
 
@@ -27,7 +27,7 @@
 | 6 | 落库（五处登记） | ✅ | 本地包 **12 款** / 哈希 12 条 / 商城 12 条 / PLAN 12 行（`check:registry` 绿）；`install-to-host --check` 通过；宿主 `public/games/corgi/` = 包 + assets 207 + `sound.pack` + `sound.manifest.json` + `fonts/` 3 |
 | 7 | 商城详情（文案 + 4 张图） | ✅ | `public/store/corgi/` 4 张 webp（41 / 27 / 29 / 30 KB）；`capture-store-detail` **12 款全绿**；4 张图 + 图标放大**都自己看过** |
 | 8 | 五层验收 | ✅ | ①`check-plugin` 通过 ②`lint` 0 错 · 单测 **774** 全绿 ③假宿主 **39/39** ④e2e **phone 64/64 · tablet 64/64** ⑤详情页走查 12 款 |
-| 9 | 提交（两个仓库） | 🔄 | corgi 已提交；宿主待提交（两边 `git status` 要空） |
+| 9 | 提交（两个仓库） | ✅ | corgi `fa02516` · 宿主 `b9718df`（另加一条：`docs/game-onboarding.md` 附录补到十二款）；两边 `git status` 空 |
 
 ## 侦察结论（步骤 0，2026-10-27 15:40）
 
