@@ -2,26 +2,8 @@
 
 export const STRINGS                                       = {
   zh: {
-    shopRate: '= {n} 次提示',
-    buy: '购买',
-    shopTitle: '获取提示',
-    noHintShort: '提示用完啦！',
-    shopItem: '{n} 次提示',
-    shopDesc: '{c} 金币 = {n} 次提示',
-    shopBuy: '{c} 金币购买',
-    shopGot: '获得 {n} 次提示！',
-    payPending: '支付确认中，到账后下次打开游戏自动发放',
-    payUnavailable: '暂时无法购买，请稍后再试',
-    payBusy: '操作太频繁，请稍后再试',
-    leaderboard: '排行榜',
-    lbSub: '按累计星星数排名',
-    lbMine: '我的星星：{n}',
-    lbRank: '当前排名 第 {n} 名',
-    lbLoginHint: '登录后即可上榜',
-    lbLogin: '登录',
-    lbEmpty: '还没有人上榜，快来抢第一！',
-    lbErr: '排行榜暂时无法加载',
-    lbGuest: '玩家',
+    gameTitle: '旋转灯泡',
+    totalStars: '总星星 {n}',
     level: '第 {n} 关',
     moves: '步数 {n}',
     par: '3星≤{n}步',
@@ -44,26 +26,8 @@ export const STRINGS                                       = {
     page: '{a} / {b}',
   },
   en: {
-    shopRate: '= {n} hints',
-    buy: 'Buy',
-    shopTitle: 'Get Hints',
-    noHintShort: 'Out of hints!',
-    shopItem: '{n} Hints',
-    shopDesc: '{c} coin = {n} hints',
-    shopBuy: 'Buy · {c} coin',
-    shopGot: 'Got {n} hints!',
-    payPending: 'Payment confirming. Hints arrive next time you open the game.',
-    payUnavailable: 'Purchases unavailable right now',
-    payBusy: 'Too many requests, try again shortly',
-    leaderboard: 'Leaderboard',
-    lbSub: 'Ranked by total stars',
-    lbMine: 'My stars: {n}',
-    lbRank: 'Current rank #{n}',
-    lbLoginHint: 'Sign in to join the board',
-    lbLogin: 'Sign in',
-    lbEmpty: 'No one here yet. Claim first place!',
-    lbErr: 'Leaderboard unavailable right now',
-    lbGuest: 'Player',
+    gameTitle: 'Sweet Spin',
+    totalStars: 'Stars {n}',
     level: 'Level {n}',
     moves: 'Moves {n}',
     par: '3★ ≤ {n}',
@@ -86,26 +50,8 @@ export const STRINGS                                       = {
     page: '{a} / {b}',
   },
   ja: {
-    shopRate: '= ヒント {n} 回',
-    buy: '購入',
-    shopTitle: 'ヒントを入手',
-    noHintShort: 'ヒントがなくなりました！',
-    shopItem: 'ヒント {n} 回',
-    shopDesc: '{c} コイン = ヒント {n} 回',
-    shopBuy: '{c} コインで購入',
-    shopGot: 'ヒント {n} 回を獲得！',
-    payPending: '支払い確認中。次回起動時に自動で付与されます',
-    payUnavailable: '現在購入できません',
-    payBusy: 'しばらくしてからお試しください',
-    leaderboard: 'ランキング',
-    lbSub: '合計スター数で順位づけ',
-    lbMine: '私のスター：{n}',
-    lbRank: '現在 {n} 位',
-    lbLoginHint: 'ログインでランキングに参加',
-    lbLogin: 'ログイン',
-    lbEmpty: 'まだ誰もいません。1位を狙おう！',
-    lbErr: 'ランキングを読み込めません',
-    lbGuest: 'プレイヤー',
+    gameTitle: 'スイートスピン',
+    totalStars: 'スター {n}',
     level: 'レベル {n}',
     moves: '手数 {n}',
     par: '★3 ≤ {n}手',
@@ -131,9 +77,18 @@ export const STRINGS                                       = {
 
 let current       = 'zh';
 
+/**
+ * 插件形态下**不许**动 `<html lang>` —— 那是宿主页面的，改了整个 App 的
+ * 排版/朗读语言都跟着变（`mount-test` 里有断言钉着）。独立网页保持原行为。
+ */
+let documentSideEffects = true;
+export function setDocumentSideEffects(on        ) {
+  documentSideEffects = !!on;
+}
+
 export function setLang(l      ) {
   current = l;
-  document.documentElement.lang = l === 'zh' ? 'zh-CN' : l;
+  if (documentSideEffects) document.documentElement.lang = l === 'zh' ? 'zh-CN' : l;
 }
 export function getLang()       { return current; }
 
