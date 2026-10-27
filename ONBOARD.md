@@ -4,7 +4,7 @@
 - 原版名：Sweet Spin（`GAME_TITLE`）
 - 商城名：旋转灯泡 · 底栏 旋转灯泡（4 字）
 - 经济：**C（纯玩）** · `playCost: 10` · `expectedPayout: 0` · **收费点 = 进一关**
-- 当前：**已接完**（宿主 `farm-2d`，游戏仓库 `fea7916`）
+- 当前：**已接完并推送**（宿主 `64037fb`，`farm-2d`；游戏仓库 `096ea5f`）
 
 | # | 步骤 | 状态 | 判据 / 产物 |
 | --- | --- | --- | --- |
@@ -18,7 +18,7 @@
 | 7 | 商城详情 | ✅ | `public/store/sweetspin/1..4.webp`（27.3 / 21.6 / 22.8 / 20.6 KB）+ `GameIcon.tsx` 的 `Sweetspin`；14 款详情走查全过、图都解码了 |
 | 8 | 五层验收 | ✅ | `check-plugin` ✓ · `lint` ✓ · `vitest 774/774` · `mount-test` 40 项 ✓ · **e2e phone 39s + tablet 43s 全过** · `ropeland` 老款回归全过 |
 | 9 | 提交 | ✅ | 两个仓库 `git status` 干净 |
-| 9b | 推送宿主 | ✅ | `ls-remote` == 本地 HEAD（`farm-2d`） |
+| 9b | 推送宿主 | ✅ | `ls-remote` = `64037fb…` == 本地 HEAD（`farm-2d`）；直连两次失败（reset / 连不上）⇒ 走 7897 才通 |
 
 ## 这一款和别的不一样的三件事
 
