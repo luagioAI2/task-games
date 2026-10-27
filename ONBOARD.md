@@ -28,6 +28,7 @@
 | 7 | 商城详情（文案 + 4 张图） | ✅ | `public/store/corgi/` 4 张 webp（41 / 27 / 29 / 30 KB）；`capture-store-detail` **12 款全绿**；4 张图 + 图标放大**都自己看过** |
 | 8 | 五层验收 | ✅ | ①`check-plugin` 通过 ②`lint` 0 错 · 单测 **774** 全绿 ③假宿主 **39/39** ④e2e **phone 64/64 · tablet 64/64** ⑤详情页走查 12 款 |
 | 9 | 提交（两个仓库） | ✅ | corgi `fa02516` · 宿主 `b9718df`（另加一条：`docs/game-onboarding.md` 附录补到十二款）；两边 `git status` 空 |
+| 9b | 推送宿主 | ✅ | `c30b469..03c669d` → `origin/farm-2d`，`ls-remote` 核对远端 SHA **等于**本地 HEAD；corgi 仓库**没有 remote**，无处可推。直连 + `http.version=HTTP/1.1` 才通（详见环境坑） |
 
 ## 侦察结论（步骤 0，2026-10-27 15:40）
 
@@ -106,7 +107,7 @@ e2e 不带这个参数时 `snapshot()` 恒为 `null`，症状是「读不到 mod
 
 ## 下次从这继续
 
-**接入已经做完，只剩宿主仓库的提交。** 复查一把就够：
+**全部做完，含推送。** 复查一把就够：
 
 ```bash
 cd /e/plan/test25/task-games/corgi && node scripts/install-to-host.mjs --check
@@ -126,6 +127,14 @@ cd ../../kid-quest-farm-2d && npm run check:registry
 ## 环境坑
 
 - **`mkplay.zone` 直连 000**，必须 `--proxy http://127.0.0.1:7897`（Node 22 的 `fetch` 不读 `HTTPS_PROXY`）。
+- ★★ **这个仓库 `git push` 只有「直连 + HTTP/1.1」能通**（实测三种）：
+  - 直连默认（HTTP/2）→ `Recv failure: Connection was reset`，1 秒内就红；
+  - 走 `-c http.proxy=http://127.0.0.1:7897` → **挂 7 分钟、日志 0 字节**（不是报错，是没动静，看着像在传）；
+  - 直连 + `-c http.version=HTTP/1.1 -c http.postBuffer=524288000` → **86 秒推完**（55 个提交 / 1070 文件）。
+  ➜ 判据别用「有没有输出」（大包前半段 git 只写 `\r` 进度，重定向到文件常常一直是 0 字节），
+  用**推完之后 `ls-remote` 比 SHA**。
+- ★ **`refs/remotes/origin/farm-2d` 写不进去，而 `git update-ref` 返回 0** ⇒ `git status -sb` 永远显示
+  `## farm-2d...origin/farm-2d [gone]`，**推成功了也这样**。别据此判断「没推上去」。
 - ★ **给 node 传路径要用 `E:/plan/...`（Windows 形式）**：`/e/plan/...` 会被解析成 `\e\plan\...`。
 - 端口：假宿主 **4422** / 出图 4423 / e2e **4396**（先 `netstat`；起完服务要验「服务的是不是我的构建」）。
 - e2e 两条命令（两档都跑，**别并行**）：
