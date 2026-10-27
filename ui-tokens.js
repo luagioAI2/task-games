@@ -1,0 +1,23 @@
+// UI tokens — copied verbatim from UI_CONTRACT.md §1. The UI layer reads colors only from here.
+export const C = {
+  background: "#cfe5f1",
+  scrim: "#18202a",
+  surface: "#fbf3dc",
+  surfaceStrong: "#f1db9e",
+  paper: "#fffaf0",
+  outline: "#22303d",
+  text: "#22303d",
+  muted: "#5d5749",
+  accent: "#ef8354",
+  accentShadow: "#c9623a",
+  info: "#357ca5",
+  gold: "#f2b33d",
+  disabled: "#ded5bf",
+  disabledText: "#6f695b",
+  danger: "#e8604c",
+  success: "#729b60",
+  successTint: "#e4efdd",
+  successText: "#3f6a35",
+  warnTint: "#fde3dc",
+  warnText: "#9b3a22",
+}         ;
