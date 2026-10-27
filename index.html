@@ -7,4 +7,11 @@
     "@makeplay/display": "./runtime/display-1.js"
   }
 }
-</script></head><body><div id="app"></div><script type="module" src="./game.js"></script></body></html>
+</script></head><body><div id="app"></div>
+<!-- ★ 入口必须调 start()：game.js 现在是「导出 start 的模块」，模块体不再自执行。
+     忘了这一步的症状是**整页全白、canvas 0 个、一个错都不报**（因为没有任何代码在跑）。 -->
+<script type="module">
+  import { start } from './game.js';
+  start({}).catch((e) => console.error('[screamchick] start 失败', e));
+</script>
+</body></html>

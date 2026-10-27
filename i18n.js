@@ -153,8 +153,16 @@ export function pickLang(locale                           )       {
   return 'zh';
 }
 
+// ★ 插件形态下要关掉：游戏跑在**宿主页面**里，`document.documentElement.lang`
+//   和 `document.title` 都是宿主的，改它们等于改 App 的标题栏。
+let touchDocument = true;
+
+/** 插件入口在 `start()` 之前调一次 `setDocumentSideEffects(false)`。 */
+export function setDocumentSideEffects(on      ) { touchDocument = !!on; }
+
 export function setLang(l      ) {
   current = l;
+  if (!touchDocument) return;
   document.documentElement.lang = l === 'zh' ? 'zh-CN' : l;
   document.title = TITLES[l] ?? GAME_TITLE;
 }
