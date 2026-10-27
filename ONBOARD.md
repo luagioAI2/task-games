@@ -3,7 +3,7 @@
 - 地址：https://xruzbtmnsf.mkplay.zone/v/7/index.html
 - 商城名：尖叫鸡 · 底栏 尖叫鸡（3 字）
 - 经济：**C（纯玩）** · `playCost: 10` · `expectedPayout: 0` · **收费点 = 进一关**
-- 当前：步骤 9 完成（等推送宿主）
+- 当前：**已接完并推送**（宿主 `3c36d28`，`farm-2d`）
 
 | # | 步骤 | 状态 | 判据 / 产物 |
 | --- | --- | --- | --- |
@@ -17,7 +17,7 @@
 | 7 | 商城详情 | ✅ | `public/store/screamchick/1..4.webp`（24.9 / 21.1 / 19.0 / 20.2 KB）+ `GameIcon.tsx` 的 `Screamchick`；13 款详情走查全过、图都解码了 |
 | 8 | 五层验收 | ✅ | `check-plugin` ✓ · `lint` ✓ · `vitest 774/774` · `mount-test` 40 项 ✓ · **e2e phone + tablet 全过** · `prizepark` 老款回归全过 |
 | 9 | 提交 | ✅ | 两个仓库 `git status` 干净 |
-| 9b | 推送宿主 | ⬜ | `ls-remote` 的 SHA == 本地 HEAD（**不是**看 `git status` 的 `[gone]`） |
+| 9b | 推送宿主 | ✅ | `ls-remote` = `3c36d28…` == 本地 HEAD（`farm-2d`） |
 
 ## 这一款和别的不一样的三件事
 
