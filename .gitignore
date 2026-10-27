@@ -9,3 +9,6 @@ node_modules/
 
 # smoke.mjs 的调试截图（临时，别当商城截图用）
 shots/smoke-*.png
+
+# 一次性排查脚本的临时图（scripts/_debug-load.mjs）
+shots/_*.png

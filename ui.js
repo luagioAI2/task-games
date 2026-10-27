@@ -1,6 +1,7 @@
 // Screen-space UI layer: title, pause/settings, deck viewer, result, toasts, language picker.
 // Tokens come verbatim from UI_CONTRACT.md §1. The gameplay scenes stay in game.ts (canvas).
 import { LANGS, LANG_NAMES, t, setLang, lang, onLangChange, cardName, cardText, enemyName, tagName } from "./i18n.js";
+import { assetUrl as A } from "./src/asset.js";
                                       
 
 // ---- tokens (UI_CONTRACT.md §1) ----
@@ -292,7 +293,7 @@ function achievementsScreen()                 {
       const line = el("div", "mp-achrow" + (r.unlocked ? " on" : ""));
       if (r.icon) {
         const img = el("img", "mp-achicon")                    ;
-        img.src = r.icon;
+        img.src = A(r.icon);
         img.alt = "";
         line.appendChild(img);
       } else line.appendChild(el("span", "mp-achicon"));
@@ -332,7 +333,7 @@ function tutorialScreen()                 {
     if (art.srcs.length === 1) {
       const img = document.createElement("img");
       img.className = "mp-tutart" + (art.cls === "dark" ? " mp-tutcontain mp-tutdark" : art.cls === "contain" ? " mp-tutcontain" : "");
-      img.src = art.srcs[0];
+      img.src = A(art.srcs[0]);
       img.alt = "";
       kids.push(img);
     } else {
@@ -340,7 +341,7 @@ function tutorialScreen()                 {
       for (const src of art.srcs) {
         const img = document.createElement("img");
         img.className = "mp-tutart";
-        img.src = src;
+        img.src = A(src);
         img.alt = "";
         trio.appendChild(img);
       }
@@ -406,7 +407,7 @@ function cardListScreen()                 {
       const r = el("div", "mp-cardrow");
       const img = document.createElement("img");
       img.className = "mp-cardimg";
-      img.src = "assets/cards/" + id + ".webp";
+      img.src = A("assets/cards/" + id + ".webp");
       img.alt = "";
       r.appendChild(img);
       const meta = el("div", "mp-cardmeta");
@@ -474,8 +475,6 @@ function resultScreen()                 {
   if (r.bestStage > 0) p.appendChild(el("div", "mp-best", t("best", r.bestStage, r.bestTurns) + (r.newest ? "  " + t("newest") : "")));
   const acts = el("div", "mp-actions");
   acts.appendChild(btn(t("again"), "warm", () => host.onRestart()));
-  const share = btn(t("share"), "primary", () => { void host.onShare().then((m) => toast(m)); });
-  acts.appendChild(share);
   p.appendChild(acts);
   p.appendChild(btn(t("backToTitle"), "plain", () => host.onBackToTitle()));
   s.appendChild(p);
@@ -540,8 +539,16 @@ export function mountUi(h             , m         , uh        , d               
   toasts.id = "mp-toasts";
   hostEl.appendChild(root);
   hostEl.appendChild(toasts);
-  onLangChange(() => render());
+  const offLang = onLangChange(() => render());
   render();
+  /** 卸载：摘语言监听 / <style> / 两层根节点。不返回这个，第二次挂载就会有两份 UI 一起 render。 */
+  return () => {
+    try { offLang(); } catch { /* ignore */ }
+    try { style.remove(); } catch { /* ignore */ }
+    try { root?.remove(); } catch { /* ignore */ }
+    try { toasts.remove(); } catch { /* ignore */ }
+    root = null;
+  };
 }
 
 export function updateUi(m                  ) {
@@ -552,7 +559,7 @@ export function updateUi(m                  ) {
 // ---------- styles (tokens verbatim from UI_CONTRACT.md §1) ----------
 const CSS = `
 .mp-ui, .mp-ui *, .mp-toasts * { box-sizing: border-box; }
-.mp-ui { position: fixed; inset: 0; pointer-events: none; z-index: 20;
+.mp-ui { position: absolute; inset: 0; pointer-events: none; z-index: 20;
   font-family: "Hiragino Kaku Gothic ProN","Hiragino Sans","Noto Sans JP","Yu Gothic",system-ui,sans-serif;
   font-weight: 800; color: ${TOKEN.text}; }
 .mp-ui button, .mp-ui input, .mp-ui .mp-panel { pointer-events: auto; }
@@ -644,7 +651,7 @@ const CSS = `
 .mp-achdesc { font-size: 12px; font-weight: 700; line-height: 1.35; }
 .mp-achstate { flex: none; font-size: 12px; padding: 4px 8px; border: 2px solid ${TOKEN.text}; border-radius: 8px; background: ${TOKEN.surface}; }
 .mp-achrow.on .mp-achstate { background: ${TOKEN.gold}; }
-.mp-toasts { position: fixed; left: 0; right: 0; bottom: calc(88px + env(safe-area-inset-bottom)); z-index: 30;
+.mp-toasts { position: absolute; left: 0; right: 0; bottom: calc(88px + env(safe-area-inset-bottom)); z-index: 30;
   display: flex; flex-direction: column; align-items: center; gap: 8px; pointer-events: none; padding: 0 12px; }
 .mp-toast { max-width: 92vw; padding: 10px 16px; border: 3px solid ${TOKEN.text}; border-radius: 12px;
   background: ${TOKEN.background}; color: ${TOKEN.textOnDark}; font-size: 15px; font-weight: 800;

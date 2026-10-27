@@ -467,7 +467,17 @@ export function setLang(k      , isManual = false) {
   if (typeof document !== "undefined") document.documentElement.lang = k;
   for (const fn of listeners) fn();
 }
-export function onLangChange(fn            ) { listeners.push(fn); }
+/**
+ * 订阅语言变化。**返回退订函数** —— 插件会反复挂载 / 卸载，
+ * 不退订的话旧闭包会一直挂在 listeners 里，切语言时去重画一个已经 destroy 的场景。
+ */
+export function onLangChange(fn            ) {
+  listeners.push(fn);
+  return () => {
+    const i = listeners.indexOf(fn);
+    if (i >= 0) listeners.splice(i, 1);
+  };
+}
 export function lang()       { return _lang; }
 export function isManualLang() { return _manual; }
 export function t(key     , ...args                     )         {

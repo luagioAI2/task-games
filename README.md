@@ -8,30 +8,39 @@
 | --- | --- |
 | 插件 id | `deckrush` |
 | 商城名 | 一分钟卡组 |
-| 版本 | 0.0.0（改完再定，与宿主 `public/games/index.json` 必须一致） |
+| 版本 | 1.0.0（与宿主 `public/games/index.json` 必须一致） |
 | 扒取来源 | https://k65swyemts.mkplay.zone/v/3/index.html |
 | 扒取日期 | 2026-10-27 |
-| 入口模块 | `./game.js` |
+| 入口模块 | `./game.js` 的 `start(opts)`（独立网页由 `index.html` 调，插件由 `plugin.js` 调） |
 | 原始镜像 | `_originals/2026-10-27/`（不入 git） |
-| 经济形态 | **待定**（A 币+券 / B 只花积分 / C 纯玩，见 `docs/game-onboarding.md` §4.2） |
+| 经济形态 | **C 纯玩**：每开一局 10 积分，`expectedPayout: 0`、不发券、无宿主币，`kind: 'chill'` |
 | 宿主清单 | `kid-quest-farm-2d/public/games/index.json` → 自动生成 `src/games/localGames.ts` |
 | 商城详情 | `kid-quest-farm-2d/src/games/storefront.ts` → `id: 'deckrush'` |
-| 商城截图 | `shots/*.png` → `public/store/deckrush/*.webp` |
+| 商城截图 | `shots/01-title.png` … `04-cards.png` → `public/store/deckrush/1..4.webp` |
 
 ## 现在能跑吗
 
 ```bash
-node server.js <port>        # 或任意静态服务（⚠️ 不能用 python -m http.server：
-                             # 这台机器上它把 .js 回成 text/plain，模块被浏览器拒绝）
+node "~/.workbuddy-ai/skills/scrape-game-into-farm/scripts/smoke.mjs" "E:/plan/test25/task-games/deckrush" --shot
+# 或任意静态服务（⚠️ 不能用 python -m http.server：这台机器上它把 .js 回成 text/plain）
 ```
 
-改造前的自检：页面能开、**控制台 0 个 404**、核心玩法点得动。
+判据：0 个非 favicon 的 4xx/5xx、0 个 pageerror、截图颜色种类 ≥ 20。
 
-## 还差什么（照 `docs/game-onboarding.md` 的清单走）
+## 常用命令
 
-- [ ] 资源压缩（`compress-assets.py`）+ 引用侧同步改后缀
-- [ ] 插件化五件事（根节点 / host.storage / alive 守卫 / forceContextLoss / scopeCss）
-- [ ] 经济改造（选 A/B/C），删掉所有「送币 / 看广告 / 签到」入口
-- [ ] `scripts/build-plugin.mjs` + `scripts/check-plugin.mjs`
-- [ ] 宿主三处登记（index.json / localGames.ts / storefront.ts）
-- [ ] 截图 + 文案 + 五层验收
+```bash
+CODEBUDDY_SAFE_DELETE_ENABLED=0 node scripts/build-plugin.mjs   # 打包
+node scripts/make-asset-manifest.mjs                            # 改了资源就要重跑
+node scripts/mount-test.mjs --port 4412                         # 假宿主（第 3 层）
+node scripts/capture.mjs                                        # 拍商城 4 张图
+CODEBUDDY_SAFE_DELETE_ENABLED=0 node scripts/install-to-host.mjs  # 拷进宿主 + 重算哈希
+cd ../../kid-quest-farm-2d && npm run check:registry            # 四处登记对齐
+```
+
+## 改造记录
+
+- 插件化补丁在 `scripts/_patch.py`（26 个锚点，已执行；每个锚点必须恰好命中 1 次）。
+- 补抓脚本 `scripts/fetch-missing.mjs`：0 字节资源 + `sound.manifest.json` 里列出的
+  音频变体（音乐是流式的，静态扫和 `--browse` 都拿不到），按清单里的 `bytes` 逐字节核对。
+- 细节与踩过的坑见 `ONBOARD.md` 的「事故」一节。

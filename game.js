@@ -18,6 +18,22 @@ import {
   t, lang, setLang, pickLang, isManualLang, cardName, cardText, enemyName, tagName, onLangChange, ACH_KEYS, achText,
 } from "./i18n.js";
 import { mountUi, updateUi, setCardFacts, toast, groupDeck, resetTutorial } from "./ui.js";
+import { setAssetBase, assetUrl as A } from "./src/asset.js";
+import { makeLocalStore, installGp, langKey } from "./src/host.js";
+
+/**
+ * 入口 —— 独立网页和插件调**同一个函数**，差别全走 `opts`：
+ *
+ * | opts | 谁传 | 干什么 |
+ * | --- | --- | --- |
+ * | `container` | 插件 | 挂载根节点（默认 `#app`）；`mountDisplay` 也认这个 |
+ * | `assetBase` | 插件 | `ctx.assetUrl('')`；`blob:` 里相对路径会全部 404 |
+ * | `store` | 插件 | 宿主 `storage` 适配出来的同步 store |
+ * | `chargePlay` | 插件 | 开局扣积分；返回 false 就不进对局 |
+ *
+ * 返回**卸载函数**：摘监听 / 销毁 Pixi / 清容器 / 删调试钩子。
+ */
+export async function start(opts = {}) {
                                                
 
 // ---------- palette (ART_DIRECTION.md) ----------
@@ -84,7 +100,23 @@ function readSave()             {
 }
 
 // ---------- engine ----------
-const host = document.getElementById("app") ;
+// 根节点：插件传自己的容器，独立网页用 #app
+const container = opts.container ?? document.getElementById("app");
+const host = container;
+setAssetBase(opts.assetBase ?? "");
+
+// 存档：宿主 storage（或 localStorage）。★ 必须在下面 readSave() 之前 preload 完
+const store = opts.store ?? makeLocalStore();
+try { await store.preload(); } catch (e) { console.warn("存档读不出来，按新档开始", e); }
+installGp(store);
+
+/** 开局收费（插件传进来；独立网页没有，等价于永远允许） */
+const chargePlay = typeof opts.chargePlay === "function" ? opts.chargePlay : null;
+
+// ★ `setLang()` 会写 `document.documentElement.lang`（CJK 字体 / 无障碍要用）。
+//   插件形态下那等于**改宿主的标记**，而且切走之后还留着 ⇒ 先记下来，卸载时还原。
+const prevHtmlLang = opts.container ? document.documentElement.lang : null;
+
 const app = new PIXI.Application();
 await app.init({
   width: host.clientWidth || window.innerWidth,
@@ -113,6 +145,9 @@ let lastBvRef          = null;
 
 const display = mountDisplay({
   orientation: "both",
+  // ★★ 必须显式给 host：默认是 `#app` 或 `document.body` ⇒ 插件里量到的是**整个视口**，
+  //   canvas 比容器大，超出去的那部分点不到（按钮看得见、点不动，控制台干净）。
+  host: container,
   onResize: ({ width, height }) => {
     W = width; H = height; portrait = H > W;
     app.stage.hitArea = new PIXI.Rectangle(0, 0, W, H);
@@ -161,7 +196,7 @@ const ENEMY_IDS = ENEMIES.map((e) => e.id);
   for (const id of ENEMY_IDS) urls["enemy-" + id] = `assets/enemies/${id}.webp`;
   for (const c of CARDS) urls["card-" + c.id] = `assets/cards/${c.id}.webp`;
   const keys = Object.keys(urls);
-  const loaded = await PIXI.Assets.load(keys.map((k) => ({ alias: k, src: urls[k] })), (p) => { loadFrac = p; });
+  const loaded = await PIXI.Assets.load(keys.map((k) => ({ alias: k, src: A(urls[k]) })), (p) => { loadFrac = p; });
   for (const k of keys) tex[k] = loaded[k];
   const it = tex.icons;
   const cell = it.width / 4;
@@ -179,14 +214,19 @@ const ENEMY_IDS = ENEMIES.map((e) => e.id);
 
 // fonts never block first paint
 {
-  const fontUrl = (window       ).gp?.fonts?.url?.("google-fonts-apache/luckiest-guy/LuckiestGuy-Regular.ttf")
-    ?? "https://static.makeplay.ai/fonts/v1/google-fonts-apache/luckiest-guy/LuckiestGuy-Regular.ttf";
+  // 字体在包内（`assets/fonts/`）：平台的 fonts.url 在宿主里不存在，直连 CDN 在离线/内网会挂。
+  // 加载失败会走下面的 .catch 回落系统字体，所以这只是「数字字体」的锦上添花。
+  const fontUrl = A("assets/fonts/LuckiestGuy-Regular.ttf");
   const f = new FontFace("LuckiestGuy", `url("${fontUrl}")`);
   void f.load().then(() => { document.fonts.add(f); relayout(); }).catch(() => { NUM = JP; });
 }
 
 // ---------- sound ----------
-const sound = (await loadSoundSystem({ manifestUrl: "./sound.manifest.json" }))                    ;
+// ★ 清单走 A()：`blob:` 模块里的相对路径以 blob 为基准 ⇒ 会 404，
+//   而症状是「整局没有音乐」，一个错都不报（preload 失败被 catch 掉了）。
+//   ★ 清单里的变体地址（`assets/lib/…` / `sound.pack`）是**相对清单**解析的 ⇒
+//     两者都必须落在 `<assetBase>` 下：assets/ 与 sound.pack 同级。
+const sound = (await loadSoundSystem({ manifestUrl: A("sound.manifest.json") }))                    ;
 let audioOn = false;
 async function unlockAudio() {
   if (audioOn) return;
@@ -195,9 +235,11 @@ async function unlockAudio() {
   await sound.preload("gameplay");
   syncMusic();
 }
-window.addEventListener("pointerdown", () => { void unlockAudio(); });
-window.addEventListener("keydown", () => { void unlockAudio(); });
-window.addEventListener("pagehide", () => { save(); void sound.dispose(); }, { once: true });
+const onGesture = () => { void unlockAudio(); };
+const onHide = () => { save(); void sound.dispose(); };
+window.addEventListener("pointerdown", onGesture);
+window.addEventListener("keydown", onGesture);
+window.addEventListener("pagehide", onHide, { once: true });
 let musicNow = "";
 function syncMusic() {
   if (!audioOn || !run) return;
@@ -1588,22 +1630,14 @@ function showResult() {
   if (stage > best.stage) best.stage = stage;
   writeBest(best);
   const mvp = Object.entries(run.dmg).sort((a, b) => b[1] - a[1])[0];
-  void gp_pi_submitScore(stage * 1000 + Math.max(0, 999 - run.turns));
   uiModel.result = {
     win, stage, turns: run.turns, deck: [...run.deck],
     mvpId: mvp ? mvp[0] : null, mvpDmg: mvp ? mvp[1] : 0,
     bestStage: best.stage, bestTurns: best.turns, newest: newer, mode: run.mode,
   };
   syncUi();
-  captureShare();
 }
 
-async function gp_pi_submitScore(score        ) {
-  try {
-    const g = (window       ).gp;
-    await g?.player?.submitScore?.(score);
-  } catch { /* leaderboard is best-effort */ }
-}
 
 ;                                              
 let bestCache       = { stage: 0, turns: 0 };
@@ -1675,7 +1709,7 @@ async function loadAchievements() {
   const done = new Set(got.filter((a) => a?.unlocked).map((a) => a.key));
   uiModel.achievements = ACH_KEYS.map((key)         => {
     const [name, desc] = achText(key);
-    return { key, name, desc, icon: `assets/achievements/${key}.webp`, unlocked: done.has(key) };
+    return { key, name, desc, icon: A(`assets/achievements/${key}.webp`), unlocked: done.has(key) };
   });
   syncUi();
 }
@@ -1719,14 +1753,10 @@ function syncUi() {
   });
 }
 
-let shareBlob              = null;
-function captureShare() {
-  const snap = (window       ).gp?.share?.snap;
-  if (!snap) return;
-  void snap().then((b      ) => { shareBlob = b; }).catch(() => { shareBlob = null; });
-}
 const uiHost = {
-  onStart(fresh         ) {
+  async onStart(fresh         ) {
+    // 「继续」是接着上一局，不该再收一次；只有开新局才收费
+    if (fresh && chargePlay && (await chargePlay()) === false) return;
     void unlockAudio();
     titleShown = false;
     paused = false;
@@ -1771,16 +1801,6 @@ const uiHost = {
     showTitle();
   },
   onRestart() { uiModel.result = null; uiModel.screen = null; if (run) selectedMode = run.mode; uiModel.mode = selectedMode; startNewRun(); },
-  async onShare() {
-    const g = (window       ).gp;
-    if (!g?.share?.image) return t("shareDone");
-    if (!shareBlob) { captureShare(); await wait(0.6); }
-    const r = run;
-    const stage = r && r.result === "win" ? 6 : (r?.stage ?? 0);
-    const text = t("shareText", stage, r?.deck.length ?? 0);
-    try { if (shareBlob) await g.share.image(shareBlob, { text }); } catch { /* user cancelled */ }
-    return t("shareDone");
-  },
   setMuted(m         ) { uiModel.muted = m; void sound.settings.setMuted(m); },
   setVolume(bus                            , v        ) {
     uiModel.volumes = { ...uiModel.volumes, [bus]: v };
@@ -1806,8 +1826,9 @@ function showTitle() {
 }
 
 function scheduleLangRebuild() {
-  onLangChange(() => {
-    document.title = t("title");
+  return onLangChange(() => {
+    // 插件里不许改宿主的标题（只在独立网页形态下同步一次）
+    if (!opts.container) document.title = t("title");
     if (Array.isArray(uiModel.achievements)) uiModel.achievements = uiModel.achievements.map((r) => { const [name, desc] = achText(r.key); return { ...r, name, desc }; });
     if (!run) return;
     hidePreview();
@@ -1819,7 +1840,9 @@ function scheduleLangRebuild() {
 }
 
 // ---------- keyboard ----------
-window.addEventListener("keydown", (e) => {
+// ★ 具名 + 卸载时摘：插件切走后这个监听还在（挂在 window 上，不在容器里），
+//   按一下键就会去调已经 destroy 掉的场景 ⇒ 报一堆 "Cannot read properties of null"。
+const onKey = (e) => {
   if (!run || paused) return;
   if (run.phase === "build" || run.phase === "bonus") {
     if (e.code === "Space") { e.preventDefault(); summon(); }
@@ -1830,7 +1853,8 @@ window.addEventListener("keydown", (e) => {
     else if (e.key === "0") void doPlay(9);
     else if (e.key.toLowerCase() === "e") void doEndTurn();
   }
-});
+};
+window.addEventListener("keydown", onKey);
 
 // ---------- main loop ----------
 let idleT = 0;
@@ -1863,20 +1887,20 @@ function tickBody(t             ) {
 app.ticker.add((t) => { try { tickBody(t); } catch (e) { tickErrs++; if (tickErrs < 4) console.warn("tick error", e); } });
 
 // ---------- boot ----------
-await (window       ).gp?.player?.ready;
-{
-  const g = (window       ).gp;
-  if (g?.player?.user?.locale && !isManualLang()) setLang(pickLang(g.player.user.locale));
-}
+// 语言：平台登录已删，取本地偏好（宿主是中文 App，默认 zh）。
+// `setLang(k, true)` 的第二个参数把 _manual 置真，切语言时才会写回存档。
+setLang(store.get(langKey) ?? "zh", true);
+onLangChange(() => { if (isManualLang()) store.set(langKey, lang()); });
 setCardFacts((id) => [CARD_MAP[id]?.cost ?? 0, CARD_MAP[id]?.rarity ?? "N", CARD_MAP[id]?.tag ?? null]);
 uiModel.cardRates = RARITY_RATE.map(([r, p]) => ({ rarity: r, pct: Math.round(p * 100) }));
 resumeAvailable = readSave();
 readBest();
 uiModel.hasResume = !!(resumeAvailable && resumeAvailable.phase !== "title");
 const dispSafe = display                                                        ;
-mountUi(host, uiModel, uiHost, { safeTop: dispSafe.safeTop ?? 0, safeBottom: dispSafe.safeBottom ?? 0 });
-scheduleLangRebuild();
-document.title = t("title");
+const disposeUi = mountUi(host, uiModel, uiHost, { safeTop: dispSafe.safeTop ?? 0, safeBottom: dispSafe.safeBottom ?? 0 });
+const offLangRebuild = scheduleLangRebuild();
+// 插件里不许改宿主的标题
+if (!opts.container) document.title = t("title");
 showTitle();
 app.ticker.remove(loadTick);
 loading.destroy({ children: true });
@@ -1903,3 +1927,28 @@ loading.destroy({ children: true });
   get rows() { return bv?.rows.map((r) => ({ id: r.id, x: r.x + r.w / 2, y: r.y + r.h / 2 - (bv?.scroll ?? 0) })); },
   HAND_MAX,
 };
+
+  // ---------- 卸载 ----------
+  // 独立网页用不到（页面自己会走 pagehide）；插件每次切走都调它。
+  return () => {
+    try { window.removeEventListener("pointerdown", onGesture); } catch { /* ignore */ }
+    try { window.removeEventListener("keydown", onGesture); } catch { /* ignore */ }
+    try { window.removeEventListener("keydown", onKey); } catch { /* ignore */ }
+    try { window.removeEventListener("pagehide", onHide); } catch { /* ignore */ }
+    try { offLangRebuild?.(); } catch { /* ignore */ }
+    try { disposeUi?.(); } catch { /* ignore */ }
+    try { display.dispose(); } catch { /* ignore */ }
+    try { void sound?.dispose?.(); } catch { /* ignore */ }
+    // ★ Pixi 用 texture:false：模块级/资源缓存里的纹理留给下一次挂载，
+    //   销毁了会让第二次挂载白屏而且零报错。
+    try { app.destroy({ children: true, texture: false, baseTexture: false }); } catch { /* ignore */ }
+    try { container.replaceChildren(); } catch { /* ignore */ }
+    try { delete window.__dbg; delete window.__gpPlayable; delete window.__gpReady; } catch { /* ignore */ }
+    try { if (prevHtmlLang !== null) document.documentElement.lang = prevHtmlLang; } catch { /* ignore */ }
+    try { void store.flush(); } catch { /* ignore */ }
+    tweens.length = 0;
+    run = null;
+    wv = null;
+    bv = null;
+  };
+}
