@@ -436,16 +436,18 @@ const words = Object.keys(LANGS.zh).filter(k=>!k.includes('{')).sort((a,b)=>b.le
 const wordRE = new RegExp(words.map(escape).join('|'), 'g');
 let language = PRIMARY, manual = false;
 const listeners = new Set();
+/** 语言相关的 CSS 变量（--font）写到哪 —— 插件挂载时指向自己的根节点，别污染宿主的 <html> */
+let styleRoot = null;
+export function setStyleRoot(el) { styleRoot = el; }
 export const getLanguage = () => language;
 export function pickLanguage(value) { const k=String(value||'').slice(0,2).toLowerCase(); return k in LANGS ? k : PRIMARY; }
 export function setLanguage(value, explicit=true) {
   if (!explicit && manual) return;
   language=pickLanguage(value); if(explicit) manual=true;
   if(typeof document!=='undefined') {
-    document.documentElement.lang=language; document.documentElement.dir='ltr'; document.title=TITLE;
-    const titleNode=document.querySelector('title');
-    if(titleNode) { titleNode.lang='en'; titleNode.setAttribute('translate','no'); titleNode.classList.add('notranslate'); }
-    document.documentElement.style.setProperty('--font', language==='ja' ? '"Hiragino Kaku Gothic ProN", "Yu Gothic", "Meiryo", system-ui, sans-serif' : language==='zh' ? '"PingFang SC", "Microsoft YaHei", system-ui, sans-serif' : 'system-ui, Arial, sans-serif');
+    // 宿主页面有自己的 <title> / lang / dir —— 这三样一个都不能改（改了是「整个 App 变日文」）
+    const root = styleRoot ?? document.documentElement;
+    root.style.setProperty('--font', language==='ja' ? '"Hiragino Kaku Gothic ProN", "Yu Gothic", "Meiryo", system-ui, sans-serif' : language==='zh' ? '"PingFang SC", "Microsoft YaHei", system-ui, sans-serif' : 'system-ui, Arial, sans-serif');
   }
   for(const listener of listeners) listener(language);
 }

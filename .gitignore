@@ -7,5 +7,9 @@ dist-plugin/
 node_modules/
 *.log
 
-# smoke.mjs 的调试截图（临时，别当商城截图用）
-shots/smoke-*.png
+# 一次性补丁 / 探针（scratch）。★ 前缀必须是 `scripts/_*` 而不是 `_*`：
+# 后者会把整个 scripts/ 目录一起忽略掉，build-plugin.mjs 就不进库了。
+scripts/_*
+
+# 走查临时图（要留的图进 screenshots/，那是详情页唯一的来源）
+shots/
