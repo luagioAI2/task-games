@@ -2,6 +2,7 @@
 // families add a partner pack that walks beside them. A missing pack only means that tenant never goes out.
 import * as PIXI from "pixi.js";
 import { TENANT_TYPES } from "./data.js";
+import { assetUrl } from "../src/asset.js";
 
                            
                          
@@ -23,7 +24,7 @@ export async function loadWalks()                                    {
   const out                           = {};
   await Promise.all(PACKS.map(async (d) => {
     try {
-      const base = `assets/${d}`;
+      const base = assetUrl(`assets/${d}`);
       const m = await (await fetch(`${base}/manifest.json`)).json();
       const pages                 = await Promise.all(m.pages.map((p        ) => PIXI.Assets.load(`${base}/${p}`)));
       const per = m.frame.cols * m.frame.rows;

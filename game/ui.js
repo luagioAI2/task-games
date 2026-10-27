@@ -1,6 +1,8 @@
 // Screen UI — the building's own stationery: sand/cream plates, one ink contour, coral for spending.
 // Tokens below are copied verbatim from UI_CONTRACT.md §1 (C-2 audits this correspondence).
 import { fontStack, getLang, LANGS, NATIVE, ORDER, t,           } from "../i18n.js";
+import { scopeCss } from "../scope-css.js";
+import { assetUrl } from "../src/asset.js";
 import { BASEMENT, FIXTURE_KEY, MAX_FLOORS, MAX_LV, REP_MAX, RENT, ROOMS_PER_FLOOR, SAT_MAX, SHOP, TENANT_TYPES, TALK_COOLDOWN, UPGRADE_REP, basementFacilityYen, basementPct } from "./data.js";
 import {
   applicantsFor, buildCost, buildRepNeed, canBuild, floorOf, incomePerSec, occupiedCount,
@@ -126,11 +128,12 @@ const SVG = {
   toBottom: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M6 19.4h12M12 4v10.8M6.6 9.6L12 15l5.4-5.4"/></svg>',
   hand: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><path d="M8.6 11.4V5.6a1.4 1.4 0 0 1 2.8 0v5.8m0-1.2a1.4 1.4 0 0 1 2.8 0v1.2m0-.6a1.4 1.4 0 0 1 2.8 0v4a4.6 4.6 0 0 1-4.6 4.6h-1a4.6 4.6 0 0 1-4.6-4.6v-3.2a1.4 1.4 0 0 1 2.8 0"/></svg>',
   close: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>',
-  coin: '<img class="mp-coin" src="assets/coin.webp" alt="">',
-  /** official platform coin — every platform-coin price */
-  pcoin: '<img class="mp-pcoin" src="assets/ui/icon_coin_selected.svg" alt="">',
+  // 函数而不是常量：模块求值那一刻 `assetUrl()` 还没有根（插件在 start() 里才设）
+  coin: () => `<img class="mp-coin" src="${assetUrl("assets/coin.webp")}" alt="">`,
 };
 const TENANT_IMG                         = Object.fromEntries(TENANT_TYPES.map((t) => [t.kind, `assets/tenant_${t.kind}.webp`]));
+/** 运行时才拼前缀（见 src/asset.js） */
+const tenantImg = (k        ) => assetUrl(TENANT_IMG[k]);
 const FIX_IMG                         = {
   2: "assets/fx_aircon.webp", 3: "assets/fx_bath.webp", 4: "assets/fx_kitchen.webp", 5: "assets/fx_dryer.webp",
   6: "assets/fx_tv.webp", 7: "assets/fx_shelf.webp", 8: "assets/room_lux.webp", 9: "assets/fx_chandelier.webp", 10: "assets/fx_rug.webp",
@@ -157,12 +160,12 @@ function el(tag        , cls         , html         )              {
 }
 
 let CSS_DONE = false;
-function installCss() {
+function installCss(root = ".mp-root") {
   if (CSS_DONE) return;
   CSS_DONE = true;
   const f = document.createElement("style");
   f.id = "mp-ui";
-  f.textContent = `
+  f.textContent = scopeCss(`
 .mp-layer{position:absolute;inset:0;pointer-events:none}
 .mp-hit{pointer-events:auto}
 .mp-layer :where(button,input){font:inherit;color:inherit;border:0;background:none;padding:0;cursor:pointer;-webkit-tap-highlight-color:transparent}
@@ -226,7 +229,7 @@ function installCss() {
 @keyframes mpBob{0%,100%{transform:translateY(0)}50%{transform:translateY(-4px)}}
 @keyframes mpRise{0%{opacity:0;transform:translate(-50%,-50%) translateY(4px)}20%{opacity:1}100%{opacity:0;transform:translate(-50%,-50%) translateY(-32px)}}
 @media (prefers-reduced-motion: reduce){*{animation:none !important;transition:none !important}}
-`;
+`, root);
   document.head.appendChild(f);
 }
 
@@ -282,7 +285,7 @@ export class Ui {
           crimeChip                    ;
           crimeSig = "";
           stormSig = "";
-          buildBtn                    ;         rankBtn                    ;         shopBtn                    ;
+          buildBtn                    ;
           sheet              ;         sheetBody              ;         sheetFoot              ;         sheetHeadNo              ;         sheetBadge              ;
           claimShown = false;
 
@@ -306,15 +309,12 @@ export class Ui {
 
   applyText() {
     const f = fontStack(getLang());
-    document.documentElement.style.fontFamily = f;
+    this.host.style.fontFamily = f;
     (this.rate.querySelector(".u")               ).textContent = t("hud.perSec");
     this.repLabel.setAttribute("aria-label", t("hud.rep"));
     this.navTop.setAttribute("aria-label", t("nav.top"));
     this.navBottom.setAttribute("aria-label", t("nav.bottom"));
     this.buildBtn.setAttribute("aria-label", t("hud.build"));
-    this.rankBtn.querySelector(".lbl") .textContent = t("hud.rank");
-    this.shopBtn.querySelector(".lbl") .textContent = t("hud.shop");
-    this.shopBtn.setAttribute("aria-label", t("hud.shop"));
     const gear = this.hudLayer.querySelector("#mpGear")                     ;
     gear.setAttribute("aria-label", t("hud.menu"));
     const cl = this.claim.querySelector(".cl")               ;
@@ -330,7 +330,7 @@ export class Ui {
     const hud = el("div", "mp-hit");
     hud.style.cssText = `position:absolute;left:8px;right:8px;top:8px;pointer-events:none`;
     const row1 = el("div", "mp-row");
-    const money = el("div", "mp-pill mp-hit", `${SVG.coin}<span class="sh mp-num" style="font-size:19px">¥0</span>`);
+    const money = el("div", "mp-pill mp-hit", `${SVG.coin()}<span class="sh mp-num" style="font-size:19px">¥0</span>`);
     const rate = el("div", "mp-pill mp-hit", `<span class="sh mp-num" style="font-size:15px">¥0</span><span class="u" style="font-size:12px;font-weight:800"></span>`);
     const gear = el("button", "ico-btn mp-hit")                     ;
     gear.id = "mpGear";
@@ -404,7 +404,7 @@ export class Ui {
     claim.style.cssText = `position:absolute;left:10px;right:10px;bottom:126px;display:none;align-items:center;gap:9px;
       background:${C.accent};border:2px solid ${C.accentShadow};border-radius:14px;padding:8px 11px;
       box-shadow:0 4px 0 ${C.accentShadow};color:${C.paper};animation:mpBob 1.8s ease-in-out infinite`;
-    claim.innerHTML = `${SVG.coin}<div style="flex:1;min-width:0"><div class="cl" style="font-size:13px;font-weight:800"></div>
+    claim.innerHTML = `${SVG.coin()}<div style="flex:1;min-width:0"><div class="cl" style="font-size:13px;font-weight:800"></div>
       <div class="cs" style="font-size:11px;font-weight:700;opacity:.92"></div></div>
       <div class="sh" style="font-size:19px;color:${C.paper}">¥<span class="v mp-num">0</span></div>`;
     claim.addEventListener("click", () => this.hooks.claim());
@@ -431,19 +431,11 @@ export class Ui {
     build.innerHTML = `<span class="mp-ico">${SVG.up}</span><span style="display:flex;flex-direction:column;align-items:flex-start;min-width:0">
       <span class="lbl"></span><span class="sub mp-num"></span></span>`;
     build.addEventListener("click", () => this.hooks.build());
-    const rank = el("button", "btn wide")                     ;
-    rank.innerHTML = `<span class="mp-ico">${SVG.trophy}</span><span class="lbl"></span>`;
-    rank.style.cssText += "flex:1 1 0;min-width:0";
-    rank.addEventListener("click", () => this.hooks.openRanking());
-    const shop = el("button", "btn wide")                     ;
-    shop.innerHTML = `<span class="mp-ico">${SVG.bag}</span><span class="lbl"></span>`;
-    shop.style.cssText += "flex:1 1 0;min-width:0";
-    shop.addEventListener("click", () => this.hooks.openShop());
-    rail.append(build, rank, shop);
+    // 原版这里是 build + 排行榜 + 商店三格；排行榜和商店已删（不卖东西、不联网），
+    // 只剩「盖楼」一格 —— 所以它自己占满整行（`flex:1.4` 在单子元素时等同于 1）。
+    rail.append(build);
     this.hudLayer.appendChild(rail);
     this.buildBtn = build;
-    this.rankBtn = rank;
-    this.shopBtn = shop;
   }
 
           buildSheet() {
@@ -636,7 +628,6 @@ export class Ui {
       maxed ? t("bm.done") : digNext ? t("bm.dig", { n: s.basement + 1 }) : twinBuild ? `${t("hud.build")} ${t("build.twin")} ${s.floors + 1 - MAX_FLOORS}F` : `${t("hud.build")} ${s.floors + 1}F`;
     (this.buildBtn.querySelector(".sub")               ).textContent =
       maxed ? t("bm.bonus", { pct: Math.round(basementPct(s.basement) * 100), n: s.basement, fac: fmtMoney(basementFacilityYen(s.basement)) }) : digNext ? `¥${fmtMoney(digCost ?? 0)}` : ok ? `¥${fmtMoney(cost)}` : s.money < cost ? `¥${fmtMoney(cost)}` : t("build.needRep", { rep: need });
-    if (this.shopBtn) this.shopBtn.style.display = this.hooks.shopAvailable() ? "" : "none";
 
     if (this.sheetOpen) this.liveSheet();
   }
@@ -709,7 +700,7 @@ export class Ui {
     if (o) {
       const z = el("div", "zone");
       z.innerHTML = `<div class="rowline" style="align-items:flex-start;gap:9px;margin:0">
-          <img src="${TENANT_IMG[o.kind]}" alt="" style="width:46px;height:46px;object-fit:contain;flex:0 0 46px">
+          <img src="${tenantImg(o.kind)}" alt="" style="width:46px;height:46px;object-fit:contain;flex:0 0 46px">
           <div style="flex:1;min-width:0">
             <div style="font-size:11px;font-weight:800;color:${C.info}">${esc(this.tenantLabel(o.kind))} ×${(MULT[o.kind] * (o.premium ? 1.5 : 1)).toFixed(1)}${o.premium ? ` · ${t("room.premium")}` : ""}</div>
             <div style="font-size:16px;font-weight:800;color:${C.text};overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(o.name || "…")}</div>
@@ -723,7 +714,7 @@ export class Ui {
         <div class="actStatus" style="display:none;margin-top:6px;font-size:12px;font-weight:800;color:${C.info}"></div>
         <div class="rentBox" style="margin-top:8px;padding-top:8px;border-top:2px dashed ${C.disabled}">
           <div class="rowline" style="margin:0;font-size:13px;justify-content:space-between;gap:6px">
-            <span style="display:flex;align-items:center;gap:5px;min-width:0">${SVG.coin}<span class="rentNow mp-num" style="font-weight:800"></span></span>
+            <span style="display:flex;align-items:center;gap:5px;min-width:0">${SVG.coin()}<span class="rentNow mp-num" style="font-weight:800"></span></span>
             <span class="rentVerdict" style="font-size:12px;font-weight:800;padding:2px 8px;border-radius:999px;border:1.5px solid ${C.outline};white-space:nowrap"></span>
           </div>
           <div class="rowline" style="margin:6px 0 0;gap:6px">
@@ -790,7 +781,7 @@ export class Ui {
       s.applicants.forEach((a, idx) => {
         const ok = elig.includes(idx);
         const chip = el("button", `chip${a.premium ? " premium" : ""}${ok ? "" : " locked"}${this.selApp === a.id ? " sel" : ""}`)                     ;
-        chip.innerHTML = `<img src="${TENANT_IMG[a.kind]}" alt="">
+        chip.innerHTML = `<img src="${tenantImg(a.kind)}" alt="">
           <span style="min-width:0"><span class="cn">${esc(this.tenantLabel(a.kind))} ×${(MULT[a.kind] * (a.premium ? 1.5 : 1)).toFixed(1)}${a.premium ? " ★" : ""}</span>
           <span class="cc">${t("room.wantLv", { lv: WANT_LV[a.kind] })}${ok ? "" : " · " + t("ap.locked")}</span></span>`;
         chip.disabled = !ok;
@@ -837,7 +828,7 @@ export class Ui {
     const nx = el("div", "mp-row");
     nx.style.cssText = `font-size:12.5px;color:${C.muted};line-height:1.35;align-items:center;gap:8px`;
     if (next) {
-      nx.innerHTML = `<img src="${FIX_IMG[next]}" alt="" style="width:46px;height:30px;object-fit:contain;flex:0 0 46px">
+      nx.innerHTML = `<img src="${assetUrl(FIX_IMG[next])}" alt="" style="width:46px;height:30px;object-fit:contain;flex:0 0 46px">
         <span style="min-width:0">${t("room.next")}: <b style="color:${C.text}">${t(FIXTURE_KEY[next])}</b><br>
         <span class="mp-num">${t("room.rent")} ¥${RENT[lv]} → <b style="color:${C.accentShadow}">¥${RENT[next]}</b>${t("hud.perSec")} · ${t("hud.rep")} +${UPGRADE_REP[next]}</span></span>`;
     } else nx.textContent = t("room.max");
@@ -1333,7 +1324,7 @@ export class Ui {
     this.modal(t("dbg.title"), b);
   }
 
-  openMenu(s           , vols                              , muted         , shopAvailable         , delegateCost        ) {
+  openMenu(s           , vols                              , muted         , delegateCost        ) {
     const b = el("div");
     b.appendChild(this.langZone());
     const audio = el("div", "zone");
@@ -1363,14 +1354,6 @@ export class Ui {
       adm.innerHTML = `<h4>${t("adm.title")}</h4>`;
       adm.appendChild(this.switchRow(t("adm.toggle"), s.quake.adminOn, (on) => this.hooks.adminToggle(on)));
       b.appendChild(adm);
-    }
-
-    if (shopAvailable) {
-      const sh = el("button", "btn wide")                     ;
-      sh.style.marginBottom = "8px";
-      sh.innerHTML = `<span class="mp-ico">${SVG.bag}</span><span class="lbl">${t("hud.shop")}</span>`;
-      sh.addEventListener("click", () => this.hooks.openShop());
-      b.appendChild(sh);
     }
     const tb = el("button", "btn wide")                     ;
     tb.style.marginBottom = "8px";
@@ -1403,119 +1386,6 @@ export class Ui {
     yes.addEventListener("click", () => { this.closeModal(); onYes(); });
     foot.append(no, yes);
     this.modal(t("menu.reset"), b, foot);
-  }
-
-  openRanking(rows       , me                                        ) {
-    const b = el("div");
-    const sub = el("div");
-    sub.style.cssText = `font-size:12px;font-weight:800;color:${C.muted};margin-bottom:6px`;
-    sub.textContent = t("rank.body");
-    b.appendChild(sub);
-    const list = el("div", "rank-list");
-    list.setAttribute("data-mp-scroll", "");
-    list.style.maxHeight = "46vh";
-    if (!rows.length) {
-      list.innerHTML = `<div style="font-size:12.5px;color:${C.muted}">${t("rank.empty")}</div>`;
-    }
-    for (const r of rows) {
-      const row = el("div", "mp-row");
-      row.style.cssText = `padding:6px 4px;border-bottom:1px dashed #d5cbb3;gap:8px${r.isMe ? `;background:${C.surfaceStrong};border-radius:8px` : ""}`;
-      const rk = el("span");
-      rk.style.cssText = `font-size:12px;font-weight:800;color:${C.muted};min-width:26px`;
-      rk.textContent = `#${r.rank ?? 0}`;
-      // nothing must draw if the avatar URL is missing or fails — guard both ways
-      const img = document.createElement("img");
-      img.alt = "";
-      if (r.avatar) img.src = r.avatar;
-      img.onerror = () => img.remove();
-      img.style.cssText = `width:30px;height:30px;border-radius:50%;border:1.5px solid ${C.outline};background:${C.paper};flex:0 0 30px`;
-      const nm = el("span");
-      nm.style.cssText = `flex:1;min-width:0;font-size:13.5px;font-weight:700;color:${C.text};overflow:hidden;text-overflow:ellipsis;white-space:nowrap`;
-      nm.textContent = r.name;
-      row.append(rk, img, nm);
-      if (r.mutual) {
-        const mu = el("span");
-        mu.style.cssText = `font-size:10px;font-weight:800;color:${C.info};border:1.5px solid ${C.info};border-radius:6px;padding:0 4px`;
-        mu.textContent = t("rank.mutual");
-        row.appendChild(mu);
-      }
-      // original leaderboard look: rent amount only (no TA time badge anywhere)
-      const sc = el("span", "sh mp-num");
-      sc.textContent = "¥" + fmtMoney(boardRentYen(r.score));
-      row.appendChild(sc);
-      if (r.userId) {
-        row.setAttribute("role", "button");
-        row.tabIndex = 0;
-        row.classList.add("mp-hit");
-        row.style.cursor = "pointer";
-        const act = () => this.hooks.openRow(r);
-        row.addEventListener("click", act);
-        row.addEventListener("keydown", (e) => {
-          if (e.key === "Enter" || e.key === " ") { e.preventDefault(); act(); }
-        });
-      }
-      list.appendChild(row);
-    }
-    b.appendChild(list);
-    if (me) {
-      const p = el("p");
-      p.style.cssText = `margin:8px 0 0;font-size:12.5px;font-weight:800;color:${C.text}`;
-      p.textContent = t("rank.me") + ": #" + me.rank + " · ¥" + fmtMoney(boardRentYen(me.score));
-      b.appendChild(p);
-    }
-    this.modal(t("rank.title"), b);
-  }
-
-  openPlayerMenu(name        , onDetails            , onProfile            , profileOk         ) {
-    const b = el("div");
-    const p = el("p");
-    p.style.cssText = `margin:0 0 8px;font-size:14px;font-weight:800;color:${C.text}`;
-    p.textContent = name;
-    b.appendChild(p);
-    const foot = el("div");
-    foot.style.cssText = "display:flex;flex-direction:column;gap:8px;margin-top:4px";
-    const d = el("button", "btn wide")                     ;
-    d.innerHTML = `<span class="lbl">${t("rank.view")}</span>`;
-    d.addEventListener("click", () => { this.closeModal(); onDetails(); });
-    foot.appendChild(d);
-    if (profileOk) {
-      const pf = el("button", "btn wide primary")                     ;
-      pf.innerHTML = `<span class="lbl">${t("rank.profile")}</span>`;
-      pf.setAttribute("aria-label", `${t("rank.profile")} (opens in a new tab)`);
-      pf.title = `${t("rank.profile")} (opens in a new tab)`;
-      pf.addEventListener("click", () => onProfile());
-      foot.appendChild(pf);
-    }
-    this.modal(name, b, foot);
-  }
-
-  openDetails(name        , avatar        , rank        , score        , status     ) {
-    const b = el("div");
-    const head = el("div", "mp-row");
-    head.innerHTML = `<img src="${avatar}" alt="" style="width:52px;height:52px;border-radius:50%;border:2px solid ${C.outline}">
-      <div style="flex:1;min-width:0"><div style="font-size:15px;font-weight:800;color:${C.text};overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(name)}</div>
-      <div style="font-size:12px;color:${C.muted}">#${rank} · ¥${fmtMoney(boardRentYen(score))}</div></div>`;
-    b.appendChild(head);
-    const g = el("div");
-    g.style.cssText = "display:grid;grid-template-columns:1fr 1fr;gap:7px;margin-top:8px";
-    const st = status ?? {};
-    const cells                     = [
-      [t("st.floors"), st.floors === undefined ? "—" : String(st.floors)],
-      [t("st.rooms"), st.rooms === undefined ? "—" : String(st.rooms)],
-      [t("st.rate"), st.pct === undefined ? "—" : `${st.pct}%`],
-      [t("st.money"), st.money === undefined ? "—" : "¥" + fmtMoney(Number(st.money))],
-      [t("st.rep"), st.rep === undefined ? "—" : String(st.rep)],
-      [t("st.income"), st.total === undefined ? "—" : "¥" + fmtMoney(Number(st.total))],
-    ];
-    for (const [k, v] of cells) {
-      const cell = el("div");
-      cell.style.cssText = `background:${C.paper};border:2px solid ${C.outline};border-radius:10px;padding:7px 9px`;
-      cell.innerHTML = `<div style="font-size:11px;font-weight:700;color:${C.muted}">${esc(k)}</div>
-        <div class="sh mp-num" style="font-size:15px">${esc(v)}</div>`;
-      g.appendChild(cell);
-    }
-    b.appendChild(g);
-    this.modal(t("st.title"), b);
   }
 
   openRecord(s           , rank               , shareOk         ) {
@@ -1596,114 +1466,6 @@ export class Ui {
   }
 
 
-  openShop(s           , balance               , available         , buy                      ) {
-    const b = el("div");
-    if (!available) {
-      const p = el("p");
-      p.style.cssText = `margin:0;font-size:13px;color:${C.muted}`;
-      p.textContent = t("shop.off");
-      b.appendChild(p);
-      this.shopModal(b);
-      return;
-    }
-    if (balance !== null && balance >= 0) {
-      const p = el("p");
-      p.style.cssText = `margin:0 0 8px;font-size:12.5px;font-weight:800;color:${C.text}`;
-      p.textContent = `${t("shop.coins")}: ${balance}`;
-      b.appendChild(p);
-    }
-    const boostLeft = Math.max(0, Math.ceil((s.boostUntil - this.now) / 60));
-    // buildings & facilities: the konbini and the 2nd tower are bought in one shared block
-    // コンビニ＋2棟目: one 50-coin set; owning one part still lets the player buy the set for the missing one
-    const setOwn = !!s.konbini && !!s.twin;
-    const twinWait = !!s.twin && s.floors < MAX_FLOORS;
-    const parts = [
-      { name: t("shop.konbini"), have: !!s.konbini },
-      { name: t("shop.twin"), have: !!s.twin },
-    ];
-    const facilities = [
-      { id: SHOP.set.itemId, name: t("shop.set"), desc: t("shop.setDesc"), price: SHOP.set.price, own: setOwn, parts,
-        prog: twinWait || !s.twin ? Math.min(s.floors, MAX_FLOORS) / MAX_FLOORS : undefined,
-        progLabel: t("shop.setTwinWait", { n: Math.min(s.floors, MAX_FLOORS) }),
-        btn: setOwn ? t("shop.owned") : t("shop.buy", { n: SHOP.set.price }) },
-    ];
-    const items = [
-      { id: SHOP.lounge.itemId, name: t("shop.lounge"), desc: t("shop.loungeDesc"), price: SHOP.lounge.price, own: s.lounge, btn: t("shop.owned") },
-      { id: SHOP.quake.itemId, name: t("shop.quake"), desc: t("shop.quakeDesc"), price: SHOP.quake.price, own: s.quake.dlc, btn: s.quake.dlc ? t("shop.owned") : t("shop.buy", { n: SHOP.quake.price }), dlc: true },
-      { id: SHOP.infMoney.itemId, name: t("shop.inf"), desc: t("shop.infDesc"), price: SHOP.infMoney.price, own: !!s.infBuy,
-        btn: s.infBuy ? t("shop.owned") : t("shop.buy", { n: SHOP.infMoney.price }) },
-      { id: SHOP.boost.itemId, name: t("shop.boost"), desc: t("shop.boostDesc"), price: SHOP.boost.price, own: false,
-        btn: boostLeft > 0 ? t("shop.active", { n: boostLeft }) : t("shop.buy", { n: SHOP.boost.price }) },
-    ];
-    const card = (r     , parent             , inGroup         ) => {
-      const row = el("div", "mp-row");
-      row.style.cssText = `background:${C.paper};border:2px solid ${C.outline};border-radius:12px;padding:9px;margin-bottom:${inGroup ? 6 : 8}px;gap:9px;align-items:flex-start`;
-      const info = el("div");
-      info.style.cssText = "flex:1;min-width:0";
-      const badge = r.dlc ? ' <span style="font-size:10px;background:' + C.accent + ';color:' + C.paper + ';border-radius:6px;padding:1px 5px">DLC</span>' : "";
-      info.innerHTML = `<div style="font-size:14px;font-weight:800;color:${C.text}">${esc(r.name)}${badge}</div>
-        <div style="font-size:11.5px;color:${C.muted};line-height:1.3">${esc(r.desc)}</div>`;
-      if (r.parts) {
-        info.innerHTML += `<div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:5px">${r.parts.map((p                                 ) =>
-          `<span style="font-size:11px;font-weight:800;border:1.5px solid ${C.outline};border-radius:7px;padding:1px 6px;background:${p.have ? C.successTint : C.paper};color:${p.have ? C.successText : C.text}">${p.have ? "✓ " : "+ "}${esc(p.name)}${p.have ? " · " + esc(t("shop.owned")) : ""}</span>`).join("")}</div>`;
-      }
-      if (r.prog !== undefined) {
-        if (r.progLabel) info.innerHTML += `<div style="margin-top:5px;font-size:11px;font-weight:700;color:${C.muted};line-height:1.3">${esc(r.progLabel)}</div>`;
-        info.innerHTML += `<div style="margin-top:3px;height:7px;border:1.5px solid ${C.outline};border-radius:5px;background:${C.surface};overflow:hidden"><div style="height:100%;width:${(r.prog * 100).toFixed(1)}%;background:${C.accent}"></div></div>`;
-      }
-      const sb = el("div");
-      const btn = el("button", "btn")                     ;
-      btn.style.minHeight = "48px";
-      btn.dataset.item = r.id;
-      if (r.lock) btn.style.maxWidth = "128px";
-      if (r.own) { btn.className = "btn off"; btn.disabled = true; }
-      // platform-coin price: official coin icon + the same number passed to purchase()
-      btn.innerHTML = r.own || r.btn !== t("shop.buy", { n: r.price })
-        ? `<span class="lbl" style="font-size:${r.lock ? 11 : 13}px;white-space:normal;line-height:1.25">${esc(r.btn)}</span>`
-        : `${SVG.pcoin}<span class="lbl mp-num" style="font-size:15px">${r.price}</span>`;
-      btn.setAttribute("aria-label", r.btn);
-      btn.addEventListener("click", () => buy(r.id));
-      sb.appendChild(btn);
-      row.append(info, sb);
-      parent.appendChild(row);
-    };
-    const grp = el("div");
-    grp.dataset.group = "facilities";
-    grp.style.cssText = `background:${C.surfaceStrong};border:2px solid ${C.outline};border-radius:14px;padding:8px 8px 2px;margin-bottom:10px`;
-    const gh = el("div");
-    gh.style.cssText = `font-size:12.5px;font-weight:800;color:${C.text};margin:0 2px 6px;letter-spacing:.04em`;
-    gh.textContent = t("shop.facilities");
-    grp.appendChild(gh);
-    for (const r of facilities) card(r, grp, true);
-    b.appendChild(grp);
-    const ih = el("div");
-    ih.style.cssText = `font-size:12.5px;font-weight:800;color:${C.muted};margin:0 4px 6px;letter-spacing:.04em`;
-    ih.textContent = t("shop.items");
-    b.appendChild(ih);
-    for (const r of items) card(r, b, false);
-    this.shopModal(b);
-  }
-
-  /** Shop dialog (also used by the offline branch) — carries the hidden debug unlock on its title. */
-          shopModal(b             )       {
-    const card2 = this.modal(t("shop.title"), b);
-    let dbgTaps2           = [];
-    const title2 = card2.querySelector("h3")                      ;
-    if (title2) {
-      title2.style.cursor = "pointer";
-      title2.classList.add("mp-hit");
-      title2.addEventListener("click", () => {
-        const now2 = performance.now();
-        dbgTaps2 = dbgTaps2.filter((x) => now2 - x < 4000);
-        dbgTaps2.push(now2);
-        if (dbgTaps2.length >= 7) { dbgTaps2 = []; this.closeModal(); this.hooks.debugTap(); }
-      });
-    }
-  }
-
-  // ------------------------------------------------------------ コンビニ management
-          kbLive                                                                                                                                                                                     = null;
-  get konbiniOpen() { return !!this.kbLive && this.kbLive.root.isConnected; }
   openKonbini(s           , info        ) {
     const k = s.konbini;
     if (!k) return;

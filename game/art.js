@@ -1,6 +1,7 @@
 // Texture manifest and loader.
 import * as PIXI from "pixi.js";
 import { TENANT_TYPES } from "./data.js";
+import { assetUrl } from "../src/asset.js";
 
 export const TENANT_TEX                         = Object.fromEntries(
   TENANT_TYPES.map((t) => [t.kind, `assets/tenant_${t.kind}.webp`]),
@@ -25,11 +26,16 @@ export async function loadTextures(onProgress                     )             
   const total = TEX_PATHS.length;
   let done = 0;
   onProgress(0);
-  await PIXI.Assets.load(TEX_PATHS.map((p) => ({ src: p, alias: p.split("/").pop() .replace(".webp", "") })), (p) => {
+  // ★ 键用 alias，**不能用源路径**：插件的 `src` 带了包根前缀
+  //   （`/games/renttower/assets/x.webp`），而 `Assets.get("assets/x.webp")` 按 URL 查，
+  //   查不到 ⇒ 整张纹理表全是 undefined。症状不是报错，是**画面一片空白**
+  //   （`new PIXI.Sprite(undefined)` 会退回 Texture.WHITE），只有 `tex.width` 那种地方才炸。
+  const aliasOf = (p        ) => p.split("/").pop() .replace(".webp", "");
+  await PIXI.Assets.load(TEX_PATHS.map((p) => ({ src: assetUrl(p), alias: aliasOf(p) })), (p) => {
     done = Math.min(total, Math.round(p * total));
     onProgress(done / total);
   });
   const out                               = {};
-  for (const p of TEX_PATHS) out[p.split("/").pop() .replace(".webp", "")] = PIXI.Assets.get(p);
+  for (const p of TEX_PATHS) out[aliasOf(p)] = PIXI.Assets.get(aliasOf(p));
   return out;
 }

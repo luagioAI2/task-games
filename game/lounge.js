@@ -1,6 +1,7 @@
 // In-room motion for seated tenants: an idle loop per tenant type, plus occasional one-shot gestures
 // (stretch overhead, doze off and jerk awake) that play and return to the loop.
 import * as PIXI from "pixi.js";
+import { assetUrl } from "../src/asset.js";
 
                              
                          
@@ -33,7 +34,7 @@ const PACKS                           = {
 };
 
 async function loadClip(dir        )                                                           {
-  const base = `assets/lounge-${dir}/`;
+  const base = assetUrl(`assets/lounge-${dir}/`);
   const m = await (await fetch(base + "manifest.json")).json();
   const pages                 = await Promise.all(m.pages.map((p        ) => PIXI.Assets.load              (base + p)));
   const perPage = m.frame.cols * m.frame.rows;

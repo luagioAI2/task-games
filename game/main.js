@@ -4,7 +4,7 @@ import { mountDisplay } from "@makeplay/display";
 import { createPixiFx,                } from "@makeplay/fx";
 import { loadSoundSystem } from "@makeplay/sound";
                                                             
-import { fontStack, getLang, pickLang, setLang, t,           } from "../i18n.js";
+import { fontStack, getLang, pickLang, setDocumentSideEffects, setLang, t } from "../i18n.js";
 import { loadTextures } from "./art.js";
 import { loadWalks } from "./walks.js";
 import { loadLounge } from "./lounge.js";
@@ -20,9 +20,12 @@ import { DELEGATE_COST, MAX_FLOORS, MAX_LV, SHOP, TENANT_TYPES, UPGRADE_REP } fr
 import { KonbiniShift } from "./kbshift.js";
 import { KONBINI_MAX_LV, kbCap, kbCustomers, kbRestockCost, kbSellPrice, kbUnit, kbUpgradeCost } from "./konbini.js";
 import { fallbackProfile, requestProfile } from "./tenants.js";
+import { makeLocalStore, makeSaveApi } from "../src/host.js";
+import { assetRoot, assetUrl, setAssetRoot } from "../src/asset.js";
 
 const nowSec = () => Date.now() / 1000;
-const appEl = document.getElementById("app") ;
+/** 容器由 `start(opts)` 注入；独立网页退回 `#app`。 */
+let appEl = null;
 
 // ---- leaderboard score layout (LEADERBOARD.json ruleVersion 6) ----
 // The platform caps leaderboard raws at ≤ 1e15, so the rv6 cap raise reuses the low 1e8 field
@@ -39,8 +42,6 @@ const BOARD_T2_BREAK_YEN = 1e11; // ¥1000億 — tier-2 rent origin
 const BOARD_T2_STEP_YEN = 1e12; // ¥1兆 per low-field unit
 const BOARD_T2_MAX_UNITS = 99999999;
 /** packed submit value: rent descending, time part zero (TA abolished), capped at ¥9999京 */
-/** sandbox playtest mode (URL ?playtest=1) — never set for players */
-const PLAYTEST = /[?&]playtest=1\b/.test(location.search);
 function packBoardScore(rentYen        ) {
   const yen = Math.max(0, rentYen);
   const r1 = Math.floor(yen / 1e4);
@@ -77,15 +78,50 @@ function buildLoading() {
 
 // ------------------------------------------------------------------ boot
 
-async function boot() {
-  setLang(pickLang(navigator.language));
+async function boot(opts = {}) {
+  appEl = opts.mountTo || document.getElementById("app") || document.body;
+  let alive = true;
+  // 资源前缀：独立网页是空串，插件是 `<包根>/`（见 src/asset.js）
+  setAssetRoot(opts.assetBase || "");
+  // 插件里不要改宿主的 `<html lang>` / 页面标题
+  setDocumentSideEffects(!opts.mountTo);
+  appEl.classList.add("mp-root");
+  setLang(pickLang(opts.locale || navigator.language));
+
+  // ---- 关掉「1000 次游玩纪念」运营活动（原站的限时活动，2026-11-07 到期）----
+  // 三处都受 `eventActive()` 控制：首次进场弹窗（「感谢达成 1000 次游玩！」）、
+  // HUD 金色横幅、房间详情里的 🎉 角标；同时它还给租金 ×1.25。
+  // 搬到商城之后这三样全是假话（我们这边没有「游玩次数」这回事），而且是个
+  // 悄悄改了经济的时间炸弹（到期当天数值会突然掉 20%）。`setEventOverride(false)`
+  // 是原站给作者预览用的开关，**不写存档**，正好拿来一次性关掉，不用删代码。
+  setEventOverride(false);
+
+  // ---- 进场收费（只有插件形态会传）----
+  // 放置经营没有「一局」，所以「一局」= 一次进场（`plugin.js` 里有 10 分钟宽限）。
+  // 付不起就**不建渲染器**：直接一块说明屏 —— 别让 17 MB 资源白下一遍。
+  const paid = opts.chargePlay ? await opts.chargePlay() : true;
+  if (!paid) {
+    const gate = document.createElement("div");
+    gate.style.cssText = "position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;padding:24px;text-align:center;background:#cfe5f1;color:#22303d;font:900 16px/1.5 system-ui,-apple-system,'PingFang SC','Microsoft YaHei',sans-serif";
+    gate.innerHTML = '<div style="font-size:20px">积分不够啦</div>'
+      + '<div style="font-weight:800;color:#5b7288">去做个任务攒点积分，再回来盖楼</div>';
+    appEl.appendChild(gate);
+    return {
+      api: null,
+      destroy() {
+        try { gate.remove(); } catch { /* 已摘 */ }
+        try { appEl.classList.remove("mp-root"); } catch { /* ignore */ }
+      },
+    };
+  }
 
   const app = new PIXI.Application();
   try {
     await app.init({ background: 0xcfe5f1, antialias: true, autoDensity: true, resizeTo: appEl });
   } catch (e) {
     console.error("pixi init failed", e);
-    return;
+    try { appEl.classList.remove("mp-root"); } catch { /* ignore */ }
+    return { api: null, destroy() {} };
   }
   app.canvas.style.cssText = "position:absolute;inset:0;display:block;touch-action:none";
   appEl.appendChild(app.canvas);
@@ -113,7 +149,7 @@ async function boot() {
     fx.play("lightning-impact", { pos: { x: p.x, y: p.y }, power: 0.5 });
     void sound?.playCue("police.breach", { eventId: eid("breach") });
     // barricade giving way right after the door is forced (user request)
-    setTimeout(() => void sound?.playCue("police.barricade", { eventId: eid("barricade") }), 400);
+    later(() => void sound?.playCue("police.barricade", { eventId: eid("barricade") }), 400);
     fx.play("explosion-impact", { pos: { x: p.x, y: p.y }, power: 0.35 });
   };
   view.onRadio = () => { void sound?.playCue("police.radio", { eventId: eid("radio") }); };
@@ -195,8 +231,8 @@ async function boot() {
   });
 
   // ---- autosave boot read: three outcomes
-  const S = gp.player.saves;
-  await gp.player.ready.catch(() => null);
+  // 存档：插件走 host.storage，独立网页走 localStorage（形状和 gp.player.saves 一致）
+  const S = makeSaveApi(opts.store || makeLocalStore("renttower:"));
   let state           ;
   let saveBlocked = false;
   const missiles                                      = [];
@@ -237,13 +273,19 @@ async function boot() {
   else {
     state = newGame(nowSec());
     // a save exists but couldn't be read (or failed to parse) → play, but never overwrite it this session
-    if (latest || (S.lastError && gp.player.user)) saveBlocked = true;
+    if (latest || S.lastError) saveBlocked = true;
   }
   settleOffline(state, nowSec());
+  // 原版这四个是内购商品；插件不卖东西 ⇒ 进场即解锁
+  // （お金無限 / 時短ブースト 是作弊与消耗品，直接删掉，不在这里解锁）
+  unlockKonbini(state);
+  unlockTwin(state);
+  buyLounge(state);
+  state.quake.dlc = true;
 
   // ---- sound
   let sound                          = null;
-  try { sound = (await loadSoundSystem({ manifestUrl: "./sound.manifest.json" }))                    ; }
+  try { sound = (await loadSoundSystem(assetRoot() ? { manifestUrl: assetUrl("sound.manifest.json"), baseUrl: assetRoot() } : { manifestUrl: "./sound.manifest.json" }))                    ; }
   catch (e) { console.warn("sound unavailable", e); }
   let unlocked = false;
   let audioLive = false;
@@ -279,8 +321,13 @@ async function boot() {
       void sound.playCue("amb.street", { eventId: "amb" });
     } catch (e) { console.warn(e); }
   }
-  window.addEventListener("pointerdown", () => { void unlockAudio(); });
-  window.addEventListener("keydown", () => { void unlockAudio(); });
+  // 卸载要能摘干净：监听器 / 定时器一律过这两个小工具登记
+  const listeners = [];
+  const on = (target, type, fn, opt) => { target.addEventListener(type, fn, opt); listeners.push([target, type, fn, opt]); };
+  const timers = new Set();
+  const later = (fn, ms) => { const id = setTimeout(() => { timers.delete(id); if (alive) fn(); }, ms); timers.add(id); return id; };
+  on(window, "pointerdown", () => { void unlockAudio(); });
+  on(window, "keydown", () => { void unlockAudio(); });
   let cueN = 0;
   const eid = (k        ) => `${k}:${++cueN}`;
 
@@ -290,7 +337,6 @@ async function boot() {
     void S.putLatest(serialize(state), "text").then((ok) => {
       if (!ok) console.warn("autosave rejected:", S.lastError);
     });
-    publishStatus();
   }
 
   view.sync(state, false);
@@ -317,7 +363,6 @@ async function boot() {
     setLang(k);
     view.setVacantLabel(t("room.vacant"), fontStack(k));
     view.setKonbini(!!state.konbini, t("kb.name"));
-    document.title = t("title");
     ui.applyText();
     if (state.tut === 0) save();
   }
@@ -355,16 +400,12 @@ async function boot() {
         if (state.floors > before + 1) twinRose();
         else if (state.floors > MAX_FLOORS) ui.toast(`${t("build.twin")} · ${t("build.done", { n: state.floors - MAX_FLOORS })}`);
         else ui.toast(t("build.done", { n: state.floors }));
-        void submitScore();
       } else if (state.floors >= maxFloorsOf(state)) ui.toast(t("build.max"));
     },
     openMenu: () => {
       void sound?.playCue("ui.tap", { eventId: eid("tap") });
-      ui.openMenu(state, { bgm: bgmVol, sfx: sfxVol }, muted, gp.pay.available, DELEGATE_COST);
+      ui.openMenu(state, { bgm: bgmVol, sfx: sfxVol }, muted, DELEGATE_COST);
     },
-    openRanking: () => { void sound?.playCue("ui.tap", { eventId: eid("tap") }); void openRanking(); },
-    // ?playtest=1 only: the sandbox has no gp.pay, so the shop list renders for layout checks (buying still needs gp.pay)
-    openShop: () => { void sound?.playCue("ui.tap", { eventId: eid("tap") }); ui.openShop(state, null, gp.pay.available || PLAYTEST, (id) => void buyItem(id)); },
     setLanguage: (k) => {
       manualLang = true;
       applyLanguage(k);
@@ -381,20 +422,19 @@ async function boot() {
       state.delegate = true;
       save();
       ui.toast(t("msg.delegated"));
-      ui.openMenu(state, { bgm: bgmVol, sfx: sfxVol }, muted, gp.pay.available, DELEGATE_COST);
+      ui.openMenu(state, { bgm: bgmVol, sfx: sfxVol }, muted, DELEGATE_COST);
     },
     toggleDelegate: (on) => { state.delegate = on; save(); },
     startOver: () => {
       fx.clear();
       closeSheet();
-      const hadKb = !!state.konbini, hadTwin = !!state.twin, hadInf = !!state.infBuy, paid = state.delivered.slice();
       state = newGame(nowSec());
-      // the コンビニ was bought with platform coins: starting over keeps the store (fresh Lv1) and the delivery ledger
-      state.delivered = paid;
-      if (hadKb) unlockKonbini(state);
+      // 内容本来就不卖：重开一局照样全都有（便利店回 Lv1，2棟目照旧等 500 层）
+      unlockKonbini(state);
+      unlockTwin(state);
+      buyLounge(state);
+      state.quake.dlc = true;
       view.setKonbini(!!state.konbini, t("kb.name"));
-      if (hadInf) { state.infBuy = true; pinInfinite(state); }   // paid お金無限 stays
-      if (hadTwin) unlockTwin(state);   // paid: held until the new tower 1 reaches 500 floors
       view.setTwinMode(1);
       saveBlocked = false;
       view.resetResidents();
@@ -406,9 +446,6 @@ async function boot() {
     scrollBottom: () => view.scrollToBottom(),
     floorRange: () => ({ lo: view.visibleFloors[0], hi: view.visibleFloors[1], total: view.visibleTower === 2 ? state.floors - MAX_FLOORS : Math.min(state.floors, MAX_FLOORS), scrolling: view.isScrolling }),
     sheetMoved: (open, h) => { view.setSheetHeight(open ? h : 0); view.setSideInset(open ? ui.sidePanelWidth : 0); },
-    shopAvailable: () => gp.pay.available || PLAYTEST,
-    openRow: (row) => openRow(row),
-    buyItem: (id) => void buyItem(id),
     share: () => void share(),
     replayTutorial: () => startTutorial(),
     stormPhase: (phase, shut) => view.setStorm(phase, shut),
@@ -433,7 +470,7 @@ async function boot() {
       lastSubmitted = -1;
       save();
       const m1 = t("dbg.scoreApplied", { n: "¥" + fmtMoney(cap) });
-      void submitScore().then((ok2) => ui.toast(ok2 ? m1 : t("dbg.scorePending"))).catch(() => {});
+      ui.toast(m1);
     },
     debugScore: () => {
 
@@ -442,7 +479,7 @@ async function boot() {
       lastSubmitted = -1;
       save();
       const m1 = t("dbg.scoreApplied", { n: "¥" + fmtMoney(1e18) });
-      void submitScore().then((ok2) => ui.toast(ok2 ? m1 : t("dbg.scorePending"))).catch(() => {});
+      ui.toast(m1);
     },
     adminToggle: (on         ) => {
       state.quake.adminOn = on;
@@ -496,14 +533,12 @@ async function boot() {
         if (!state.infCheat) state.infPrev = state.money;
         state.infCheat = true;
         pinInfinite(state);
-        lastSubmitted = -1;
         void sound?.playCue("fanfare.full", { eventId: eid("infC") });
         buzz("success");
-        const m1 = t("dbg.infOn");
-        void submitScore().then((ok2) => ui.toast(ok2 ? m1 : t("dbg.scorePending"))).catch(() => {});
+        ui.toast(t("dbg.infOn"));
       } else {
         state.infCheat = false;
-        if (!state.infBuy) state.money = Math.min(state.infPrev ?? 0, SCORE_CAP);
+        state.money = Math.min(state.infPrev ?? 0, SCORE_CAP);
         state.infPrev = undefined;
         void sound?.playCue("ui.tap", { eventId: eid("infC") });
         buzz("select");
@@ -646,12 +681,8 @@ async function boot() {
     },
   });
   ui.setAdminPanel(state);
-  document.title = t("title");
-  window.addEventListener("resize", () => { ui.onResize(); });
+  on(window, "resize", () => { ui.onResize(); });
 
-  gp.player.ready.then(({ user }) => {
-    if (user?.locale && !manualLang) applyLanguage(pickLang(user.locale));
-  }).catch(() => {});
 
   function selectRoom(i        ) {
     void sound?.playCue("ui.tap", { eventId: eid("tap") });
@@ -664,35 +695,6 @@ async function boot() {
     view.setSheetHeight(0);
   }
 
-  /** packed rent-first board defined in LEADERBOARD.json (ruleVersion 5); time part always 0 since TA's removal */
-  async function submitScore()                   {
-    const score = packBoardScore(state.total);
-    if (score <= lastSubmitted) return true;
-    const r = await gp.player.submitScore(score).catch(() => null);
-    if (r && typeof r.rank === "number") { rankCache = { rank: r.rank, score: r.best ?? score }; lastSubmitted = score; publishStatus(); return true; }
-    return false;
-  }
-
-  async function openRanking() {
-    await submitScore();
-    const rows = await gp.player.topScores(20, { includeMutual: true }).catch(() => []                      );
-    ui.openRanking(rows.map((r, k) => ({ ...r, rank: r.rank ?? k + 1 })), rankCache);
-  }
-
-  function openRow(row                  ) {
-    if (!row.userId) return;
-    const uid = row.userId;
-    ui.openPlayerMenu(row.name, async () => {
-      ui.openDetails(row.name, row.avatar, row.rank ?? 0, row.score, null);
-      const r = await gp.player.status.get(uid).catch(() => null);
-      const st = r && r.ok ? r.player.status : null;
-      const flat = st ? { ...((st       ).head ?? {}), ...((st       ).stats ?? {}) } : null;
-      ui.openDetails(row.name, row.avatar, row.rank ?? 0, row.score, flat);
-    }, () => {
-      void gp.player.openProfile(uid).then((res) => { if (!res.ok) ui.toast(t("rank.none")); });
-    }, gp.player.profileAvailable === true);
-  }
-
   async function share() {
     const g = (window       ).gp;
     let ok = false;
@@ -703,16 +705,6 @@ async function boot() {
     if (!ok) ui.toast(t("btn.shareFail"));
   }
 
-  // ---- shop: deliver on ok, and on every startup deliver anything paid but never handed over
-  const ITEMS                                                                                                       = [
-    { id: SHOP.lounge.itemId, title: () => t("shop.lounge"), titles: { en: "Sky lounge", zh: "空中休息区", ja: "スカイラウンジ" }, price: SHOP.lounge.price },
-    { id: SHOP.boost.itemId, title: () => t("shop.boost"), titles: { en: "Rush boost", zh: "加速道具", ja: "時短ブースト" }, price: SHOP.boost.price },
-    { id: SHOP.quake.itemId, title: () => t("shop.quake"), titles: { en: "Disaster pack", zh: "灾害包", ja: "災害パック" }, price: SHOP.quake.price },
-    { id: SHOP.konbini.itemId, title: () => t("shop.konbini"), titles: { en: "Convenience store", zh: "便利店", ja: "コンビニ" }, price: SHOP.konbini.price },
-    { id: SHOP.twin.itemId, title: () => t("shop.twin"), titles: { en: "Second tower", zh: "第2栋公寓", ja: "2棟目のマンション" }, price: SHOP.twin.price },
-    { id: SHOP.infMoney.itemId, title: () => t("shop.inf"), titles: { en: "Unlimited money", zh: "无限金钱", ja: "お金無限" }, price: SHOP.infMoney.price },
-    { id: SHOP.set.itemId, title: () => t("shop.set"), titles: { en: "Store + 2nd tower set", zh: "便利店＋第2栋公寓套装", ja: "コンビニ＋2棟目セット" }, price: SHOP.set.price },
-  ];
   /** the 2nd tower has just risen beside the first: frame both, celebrate */
   function twinRose() {
     view.maxFloors = maxFloorsOf(state);
@@ -754,84 +746,6 @@ async function boot() {
     view.scrollToBottom();
     return true;
   }
-  function deliver(itemId        , purchaseId        ) {
-    if (state.delivered.includes(purchaseId)) return;
-    state.delivered.push(purchaseId);
-    if (state.delivered.length > 60) state.delivered.splice(0, state.delivered.length - 60);
-    if (itemId === SHOP.lounge.itemId) {
-      buyLounge(state); view.setLounge(true);
-      fx.play("confetti-burst", { pos: view.roofLocal(state.floors), power: 0.6 });
-      ui.toast(t("msg.lounge"));
-    } else if (itemId === SHOP.quake.itemId) {
-      state.quake.dlc = true;
-      ui.setAdminPanel(state);
-      ui.toast(t("msg.quake"));
-    } else if (itemId === SHOP.konbini.itemId) {
-      openKonbiniStore();
-    } else if (itemId === SHOP.twin.itemId) {
-      openTwin();
-    } else if (itemId === SHOP.infMoney.itemId) {
-      // purchased お金無限: cash only — state.total (the ranked number) is never touched here
-      if (!state.infBuy) {
-        state.infBuy = true;
-        pinInfinite(state);
-        fx.play("confetti-burst", { pos: view.lobbyLocal(1), power: 0.8 });
-        void sound?.playCue("fanfare.full", { eventId: eid("inf") });
-        buzz("success");
-        ui.toast(t("msg.inf"));
-      }
-    } else if (itemId === SHOP.set.itemId) {
-      // bundle: grant whichever part is still missing (each unlock is a no-op when already owned)
-      openKonbiniStore();
-      openTwin();
-    } else if (itemId === SHOP.boost.itemId) {
-      activateBoost(state, nowSec());
-      ui.toast(t("shop.boostDesc"));
-    }
-    save();
-  }
-  let buying = false;
-  async function buyItem(itemId        ) {
-    const item = ITEMS.find((x) => x.id === itemId);
-    if (!item || buying || !gp.pay.available) return;
-    buying = true;
-    const r = await gp.pay.purchase({ itemId: item.id, title: item.title(), titles: item.titles, price: item.price });
-    buying = false;
-    if (r.ok) {
-      deliver(itemId, r.purchaseId);
-      void gp.pay.ack(r.purchaseId);
-      ui.closeModal();
-    } else {
-      const err = (r            ).error;
-      if (err === "disabled" || err === "offline" || err === "bad_request") ui.toast(t("shop.off"));
-    }
-  }
-  async function pendingPurchases() {
-    if (!gp.pay.available) return;
-    const p = await gp.pay.pending().catch(() => null);
-    if (!p || !p.ok) return;
-    for (const item of p.items) { deliver(item.itemId, item.purchaseId); void gp.pay.ack(item.purchaseId); }
-  }
-
-  // ---- public status for the leaderboard details page (ids + numbers only)
-  let statusSent = "";
-  let statusTimer = 0;
-  function publishStatus() {
-    if (!gp.player.user) return;
-    const occ = occupiedCount(state);
-    const view2 = {
-      v: 1,
-      head: { floors: state.floors, rooms: state.rooms.length, pct: Math.round((occ / state.rooms.length) * 100) },
-      stats: { money: Math.floor(state.money), rep: Math.floor(state.rep), total: Math.floor(state.total) },
-    };
-    const json = JSON.stringify({ ...view2, stats: { ...view2.stats, money: Math.round(view2.stats.money / 1000) * 1000, total: Math.round(view2.stats.total / 1000) * 1000 } });
-    if (json === statusSent) return;
-    window.clearTimeout(statusTimer);
-    statusTimer = window.setTimeout(() => {
-      void gp.player.status.set(JSON.parse(json)).then((r) => { if (r.ok) statusSent = json; }).catch(() => {});
-    }, statusSent ? 20000 : 1500);
-  }
-
   // ---------------------------------------------------------------- event → feedback
   function handle(evs            ) {
     for (const e of evs) {
@@ -1091,11 +1005,13 @@ async function boot() {
   app.canvas.addEventListener("wheel", (e) => { e.preventDefault(); if (shift.active) return; view.scrollBy(e.deltaY * 0.6); }, { passive: false });
 
   // ---------------------------------------------------------------- lifecycle
-  document.addEventListener("visibilitychange", () => {
+  on(document, "visibilitychange", () => {
+    if (!alive) return;
     if (document.hidden) save();
     else settleOffline(state, nowSec());
   });
-  window.addEventListener("pagehide", () => {
+  on(window, "pagehide", () => {
+    if (!alive) return;
     save();
     void sound?.dispose();
   });
@@ -1339,7 +1255,7 @@ async function boot() {
   }
   function maybeEventPopup() {
     if (!eventActive() || state.ev1k) return;
-    if (state.tut !== -1) { setTimeout(maybeEventPopup, 4000); return; } // not on top of the tutorial
+    if (state.tut !== -1) { later(maybeEventPopup, 4000); return; } // not on top of the tutorial
     state.ev1k = true;
     save();
     showEventPopup();
@@ -1347,15 +1263,13 @@ async function boot() {
 
   loading.done();
   window.__gpPlayable = true;
-  setTimeout(maybeEventPopup, 1200);
+  later(maybeEventPopup, 1200);
   ui.update(state, nowSec(), 0.016);
   if (state.pendingSec >= 10) ui.toast(t("msg.offline", { n: fmtMoney(pendingAmount(state)) }));
-  void pendingPurchases();
-  void submitScore();
-  publishStatus();
+
 
   // read-only probe hooks
-  window.__debug = {
+  const api = {
     get money() { return state.money; },
     get total() { return state.total; },
     get rep() { return state.rep; },
@@ -1441,19 +1355,16 @@ async function boot() {
     stormIn: (sec        ) => { state.storm.timer = sec; },
     get rubble() { return view.rubbleCount(); },
     get aim() { return targetMode; },
-    /** probe: run the exact purchase-delivery code for the quake DLC (pay API is unavailable in playtest) */
-    grantDlc: () => { deliver(SHOP.quake.itemId, "probe" + Date.now()); },
-    /** probe: run the exact shop-delivery path for the コンビニ */
-    grantKonbini: () => { deliver(SHOP.konbini.itemId, "probe-kb" + Date.now()); },
-    /** probe: run the exact shop-delivery path for the コンビニ＋2棟目 set */
-    grantInf: () => { deliver(SHOP.infMoney.itemId, "probe-inf" + Date.now()); },
+    /** probe: 災害パック（原内购商品，现在进场就有） */
+    grantDlc: () => { state.quake.dlc = true; ui.setAdminPanel(state); },
     get scoreState() { return { money: state.money, total: state.total, infBuy: !!state.infBuy, infCheat: !!state.infCheat, lastSubmitted }; },
-    grantSet: () => { deliver(SHOP.set.itemId, "probe-set" + Date.now()); },
     get konbini() { return state.konbini ? { ...state.konbini, cap: kbCap(state.konbini), inView: view.hasKonbini } : null; },
     get konbiniInView() { return view.hasKonbini; },
     konbiniScreen: () => view.konbiniScreen(),
     get shift() { return shift.snapshot(); },
     startShift: () => startShift(),
+    /** 只读：便利店收银界面上的按钮（截图 / e2e 按 label 点，见 kbshift.js 的 buttons()） */
+    shiftButtons: () => shift.buttons(),
     quakeIn: (sec        ) => { state.quake.quakeIn = sec; },
     get quake() { return { dlc: state.quake.dlc, adminOn: state.quake.adminOn, in: state.quake.quakeIn, warnIn: state.quake.warnIn }; },
     get basement() { return state.basement; },
@@ -1484,6 +1395,47 @@ async function boot() {
     },
     save,
   };
+  window.__debug = api;
+
+  /**
+   * 卸载。**必须能在「刚建好就被调用」时安全执行**（孩子秒切 tab）。
+   * 可重复调用：`alive` 置 false 后所有定时器 / 帧回调都会提前返回。
+   */
+  function destroy() {
+    if (!alive) return;
+    alive = false;
+    try { app.ticker?.stop(); } catch { /* already gone */ }
+    for (const [t2, type, fn, opt] of listeners) {
+      try { t2.removeEventListener(type, fn, opt); } catch { /* ignore */ }
+    }
+    listeners.length = 0;
+    for (const id of timers) clearTimeout(id);
+    timers.clear();
+    try { loading.done(); } catch { /* ignore */ }
+    try { ui.destroy?.(); } catch { /* ignore */ }
+    try { sound?.dispose?.(); } catch { /* ignore */ }
+    try { app.destroy(true, { children: true }); } catch { /* ignore */ }
+    // ★ `app.destroy()` 只销毁 Pixi 的显示对象，**DOM 节点还挂在容器里**：
+    //   canvas、UI 的四层 div、加载页、教学层……实测卸载后还剩 12 个子节点。
+    //   容器是插件的地盘（挂载期间只归它用），所以整块清空。
+    try { appEl.replaceChildren(); } catch { /* ignore */ }
+    try { appEl.classList.remove("mp-root"); } catch { /* ignore */ }
+    if (window.__debug === api) delete window.__debug;
+    delete window.__gpPlayable;
+    delete window.__gpReady;
+  }
+
+  return { api, destroy };
 }
 
-void boot();
+/**
+ * 插件 / 独立网页的**唯一**入口。
+ *
+ * 宿主（`plugin.js`）和 `index.html` 调的是同一个函数，差别全部通过 `opts` 注入：
+ * `mountTo`（容器）/ `store`（存档）/ `asset`（资源前缀）/ `locale` / `chargePlay`。
+ * 返回卸载函数 —— 宿主会 `await` 它。
+ */
+export async function start(opts = {}) {
+  const { destroy } = await boot(opts);
+  return destroy;
+}

@@ -2,6 +2,7 @@
 // It never blocks input — the player performs the real action on the real UI; main.ts decides when a step is done.
 import { C } from "../ui-tokens.js";
 import { NATIVE, ORDER, getLang, t,           } from "../i18n.js";
+import { scopeCss } from "../scope-css.js";
 
                                                                                  
                            
@@ -19,11 +20,11 @@ import { NATIVE, ORDER, getLang, t,           } from "../i18n.js";
  
 
 let CSS_DONE = false;
-function installCss() {
+function installCss(root = ".mp-root") {
   if (CSS_DONE) return;
   CSS_DONE = true;
   const st = document.createElement("style");
-  st.textContent = `
+  st.textContent = scopeCss(`
 .tut-layer{position:absolute;inset:0;pointer-events:none}
 .tut-layer :where(button){font:inherit;cursor:pointer;-webkit-tap-highlight-color:transparent}
 .tut-dim{position:absolute;inset:0;background:rgba(24,32,42,.42)}
@@ -39,7 +40,7 @@ function installCss() {
 .tut-bubble .tf{display:flex;gap:8px;margin-top:10px}
 @keyframes tutPulse{0%{opacity:.9;transform:scale(1)}100%{opacity:0;transform:scale(1.12)}}
 @media (prefers-reduced-motion: reduce){.tut-ring::after{animation:none}}
-`;
+`, root);
   document.head.appendChild(st);
 }
 

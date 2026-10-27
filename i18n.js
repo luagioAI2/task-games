@@ -62,6 +62,7 @@ export const LANGS = {
     "rob.sneakNow": "黒ずくめの男が{n}号室へ忍び込んでいます…あと{n2}秒",
     "rob.lootNow": "{n}号室が荒らされています！あと{n2}秒",
     "rob.report": "今すぐ通報",
+    "rob.reported": "通報しました。特殊部隊が向かっています",
     "rob.reportDesc": "特殊部隊が来て強盗を捕まえます。奪われた分の1.2倍を取り戻します。",
     "rob.escape": "{n}号室が盗難に… ¥{loot} 失い、評判-25",
     "rob.caught": "強盗を確保！ ¥{loot} 取り返して評判+30",
@@ -479,6 +480,7 @@ export const LANGS = {
     "rob.sneakNow": "蒙面男子正在潜入{n}号房间…剩{n2}秒",
     "rob.lootNow": "{n}号房间正在被盗！剩{n2}秒",
     "rob.report": "立即报警",
+    "rob.reported": "已报警，特警正在赶来",
     "rob.reportDesc": "特警组会逮捕强盗，并追回被盗金额的1.2倍。",
     "rob.escape": "{n}号房间遭窃… 损失¥{loot}，口碑-25",
     "rob.caught": "抓住强盗了！追回¥{loot}，口碑+30",
@@ -896,6 +898,7 @@ export const LANGS = {
     "rob.sneakNow": "A masked burglar is sneaking into Room {n}… {n2}s",
     "rob.lootNow": "Room {n} is being looted right now! {n2}s",
     "rob.report": "Call the police now",
+    "rob.reported": "Reported — the squad is on the way",
     "rob.reportDesc": "The squad catches the burglar and returns 1.2x the looted amount.",
     "rob.escape": "Room {n} was robbed… lost ¥{loot}, rep -25",
     "rob.caught": "Burglar caught! Recovered ¥{loot}, rep +30",
@@ -1272,10 +1275,15 @@ export function fontStack(lang      )         {
 let T                         = LANGS[PRIMARY];
 let current       = PRIMARY;
 
+let documentSideEffects = true;
+/** 独立网页要写 `<html lang>`；插件里**绝不能**动宿主页面的属性。 */
+export function setDocumentSideEffects(on        ) {
+  documentSideEffects = !!on;
+}
 export function setLang(k      )       {
   current = k;
   T = LANGS[k];
-  document.documentElement.lang = k;
+  if (documentSideEffects) document.documentElement.lang = k;
 }
 export function getLang()       {
   return current;

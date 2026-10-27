@@ -163,7 +163,28 @@ export class KonbiniShift {
     c.on("pointertap", () => { if (c.enabled) onTap(); });
     c.setOn = (on) => { c.enabled = on; c.alpha = on ? 1 : 0.7; draw(on, false); place(0); c.cursor = on ? "pointer" : "default"; };
     c.setLabel = (s) => { lt.text = s; lt.style.fontSize = size; this.fit(lt, w - 12); };
+    // 只读探针：收银界面整屏是 canvas，没有选择器 —— 截图 / e2e 要按「标签」点
+    // 就必须能问出按钮在哪。写死像素换个视口就废，按比例猜又会被布局夹紧。
+    c.__label = label;
+    (this.btnList ||= []).push(c);
     return c;
+  }
+
+  /** 只读：当前可点按钮的屏幕矩形（不参与任何逻辑） */
+  buttons() {
+    const out = [];
+    for (const c of this.btnList || []) {
+      if (!c || c.destroyed || !c.parent) continue;
+      const p = c.getGlobalPosition();
+      out.push({
+        label: c.__label,
+        x: Math.round(p.x),
+        y: Math.round(p.y),
+        w: Math.round(c.hitArea?.width ?? 0),
+        h: Math.round(c.hitArea?.height ?? 0),
+      });
+    }
+    return out;
   }
           tween(o                , to                                                    , d        , done             ) {
     this.tweens = this.tweens.filter((tw) => tw.o !== o);
