@@ -19,11 +19,19 @@ canvas{display:block;touch-action:none;box-shadow:0 0 40px rgba(60,40,100,.35)}
   }
 }
 </script>
-<script src="https://makeplay.ai/engines/phaser.min.js"></script>
+<script src="./engines/phaser.min.js"></script>
 </head>
 <body>
 <div id="bgfill"></div>
 <div id="game"></div>
-<script type="module" src="game.js"></script>
+<script type="module">
+// ★ 必须在这里显式调 start()：game.js 已经改成 `export async function start(opts)`，
+//   模块体**不再自执行**。忘了这一句的症状是**整页全白、canvas 0、一个错都不报**
+//   （入口压根没跑）。
+import { start } from './game.js';
+// 不传 container ⇒ 用 `#game` + 窗口尺寸，和原版行为完全一致。
+// （传了 container 会被当成插件形态：不改 document.title、不改 <html lang>。）
+start();
+</script>
 </body>
 </html>

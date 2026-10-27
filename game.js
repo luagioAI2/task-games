@@ -1,5 +1,45 @@
+// ★ Phaser 3.90 是 **UMD**，不是 ES 模块：原版靠 `index.html` 里一条普通
+//   `<script src>` 把它挂到 `window.Phaser`。插件里没有那条 script，
+//   所以要把它拉进包 —— 但**不能**用副作用 import。
+//
+//   ★★ 为什么不能副作用 import（2026-10-27 真踩）：Phaser 的 `device` 模块在
+//   **求值那一刻**就读 `window.cordova`，而宿主 `scripts/check-plugin.mjs` 会在
+//   Node 里真 `import()` 一次插件包（硬闸门）⇒ 报 `window is not defined`，
+//   看着像插件坏了。其它十一款用的都是 ES 模块引擎（pixi / three / rapier），
+//   顶层不碰 window，所以只有这一款会红。
+//
+//   `engines/phaser-lazy.js`（由 `scripts/make-phaser-lazy.mjs` 从
+//   `engines/phaser.min.js` 生成）把整段 UMD 包进一个函数，`ensurePhaser()`
+//   调用时才求值 ⇒ Node 里 import 安全，浏览器里行为不变。
+//   `engines/phaser.min.js` 只改了一处：UMD 的 `this` → `globalThis`
+//   （ES 模块顶层 `this` 是 `undefined`，不改会在 `t.Phaser=e()` 那行抛）。
+import { ensurePhaser } from './engines/phaser-lazy.js';
 import { loadSoundSystem } from '@makeplay/sound';
 import { I18N, LANGS } from './i18n.js';
+import { setAssetRoot, assetUrl, assetRoot } from './src/asset.js';
+import { installGp, makeLocalStore } from './src/host.js';
+
+/* ============ 插件注入项（独立网页全是默认值） ============ */
+// 容器尺寸。null = 用 window（网页形态）。插件里按 `mount(container)` 那个盒子量，
+// 否则 canvas 会按整屏算比例、再被 FIT 缩进容器 ⇒ 平板下上下各留一大条黑边。
+let VIEW = null;
+// 插件里不碰宿主的 `document.title` / `<html lang>`。
+let IS_PLUGIN = false;
+// `loadSoundSystem()` 的参数。null = 用默认的 `./sound.manifest.json`（网页形态）。
+let SOUND_OPTS = null;
+// 背景模糊层（原版在 index.html 里；插件里由 start() 现建）。
+let BGFILL = null;
+// 挂到 window/document 上的监听。原版全是匿名函数 ⇒ 卸载摘不掉 ⇒ 二次挂载会叠加。
+let UNBINDS = [];
+// 当前场景。`unmount` 要靠它做最后一次存档 —— `game.scene.getScene('Main')`
+// 在销毁竞态里可能拿到已销毁的实例，直接持有引用更稳。
+let SCENE = null;
+// 世代号：`onCore()` 里有 await，卸载后那次续跑必须自己认出来并退出。
+let GEN = 0;
+function on(target, type, fn, opts) {
+  target.addEventListener(type, fn, opts);
+  UNBINDS.push(() => { try { target.removeEventListener(type, fn, opts); } catch (e) { /* */ } });
+}
 
 /* ============ 常量与数据 ============ */
 let W = 720;
@@ -7,7 +47,8 @@ const LAY = {"body": {"x": 52, "y": 18, "w": 408, "h": 427}, "cheekL": {"x": 68,
 const FLAY = {"body": {"x": 81, "y": 326, "w": 470, "h": 296}, "bodyH": {"x": 81, "y": 326, "w": 470, "h": 296}, "head": {"x": 89, "y": 78, "w": 455, "h": 363}, "headH": {"x": 89, "y": 78, "w": 455, "h": 363}, "headW": {"x": 89, "y": 78, "w": 455, "h": 363}, "headB": {"x": 89, "y": 78, "w": 455, "h": 363}, "earL": {"x": 89, "y": 9, "w": 172, "h": 208}, "earR": {"x": 374, "y": 9, "w": 169, "h": 207}, "pawL": {"x": 184, "y": 520, "w": 141, "h": 99}, "pawR": {"x": 319, "y": 520, "w": 128, "h": 98}, "headT": {"x": 89, "y": 78, "w": 455, "h": 363}, "headTH": {"x": 89, "y": 78, "w": 455, "h": 363}, "_S": 0.62, "_W": 635, "_H": 635};
 const FRONT_PARTS = ['body', 'pawL', 'pawR', 'earL', 'earR', 'bodyH', 'head', 'headH', 'headW', 'headB', 'headT', 'headTH'];
 function calcSize() {
-  const asp = window.innerWidth / Math.max(1, window.innerHeight);
+  const vw = VIEW ? VIEW.w : window.innerWidth, vh = VIEW ? VIEW.h : window.innerHeight;
+  const asp = vw / Math.max(1, vh);
   if (asp <= 720 / 1180) return [720, Math.round(Math.min(1560, Math.max(1180, 720 / asp)))];
   return [Math.round(Math.max(720, Math.min(2400, 1300 * asp))), 1300];
 }
@@ -151,7 +192,13 @@ function saveSettings() {
 }
 function detectLang() {
   const pick = (s) => { s = String(s || '').toLowerCase(); if (s.startsWith('zh')) return 'zh'; if (s.startsWith('ja')) return 'ja'; if (s.startsWith('en')) return 'en'; return null; };
-  return pick(window.gp?.player?.user?.locale) || pick(navigator.language) || 'zh';
+  // ★★ 这个函数在**模块顶层**就会被调用（`let lang = … detectLang()`），而宿主
+  //    `scripts/check-plugin.mjs` 会在 **Node** 里真 `import()` 一次插件包 ——
+  //    直接读 `window.gp` 会抛 `window is not defined`（2026-10-27 真踩）。
+  //    浏览器里两者都在，行为不变；插件形态的语言由 `start()` 的 `ctx.locale` 决定。
+  const gpLocale = typeof window !== 'undefined' ? window.gp?.player?.user?.locale : null;
+  const navLocale = typeof navigator !== 'undefined' ? navigator.language : null;
+  return pick(gpLocale) || pick(navLocale) || 'zh';
 }
 let lang = settings.lang || detectLang();
 const tr = (k, p) => {
@@ -213,7 +260,7 @@ function migrate(d) {
 /* ============ 音频 ============ */
 let sound = null, soundReady = false;
 let soundP = null;
-function startSound() { if (!soundP) soundP = loadSoundSystem().then((s) => { sound = s; applyVolumes(); }).catch(() => {}); return soundP; }
+function startSound() { if (!soundP) soundP = loadSoundSystem(SOUND_OPTS || undefined).then((s) => { sound = s; applyVolumes(); }).catch(() => {}); return soundP; }
 function applyVolumes() {
   try { sound?.settings.setVolumes({ master: 1, music: settings.music ? 1 : 0, sfx: settings.sfx ? 1 : 0 }); } catch (e) { /* */ }
 }
@@ -231,7 +278,14 @@ function sfx(id, o) { if (!soundReady || !settings.sfx) return; try { sound.play
 /* ============ 场景 ============ */
 const PARTS = ['body', 'cheekL', 'cheekR', 'tail', 'heart', 'legL', 'legR'];
 const SCENE_BG = ['bg-garden', 'bg-sea', 'bg-sakura', 'bg-snow'];
-class Main extends Phaser.Scene {
+/* ★ 场景类必须是「用的时候才建」：`extends Phaser.Scene` 的基类在**类定义那一刻**
+   就要取值，而 Phaser 现在要到 `start()` 里 `ensurePhaser()` 之后才存在
+   （原因见文件顶部）。所以整个类体 + 后面那段 `Object.assign(Main.prototype, …)`
+   一起包进 `defineMain()` —— 只多一层作用域，缩进和类体一个字没动。 */
+let Main = null;
+function defineMain() {
+  if (Main) return Main;
+  Main = class Main extends Phaser.Scene {
   constructor() { super('Main'); }
 
   create() {
@@ -241,26 +295,27 @@ class Main extends Phaser.Scene {
     this.state = freshState();
     this.canSave = true;
     this.t = 0;
+    SCENE = this;
     this.cameras.main.setBackgroundColor('#cdbcf0');
     this.makeTextures();
-    document.title = tr('title');
+    if (!IS_PLUGIN) document.title = tr('title');
     this.buildTitle('loading');
     window.__gpReady = true;
     this.input.on('pointerdown', (p, over) => this.onDown(p, over));
     this.input.on('pointermove', (p) => this.onMove(p));
     this.input.on('pointerup', (p) => this.onUp(p));
     this.input.on('wheel', (p, o, dx, dy) => { if (this.mode === 'play' && p.y > this.panelTop) this.scrollTo(this.scrollX - (dy + dx) * 0.8); });
-    window.addEventListener('keydown', () => unlockAudio());
-    window.addEventListener('pointerdown', () => unlockAudio(), { capture: true });
-    document.addEventListener('visibilitychange', () => this.onVis());
-    window.addEventListener('pagehide', () => this.saveNow());
+    on(window, 'keydown', () => unlockAudio());
+    on(window, 'pointerdown', () => unlockAudio(), { capture: true });
+    on(document, 'visibilitychange', () => this.onVis());
+    on(window, 'pagehide', () => this.saveNow());
     if (new URLSearchParams(location.search).has('playtest')) this.installBridge();
     this.startFonts();
     this.loadCore();
   }
   preload() {
     this.H = this.scale.height;
-    const L = this.load; L.setPath('assets/');
+    const L = this.load; L.setPath(assetUrl('assets/'));
     L.image('bgT', `bg-title-${W < this.H ? 'p' : 'l'}.jpg`);
     for (const k of FRONT_PARTS) L.image(`fc0_${k}`, `front/c0/${k}.webp`);
     L.image('mi0', 'misc/0.webp'); L.image('mi5', 'misc/5.webp'); L.image('mi2', 'misc/2.webp');
@@ -423,8 +478,8 @@ class Main extends Phaser.Scene {
   }
   setLang(l, fromSave) {
     lang = l; if (!fromSave) { settings.lang = l; this.langPicked = true; saveSettings(); }
-    document.documentElement.lang = LANGS.find((x) => x.id === l).htmlLang;
-    document.title = tr('title');
+    if (!IS_PLUGIN) document.documentElement.lang = LANGS.find((x) => x.id === l).htmlLang;
+    if (!IS_PLUGIN) document.title = tr('title');
     this.runFonts && this.runFonts();
     this.refreshTexts();
     if (this.cardsC) this.renderCards();
@@ -566,7 +621,8 @@ class Main extends Phaser.Scene {
     for (let k = 1; k * bg.width * s * 0.5 < W / 2 + bg.width * s; k++) for (const d of [-1, 1]) {
       this.add.image(W / 2 + d * k * bg.width * s, bg.y, key).setOrigin(0.5, 0).setScale(s).setFlipX(k % 2 === 1).setDepth(-10000);
     }
-    const f = document.getElementById('bgfill'); if (f) f.style.backgroundImage = `url(assets/${SCENE_BG[this.sceneIdx()]}.jpg)`;
+    const f = BGFILL || document.getElementById('bgfill');
+    if (f) f.style.backgroundImage = `url(${assetUrl(`assets/${SCENE_BG[this.sceneIdx()]}.jpg`)})`;
   }
 
   gy(v) { return lerp(this.yTop, this.yBot, v); }
@@ -1821,6 +1877,18 @@ class Main extends Phaser.Scene {
     globalThis.__MAKEPLAY_PLAYTEST__ = {
       snapshot: () => { const p = this.pets && this.state ? this.pet() : null; return { comp: this.state ? Math.round(this.compRate() * 100) / 100 : null, offSim: this.state ? this.offSim() : null, turnN: this.turnN || 0, minSx: this.minSx, idleSeen: Object.keys(this.idleSeen || {}).join(','), front: !!(this.face && this.face.front), turning: !!(this.face && this.face.turn), nextT: this.face && +this.face.nextT.toFixed(1), modal: !!this.modal, mode: this.mode, hearts: Math.floor(this.state.hearts), run: Math.floor(this.state.run), tapVal: this.tapVal && this.mode !== 'loading' ? this.tapVal() : 0, hps: this.mode !== 'loading' ? this.hps() : 0, tab: this.tab, main: this.state.main, pets: this.state.pets.map((q) => ({ c: q.coat, st: q.stg, b: Math.floor(q.bond), sn: q.sn.join('/') })), pg: this.state.pg, tro: this.state.tro, idle: this.idle && this.idle.cur, hint: !!this.hint, frenzy: this.frenzy, loadPct: this.loadPct, lang, H: this.H, ph: p && this.R ? { x: +this.panelTop } : null, sat: this.state.pets.map((q) => Math.round(q.sat)), meal: this.state.meal, care: this.state.care, fd: { fh: this.fh, fl: this.flying, ch: !!this.ffChew, pat: !!this.ffPat, t: +(this.t||0).toFixed(2), man: this.face && this.face.manual, tm: this.face && this.face.timed }, eat: !!this.eat }; },
       reset: () => { this.resetAll(); },
+      // 测试入口：点标题屏的「开始玩」（canvas 画的，坐标算起来脆，直接调方法更稳）
+      start: () => { this.startPlay(); return this.mode; },
+      // 切底栏 tab（0 升级 / 1 图鉴 / 2 衣橱 / 3 转生 / 4 任务）
+      tab: (i) => { this.setTab(i); return this.tab; },
+      // 当前尺寸（断言「canvas == 容器」时要用）
+      size: () => ({ W: this.scale.width, H: this.scale.height, vw: VIEW ? VIEW.w : window.innerWidth, vh: VIEW ? VIEW.h : window.innerHeight }),
+      // 存档诊断：卸载时到底写没写、被什么挡住
+      save: () => {
+        let rows = -1, err = null;
+        try { this.saveNow(); rows = window.gp?.player?.saves?.list(10)?.length ?? -1; } catch (e) { err = String(e); }
+        return { mode: this.mode, canSave: this.canSave, dirty: this.dirty, rows, err, hasGp: !!window.gp };
+      },
       setSeed: (v) => {
         if (v <= -2e6) { this.fitSheet(-v - 2e6); return; }
         if (v <= -1e6) { /* 试衣间: n = ((((coat*2+front)*14+h)*14+t)*14+n)*14+tail, 各槽 id+1(0=无) */
@@ -2257,7 +2325,7 @@ class Main extends Phaser.Scene {
     return new Promise((res) => {
       const L = this.load, todo = list.filter(([k]) => !this.textures.exists(k));
       if (!todo.length) { res(); return; }
-      L.setPath('assets/');
+      L.setPath(assetUrl('assets/'));
       todo.forEach(([k, p]) => L.image(k, p));
       const pr = (v) => onProgress && onProgress(v);
       L.on('progress', pr);
@@ -2278,24 +2346,35 @@ class Main extends Phaser.Scene {
     return defs.filter(([k]) => need.has(k));
   }
   async onCore(defs) {
+    // ★ 世代号：这个函数里有三处 await，中间宿主完全可能已经把这一份挂载卸载掉了。
+    //   不加守卫的症状是「上一次挂载的 onCore 在场景销毁后继续跑」，走到
+    //   `buildAll()` 时对着已销毁的场景 `this.add.add(...)` ⇒
+    //   `Cannot read properties of null (reading 'add')` —— 看着像插件崩了，
+    //   而且只在「快速切走再回来」时出现。
+    const g = ++GEN;
+    const stale = () => g !== GEN;
     if (new URLSearchParams(location.search).has('hold')) { this.loadPct = 0.55; return; }
     startSound();
     try { await Promise.race([window.gp?.player?.ready, new Promise((r) => setTimeout(r, 4000))]); } catch (e) { /* */ }
     const [st] = await Promise.all([this.bootRead(), Promise.race([loadSettings(), new Promise((r) => setTimeout(r, 3000))])]);
+    if (stale()) return;
     if (this.langPicked) settings.lang = lang; else if (settings.lang && settings.lang !== lang) this.setLang(settings.lang, true);
     applyVolumes();
     this.loadSave(st);
     await this.runLoad(this.extraKeys(defs), (v) => { this.loadPct = 0.85 + 0.15 * v; });
+    if (stale()) return;
     this.loadPct = 1;
     await new Promise((r) => setTimeout(r, 400));
+    if (stale()) return;
     this.buildAll();
     this.mode = 'title';
     this.titleReady();
     window.__gpPlayable = true;
-    window.addEventListener('resize', () => { clearTimeout(this.rt); this.rt = setTimeout(() => this.onResize(), 200); });
+    on(window, 'resize', () => { clearTimeout(this.rt); this.rt = setTimeout(() => { if (!stale()) this.onResize(); }, 200); });
     // 后台懒加载其余资源
     this.later(600, () => {
-      this.runLoad(defs, null).then(() => { this.lazyDone = true; try { this.applyWear(true); } catch (e) {} if (this.cardsC) this.renderCards(); if (this.decorSp) this.decorSp.forEach((d, i) => { if (d && this.textures.exists('de' + i)) { d.im.setTexture('de' + i); d.im.setScale(d.dw / d.im.width); } }); });
+      if (stale()) return;
+      this.runLoad(defs, null).then(() => { if (stale()) return; this.lazyDone = true; try { this.applyWear(true); } catch (e) {} if (this.cardsC) this.renderCards(); if (this.decorSp) this.decorSp.forEach((d, i) => { if (d && this.textures.exists('de' + i)) { d.im.setTexture('de' + i); d.im.setScale(d.dw / d.im.width); } }); });
     });
   }
 
@@ -2849,17 +2928,208 @@ Object.assign(Main.prototype, {
   },
 });
 
+  return Main;
+}
+
 /* ============ 启动 ============ */
-const [W0, H0] = calcSize(); W = W0;
-const q = new URLSearchParams(location.search);
-document.documentElement.lang = LANGS.find((x) => x.id === lang).htmlLang;
-new Phaser.Game({
-  type: q.get('playtest') && q.get('canvas') === '1' ? Phaser.CANVAS : Phaser.AUTO,
-  parent: 'game', width: W0, height: H0, transparent: false,
-  backgroundColor: '#cdbcf0',
-  audio: { noAudio: true },
-  scale: { mode: Phaser.Scale.FIT, autoCenter: Phaser.Scale.CENTER_BOTH },
-  render: { antialias: true, roundPixels: false },
-  input: { activePointers: 3 },
-  scene: [Main],
-});
+/**
+ * 游戏入口。独立网页（`index.html`）和插件（`plugin.js`）调的是**同一个函数**，
+ * 差别全部通过 `opts` 注入 —— 所以玩法代码里没有 `if (isPlugin)` 分支
+ * （那种分支会随版本漂移，而且两种形态永远只有一种被跑到）。
+ *
+ * | | `index.html` | `plugin.js` |
+ * | --- | --- | --- |
+ * | 资源 | 不传（相对文档） | `ctx.assetUrl('')` |
+ * | 音频 | 不传（默认 `./sound.manifest.json`） | `manifestUrl` + `baseUrl`（清单在**包根**） |
+ * | 存档 | 不传（localStorage） | `host.storage` → `makeHostStore()` |
+ * | 容器 | 不传（`#game`） | `mount(container)` 给的那个 |
+ * | 开局收费 | 不传（不收费） | `chargePlay()` |
+ *
+ * 返回值是**卸载函数**。宿主会 `await` 它，而且它必须能在「刚建好就被调用」时安全执行
+ * （孩子秒切 tab）。
+ */
+export async function start(opts = {}) {
+  const container = opts.container || null;
+  const store = opts.store || null;
+  IS_PLUGIN = !!container;
+
+  // ---- 资源根 ----
+  // 插件里是 `<包根>/`；网页里空串 = 相对文档，和原版一模一样。
+  // ★ 漏了这一句的症状：205 张图全 404，报一堆 `Texture key not found`，
+  //   看着像打包坏了。
+  setAssetRoot(typeof opts.assetBase === 'string' ? opts.assetBase : '');
+
+  // ---- 音频 ----
+  // 清单在**包根**（`sound.manifest.json`），不在 `assets/` 里；
+  // 清单里的 `assets/audio/bgm.m4a` 与 `sound.pack` 都相对它解析。
+  // `loadSoundSystem()` 的默认值是 `./sound.manifest.json` —— 相对**文档**，
+  // 在 blob 模块里必然拿不到（症状：整局没音乐，且 0 个 404）。
+  SOUND_OPTS = assetRoot() ? { manifestUrl: assetUrl('sound.manifest.json'), baseUrl: assetRoot() } : null;
+
+  // ---- 存档 ----
+  let st = store;
+  if (!st) {
+    st = makeLocalStore();
+    try { await st.preload(); } catch (e) { console.warn('[corgi] 读本地存档失败', e); }
+  }
+  installGp(st, { locale: opts.locale });
+
+  // ---- 语言 ----
+  // 宿主只有中文。`lang` 在模块导入时已按 navigator 猜过一次（Android WebView
+  // 会跟着系统走，孩子可能看到日文/英文），这里按宿主给的 locale 覆盖。
+  if (opts.locale && !settings.lang) {
+    const p = String(opts.locale).toLowerCase();
+    lang = p.startsWith('ja') ? 'ja' : p.startsWith('en') ? 'en' : 'zh';
+  }
+
+  // ---- 开局收费（只有插件形态会传）----
+  const paid = opts.chargePlay ? await opts.chargePlay() : true;
+  if (!paid) {
+    const gate = document.createElement('div');
+    gate.style.cssText =
+      'position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;'
+      + 'gap:10px;padding:24px;text-align:center;background:#f6e9f7;color:#4a3550;'
+      + "font:900 16px/1.5 system-ui,-apple-system,'PingFang SC','Microsoft YaHei',sans-serif";
+    gate.innerHTML = '<div style="font-size:20px">积分不够啦</div>'
+      + '<div style="font-weight:800;color:#7a6070">去做个任务攒点积分，再回来撸柯基</div>';
+    (container || document.body).appendChild(gate);
+    return function unmountGate() {
+      try { gate.remove(); } catch (e) { /* */ }
+      IS_PLUGIN = false;
+      VIEW = null;
+      SOUND_OPTS = null;
+    };
+  }
+
+  // ---- 尺寸 ----
+  const measure = () => {
+    if (!container) { VIEW = null; return; }
+    const r = container.getBoundingClientRect();
+    VIEW = {
+      w: Math.max(1, Math.round(r.width || container.clientWidth || 1)),
+      h: Math.max(1, Math.round(r.height || container.clientHeight || 1)),
+    };
+  };
+  measure();
+
+  // ---- 挂载点 ----
+  // Phaser 的 `parent` 要一个占满容器的元素。**自己建一个**，卸载时只删自己这个
+  // （绝不 `container.innerHTML = ''` —— 那是宿主的 DOM）。
+  let parentEl = 'game';
+  let own = null;
+  if (container) {
+    own = document.createElement('div');
+    own.style.cssText = 'position:absolute;inset:0;overflow:hidden;isolation:isolate';
+    container.appendChild(own);
+    parentEl = own;
+
+    // 背景模糊层：原版写在 index.html 的 CSS 里，插件里没有这段 CSS。
+    // 不建的话 FIT 留下的黑边是纯色，观感差一截。
+    //
+    // ★★ `z-index:-1` **必须有**，而且 `own` 必须是 `isolation:isolate` 的层叠上下文。
+    //    原因：`#bgfill` 是 `position:absolute`，而 Phaser 插进来的 canvas 是
+    //    **非定位元素** —— 同一个层叠上下文里，定位元素画在非定位元素**之上**
+    //    ⇒ 整块画面被这张模糊背景盖住。症状：截图里只有一片模糊的草地，
+    //    没有柯基也没有按钮，而 canvas 明明在 DOM 里、尺寸也对、0 报错。
+    //    （独立网页里不会出现：那边 `#bgfill` 和 `#game` 都是 `position:fixed`，
+    //      靠 DOM 顺序决定先后。）
+    if (!document.getElementById('bgfill')) {
+      const f = document.createElement('div');
+      f.id = 'bgfill';
+      f.style.cssText =
+        'position:absolute;inset:-30px;pointer-events:none;z-index:-1;'
+        + `background:url(${assetUrl('assets/bg-garden.jpg')}) center/cover;`
+        + 'filter:blur(7px) saturate(1.05);transform:scale(1.05)';
+      own.appendChild(f);
+    }
+  }
+  BGFILL = document.getElementById('bgfill');
+
+  const [W0, H0] = calcSize(); W = W0;
+  const q = new URLSearchParams(location.search);
+  const prevLangAttr = document.documentElement.lang;
+  if (!IS_PLUGIN) document.documentElement.lang = LANGS.find((x) => x.id === lang).htmlLang;
+
+  // ★ 上一次挂载留下的调试钩子必须清掉：留着 `__gpReady` 会让下面的等待条件
+  //   立刻为真 ⇒ 宿主以为「已就绪」，其实 canvas 还没建。
+  try { window.__gpReady = false; } catch (e) { /* */ }
+
+  // ★ 引擎与场景类都在**这里**才建：模块顶层建会让 Node 里 import 插件包时炸
+  //   （Phaser 的 device 模块求值就读 `window`）。见文件顶部注释。
+  ensurePhaser();
+  const MainScene = defineMain();
+
+  const game = new Phaser.Game({
+    type: q.get('playtest') && q.get('canvas') === '1' ? Phaser.CANVAS : Phaser.AUTO,
+    parent: parentEl, width: W0, height: H0, transparent: false,
+    backgroundColor: '#cdbcf0',
+    audio: { noAudio: true },
+    scale: { mode: Phaser.Scale.FIT, autoCenter: Phaser.Scale.CENTER_BOTH },
+    render: { antialias: true, roundPixels: false },
+    input: { activePointers: 3 },
+    scene: [MainScene],
+  });
+
+  // 容器尺寸变化（转屏 / 平板分栏 / 宿主改布局）
+  let ro = null;
+  let rt = 0;
+  let alive = true;
+  if (container && typeof ResizeObserver !== 'undefined') {
+    ro = new ResizeObserver(() => {
+      clearTimeout(rt);
+      rt = setTimeout(() => {
+        // ★ 卸载后必须立刻返回：这个 200ms 定时器很可能在 `destroy()` 之后才到，
+        //   那时 `onResize()` 里的 `buildAll()` 会对着已销毁的场景 `this.add.add(...)`
+        //   ⇒ `Cannot read properties of null (reading 'add')`，看着像插件崩了。
+        if (!alive) return;
+        measure();
+        if (SCENE && SCENE.onResize) SCENE.onResize();
+      }, 200);
+    });
+    ro.observe(container);
+  }
+
+  // 等场景真的建起来再返回：宿主可能立刻切走，`game.destroy()` 撞上半初始化的
+  // 渲染器会抛在宿主那边（看着像「插件崩了」）。
+  //
+  // ★ 判据只能是 `__gpReady`（`create()` 里置位）。别写 `|| game.isBooted === false`
+  //   —— 那个条件在**第一帧之前**就成立，循环会立刻返回，等于没等。
+  await new Promise((res) => {
+    const t = setInterval(() => {
+      if (window.__gpReady) { clearInterval(t); res(); }
+    }, 50);
+    setTimeout(() => { clearInterval(t); res(); }, 15000);
+  });
+
+  return async function unmount() {
+    alive = false;
+    GEN++;              // 让还在 await 里的 onCore 立刻变成「过期」
+    clearTimeout(rt);
+    // ★ 先存档再销毁。游戏自己的自动存档是「每 12 秒且 dirty 才写」，
+    //   直接 destroy 会把最多 12 秒的进度丢掉 —— 而「切个 tab 再回来」正是最常见
+    //   的卸载场景，孩子刚喂的一口饭就没了，而且不报错。
+    //
+    // ★ 用 `SCENE`（`create()` 里记下的实例），不用 `game.scene.getScene('Main')`：
+    //   后者在销毁竞态里会返回**已销毁**的场景，`saveNow()` 静默失败、进度全丢。
+    try {
+      if (SCENE && typeof SCENE.saveNow === 'function') SCENE.saveNow();
+    } catch (e) { console.warn('[corgi] 卸载前存档失败', e); }
+    try { if (ro) ro.disconnect(); } catch (e) { /* */ }
+    try { game.destroy(true); } catch (e) { console.warn('[corgi] 销毁失败', e); }
+    // 摘掉所有 window/document 监听（原版全是匿名函数，不摘就会在下次挂载时叠加）
+    for (const fn of UNBINDS) { try { fn(); } catch (e) { /* */ } }
+    UNBINDS = [];
+    // 调试钩子一起摘
+    try { delete window.__gpReady; } catch (e) { window.__gpReady = undefined; }
+    try { delete window.__gpPlayable; } catch (e) { window.__gpPlayable = undefined; }
+    // `?playtest` 桥也要摘：它持有整个 scene，留着等于把上一次挂载的对象树钉在内存里
+    try { delete globalThis.__MAKEPLAY_PLAYTEST__; } catch (e) { /* */ }
+    // 音频系统是模块级的：只把引用放下，**不要** destroy（下次挂载还要用）
+    sound = null; soundReady = false; soundP = null;
+    if (!IS_PLUGIN) document.documentElement.lang = prevLangAttr;
+    // 只删自己建的那个节点
+    try { if (own && own.parentNode) own.parentNode.removeChild(own); } catch (e) { /* */ }
+    own = null; BGFILL = null; VIEW = null; IS_PLUGIN = false; SOUND_OPTS = null;
+    SCENE = null;
+  };
+}

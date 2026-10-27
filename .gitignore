@@ -9,3 +9,6 @@ node_modules/
 
 # smoke.mjs 的调试截图（临时，别当商城截图用）
 shots/smoke-*.png
+
+# `_patch.py` 打补丁前的原文备份（= `_originals/` 里那份，可重生成）
+_src-backup/
