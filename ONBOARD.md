@@ -10,7 +10,7 @@
 - 玩法：60 秒抽卡构筑卡组（gacha 三选一）→ 6 关卡牌战斗（能量 / 格挡 / 敌人意图）→ 通关回血进下一关
 - 经济：**C 型 / `chill`** —— 每开一局 **10 积分**，不产出任何宿主资源
 - 开始：2026-10-27 11:10
-- 当前：步骤 8（五层验收）进行中
+- 当前：**已接入完成**（2026-10-27 收工）。两款仓库都已提交，`git status` 干净。
 
 ## 步骤表
 
@@ -23,9 +23,9 @@
 | 4 | 改造（去在线榜/分享 + 插件化 + 经济） | ✅ | `_patch.py` 26 个锚点各命中 1 次；`submitScore`/`onShare`/`captureShare`/`shareBlob`/`player.ready` 全 0 |
 | 5 | 打包 | ✅ | `dist-plugin/deckrush.plugin.mjs` 4230 KB；裸说明符 0 · 动态 import 0 · 四个引擎全内联 |
 | 6 | 落库（五处登记） | ✅ | `install-to-host.mjs` → 11 款；`localGames.ts` 里 `deckrush v1.0.0 50f4b49e5c9e…` |
-| 7 | 商城详情（文案 + 4 张图） | 🔄 | `storefront.ts` 已写（`tint: berry` / `chill` / 4 张 shots）；`PLAN` 已加；**拍图重做中**（第一版 2/4 张不对，见「事故」） |
-| 8 | 五层验收 | 🔄 | 第 1 层 ✅（3 条提示，均确认无问题）· 第 3 层 ✅ 假宿主 30 条全绿 · 第 2/4/5 层待跑 |
-| 9 | 提交（两个仓库） | ⬜ | 两边 `git status` 干净 |
+| 7 | 商城详情（文案 + 4 张图） | ✅ | `tint: berry` / `chill` / 4 张 shots 各配说明；`PLAN` 一行；出图 `1.webp 28.2 / 2.webp 47.4 / 3.webp 50.5 / 4.webp 23.3 KB`；**4 张全部人工看过**（第一版 2/4 张不对，见「事故」） |
+| 8 | 五层验收 | ✅ | ① 静态 ✅（3 条提示，逐条确认无问题）② `lint` 0 · `test` **774/774** · `build` 成功 ③ 假宿主 **30/30** ④ e2e 手机 390×844 **全绿** + 平板 672×966 **全绿**（容器高 == 父容器 966）⑤ 详情页 11 款走查全绿，deckrush 图标/图/说明看过 |
+| 9 | 提交（两个仓库） | ✅ | 游戏库 `14409b0`（35 个文件）· 宿主 `9155c6e`（73 个文件）· 两边 `git status` 空 · 提交后重跑 `check:registry` 仍「四处登记一致」· 库里的 blob 字节与磁盘逐字节相同 |
 
 ## 侦察结论（步骤 0，2026-10-27）
 
@@ -72,16 +72,36 @@
 
 ## 下次从这继续
 
+**本款已收工。** 只有改动本款时才需要重跑下面这套（顺序别换：先 build 再起服务，
+否则 e2e 验的是旧构建）。
+
 ```bash
 cd /e/plan/test25/task-games/deckrush
-CODEBUDDY_SAFE_DELETE_ENABLED=0 node scripts/build-plugin.mjs
-node scripts/mount-test.mjs --port 4412
+CODEBUDDY_SAFE_DELETE_ENABLED=0 node scripts/build-plugin.mjs     # 改过源码就得重打
+node scripts/mount-test.mjs --port 4412                            # 假宿主 30 条
 
 cd ../../kid-quest-farm-2d
-CODEBUDDY_SAFE_DELETE_ENABLED=0 npx vite preview --port 4394 --strictPort   # 后台跑
+CODEBUDDY_SAFE_DELETE_ENABLED=0 npx vite preview --port 4394 --strictPort   # 必须后台跑
 node scripts/e2e-deckrush.mjs http://127.0.0.1:4394/ phone
 node scripts/e2e-deckrush.mjs http://127.0.0.1:4394/ tablet
+npm run check:registry
 ```
+
+> 起完服务先确认「服务的是不是我的构建」：`curl` 拿到的 `dist/assets/index-*.js`
+> 文件名要和 `ls dist/assets` 一致。端口被别人占着时 `--strictPort` 绑不上，
+> 但 `curl` 照样 200 —— 整套 e2e 会跑在**别人的 App** 上。
+
+**接下一款新游戏**：不要从头摸索，照抄这四份（都是本款踩完坑的终版）：
+
+| 抄哪份 | 干什么 |
+| --- | --- |
+| `scripts/build-plugin.mjs` | 引擎别名 + 裸说明符/动态 import/导出检查，改 `GAME_ID` 和引擎清单即可 |
+| `scripts/mount-test.mjs` | 假宿主 8 组断言（含跨挂载持久化、CSS 作用域） |
+| `scripts/capture.mjs` | 4 张商城图 + `waitIdle` 等动画收尾 |
+| `plugin.js` | manifest / 容器定位补丁 / `ctx.assetUrl('')` / 收费点 |
+
+流程与判据在 `kid-quest-farm-2d/docs/game-onboarding.md`；自动化在 skill
+`scrape-game-into-farm`。
 
 ## 环境坑
 
