@@ -7,5 +7,8 @@ dist-plugin/
 node_modules/
 *.log
 
-# smoke.mjs 的调试截图（临时，别当商城截图用）
+# smoke.mjs / 探针的调试截图（临时，别当商城截图用）
 shots/smoke-*.png
+
+# 一次性探针脚本（`_probe.mjs` 这类）。要留的进 scripts/ 正常命名。
+scripts/_*

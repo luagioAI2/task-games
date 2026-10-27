@@ -15,4 +15,10 @@ self.__mpMoment = function (type, score) {
     "@makeplay/display": "./runtime/display-1.js"
   }
 }
-</script></head><body><div id="app" data-mp-stage data-mp-hud="canvas"></div><script type="module" src="./game.js"></script></body></html>
+</script></head><body><div id="app" data-mp-stage data-mp-hud="canvas"></div><script type="module">
+  // 独立网页入口：和插件调的是**同一个** start()，只是不传 assetBase / store / chargePlay。
+  // ⚠️ 这一行不能省：`game.js` 改成 `export async function start()` 之后模块体不再自执行，
+  //    忘了调它 ⇒ 页面全白、canvas 0、**一个错都不报**（模块本身加载成功了）。
+  import { start } from './game.js'
+  start({ container: document.getElementById('app') }).catch((e) => console.error('start failed', e))
+</script></body></html>

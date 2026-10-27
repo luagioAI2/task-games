@@ -1,13 +1,18 @@
 // スクリーンUI（DOM）— 積んでミーヤ
 // 世界の壁画プレートをCSSの「ザグ板」で再現する。色トークンはUI_CONTRACT.md §1 と一致。
+import { scopeCss } from "./src/scope-css.js";
+import { assetUrl as A } from "./src/asset.js";
 
+// ★ 图标也走 assetBase（插件在 blob: 里跑，相对路径会 404）
+//   `A()` 必须在**调用时**才求值 —— 模块顶层那会儿 `setAssetBase()` 还没跑。
 const ICONS = {
-  trophy: "assets/lib/kenney-game-icons/icons/leaderboardsComplex.png",
-  pause: "assets/lib/kenney-game-icons/icons/pause.png",
-  audioOn: "assets/lib/kenney-game-icons/icons/audioOn.png",
-  audioOff: "assets/lib/kenney-game-icons/icons/audioOff.png",
-  close: "assets/lib/kenney-game-icons/icons/buttonX.png",
+  trophy: "assets/lib/kenney-game-icons/icons/leaderboardsComplex.webp",
+  pause: "assets/lib/kenney-game-icons/icons/pause.webp",
+  audioOn: "assets/lib/kenney-game-icons/icons/audioOn.webp",
+  audioOff: "assets/lib/kenney-game-icons/icons/audioOff.webp",
+  close: "assets/lib/kenney-game-icons/icons/buttonX.webp",
 };
+const icon = (k) => A(ICONS[k]);
 
                           
                
@@ -208,19 +213,27 @@ function el(tag        , cls         , html         )              {
 
 export function createUI(a       ) {
   api = a;
+  let disposed = false;
+  let gameOverTimer = 0;
   try {
     const g      = globalThis       ;
     if (g.gp?.fonts?.use) {
       g.gp.fonts.use({ display: "smiley-sans/SmileySans-Oblique.woff2" });
     } else {
-      const fontUrl = g.gp?.fonts?.url?.("smiley-sans/SmileySans-Oblique.woff2") ?? "https://static.makeplay.ai/fonts/v1/smiley-sans/SmileySans-Oblique.woff2";
+      // `src/host.js` 只给了 `fonts.url`（指向包内 assets/fonts/）⇒ 走这条分支：
+      // 字体随包离线加载，不依赖 static.makeplay.ai。
+      const fontUrl = g.gp?.fonts?.url?.("smiley-sans/SmileySans-Oblique.woff2") ?? A("assets/fonts/smiley-sans/SmileySans-Oblique.woff2");
       const f = new FontFace("SmileySans", `url("${fontUrl}")`);
-      void f.load().then(() => document.fonts.add(f)).catch(() => {});
+      void f.load().then(() => document.fonts.add(f)).catch(() => { /* 回落到系统字体 */ });
     }
   } catch { /* システムスタックにフォールバック */ }
-  const host = document.getElementById("app") ;
+  // ★ 根节点由外部传入（插件给的是宿主容器）。写死 `#app` 的话插件里拿到 null。
+  const host = api.container ?? document.getElementById("app");
   const style = document.createElement("style");
-  style.textContent = css;
+  // ★★ 必须收进根选择器：这份样式表里有 `.btn` / `.screen` / `.hud` / `.plate`
+  //    这类通用类名，裸挂在 `document.head` 上会**把宿主自己的界面改掉**，
+  //    而且切走不卸载就永久留着（未分层样式胜过 Tailwind 的 @layer utilities）。
+  style.textContent = scopeCss(css, ".uirt");
   document.head.appendChild(style);
 
   root = document.createElement("div");
@@ -241,20 +254,20 @@ export function createUI(a       ) {
   root.appendChild(hud);
 
   const btnPause = el("button", "cornerbtn left")                     ;
-  btnPause.innerHTML = `<img src="${ICONS.pause}" alt="">`;
+  btnPause.innerHTML = `<img src="${icon("pause")}" alt="">`;
   btnPause.setAttribute("aria-label", "pause");
   btnPause.addEventListener("pointerdown", ev => { ev.stopPropagation(); api.playTap(); api.pauseGame(); show("pause"); });
   hud.appendChild(btnPause);
 
   const btnSound = el("button", "cornerbtn right")                     ;
   const soundImg = document.createElement("img");
-  soundImg.src = ICONS.audioOn;
+  soundImg.src = icon("audioOn");
   btnSound.appendChild(soundImg);
   btnSound.setAttribute("aria-label", "sound");
   btnSound.addEventListener("pointerdown", ev => {
     ev.stopPropagation();
     const muted = api.toggleMute();
-    soundImg.src = muted ? ICONS.audioOff : ICONS.audioOn;
+    soundImg.src = muted ? icon("audioOff") : icon("audioOn");
     api.playTap();
   });
   hud.appendChild(btnSound);
@@ -296,25 +309,12 @@ export function createUI(a       ) {
       <div class="best-line"><span data-t="best"></span>: <b id="resBest">0</b></div>
       <div class="btnrow">
         <button class="btn accent" data-act="restart" data-t="restart"></button>
-        <button class="btn rank" data-act="ranking" data-t="ranking"></button>
         <button class="btn light" data-act="home" data-t="home"></button>
       </div>
     </div>
     <div class="langrow" data-langrow></div>
   `;
   root.appendChild(results);
-
-  // ---------- Ranking ----------
-  const ranking = el("div", "screen ranking")                  ;
-  ranking.innerHTML = `
-    <div class="rank-head">
-      <div class="rank-title" data-t="ranking"></div>
-      <button class="rank-close" id="btnRankClose"><img src="${ICONS.close}" alt=""></button>
-    </div>
-    <div class="rank-wrap"><div class="rank-list" data-mp-scroll id="rankList"></div></div>
-    <div></div>
-  `;
-  root.appendChild(ranking);
 
   // ---------- Pause ----------
   const pause = el("div", "screen pause")                  ;
@@ -334,8 +334,9 @@ export function createUI(a       ) {
 
   const muteRow = pause.querySelector("#btnMuteRow")                     ;
 
-  const screens                              = { title, results, ranking, pause };
-  let returnTo                       = "title";
+  // ★ 排行榜整块删掉了：原版的 `topScores` / `openProfile` 走的是 MakePlay 的账号体系，
+  //   宿主里没有账号、没有云存档 ⇒ 留着就是「点了必然空列表」的按钮。
+  const screens                              = { title, results, pause };
 
   function show(name                               ) {
     for (const k of Object.keys(screens)) screens[k].classList.remove("on");
@@ -344,17 +345,13 @@ export function createUI(a       ) {
     banner.classList.remove("run");
     if (name === "game") {
       uiMode = "game";
-      returnFromRankingContinue();
       return;
     }
     (screens       )[name].classList.add("on");
     uiMode = name       ;
     if (name === "title") buildTitleButtons();
-    if (name === "ranking") void fillRanking();
     if (name === "pause") refreshMuteRow();
   }
-
-  function returnFromRankingContinue() { /* no-op: ランキングから戻ったとき */ }
 
   // 言語切替ボタン（ネイティブ名で直接選択）
   function buildLangRows() {
@@ -388,8 +385,18 @@ export function createUI(a       ) {
       if (T[k]) (n               ).textContent = T[k];
     });
     updateHud();
-    if (uiMode === "ranking") void fillRanking();
   }
+
+  /**
+   * 开局按钮 —— 先等收费闸门（`api.startNewRun` / `api.restartRun` 返回 false 就停在原界面）。
+   * ★ 不能「先 show("game") 再扣分」：扣不到的时候玩家已经站在游戏里了。
+   */
+  const beginAndShow = async (fn) => {
+    const ok = await fn();
+    if (ok === false) return;
+    show("game");
+    updateHud();
+  };
 
   function buildTitleButtons() {
     const cont = title.querySelector("#titleBtns")               ;
@@ -401,16 +408,13 @@ export function createUI(a       ) {
       b.addEventListener("pointerdown", ev => { ev.stopPropagation(); api.playTap(); api.continueRun(); show("game"); updateHud(); });
       cont.appendChild(b);
       const b2 = makeBtn(T.play, "btn accent");
-      b2.addEventListener("pointerdown", ev => { ev.stopPropagation(); api.playTap(); api.startNewRun(); show("game"); updateHud(); });
+      b2.addEventListener("pointerdown", ev => { ev.stopPropagation(); api.playTap(); void beginAndShow(api.startNewRun); });
       cont.appendChild(b2);
     } else {
       const b = makeBtn(T.play, "btn accent");
-      b.addEventListener("pointerdown", ev => { ev.stopPropagation(); api.playTap(); api.startNewRun(); show("game"); updateHud(); });
+      b.addEventListener("pointerdown", ev => { ev.stopPropagation(); api.playTap(); void beginAndShow(api.startNewRun); });
       cont.appendChild(b);
     }
-    const b3 = makeBtn(T.ranking, "btn rank");
-    b3.addEventListener("pointerdown", ev => { ev.stopPropagation(); api.playTap(); returnTo = "title"; show("ranking"); });
-    cont.appendChild(b3);
   }
   function makeBtn(label        , cls        ) {
     const b = el("button", cls, label)                     ;
@@ -425,47 +429,9 @@ export function createUI(a       ) {
   muteRow.addEventListener("pointerdown", ev => {
     ev.stopPropagation();
     const muted = api.toggleMute();
-    soundImg.src = muted ? ICONS.audioOff : ICONS.audioOn;
+    soundImg.src = muted ? icon("audioOff") : icon("audioOn");
     api.playTap();
     refreshMuteRow();
-  });
-
-  async function fillRanking() {
-    const list = ranking.querySelector("#rankList")               ;
-    const T = api.T();
-    list.innerHTML = `<div class="rank-empty">…</div>`;
-    const rows = await api.topScores();
-    list.innerHTML = "";
-    if (!rows.length) {
-      list.appendChild(el("div", "rank-empty", T.guest));
-      return;
-    }
-    rows.forEach((r     , i        ) => {
-      const row = el("button", "row" + (r.isMe ? " me" : ""))                     ;
-      const rankNo = typeof r.rank === "number" ? r.rank : i + 1;
-      row.innerHTML = `
-        <span class="rk">${rankNo}</span>
-        <img class="av" src="${r.avatar || ""}" alt="" onerror="this.style.visibility='hidden'">
-        <span class="nn">${r.isMe ? T.rankYou : (r.name || T.guest)}</span>
-        ${r.mutual === true ? '<span class="mutual">⇄</span>' : ""}
-        <span class="sc">${r.score}</span>`;
-      if (r.userId) {
-        row.addEventListener("pointerdown", ev => { ev.stopPropagation(); });
-        row.addEventListener("click", ev => {
-          ev.stopPropagation();
-          api.openProfile(r.userId);
-        });
-      } else {
-        row.disabled = true;
-      }
-      list.appendChild(row);
-    });
-  }
-
-  (ranking.querySelector("#btnRankClose")                     ).addEventListener("pointerdown", ev => {
-    ev.stopPropagation();
-    api.playTap();
-    show(returnTo);
   });
 
   // 結果画面ボタン
@@ -475,8 +441,7 @@ export function createUI(a       ) {
     b.addEventListener("pointerdown", ev => {
       ev.stopPropagation();
       api.playTap();
-      if (act === "restart") { api.restartRun(); show("game"); updateHud(); }
-      if (act === "ranking") { returnTo = "results"; show("ranking"); }
+      if (act === "restart") { void beginAndShow(api.restartRun); }
       if (act === "home") { api.home(); show("title"); }
     });
   });
@@ -488,7 +453,7 @@ export function createUI(a       ) {
       ev.stopPropagation();
       api.playTap();
       if (act === "resume") { api.resumeGame(); show("game"); }
-      if (act === "restart") { api.restartRun(); show("game"); updateHud(); }
+      if (act === "restart") { void beginAndShow(api.restartRun); }
       if (act === "home") { api.home(); show("title"); }
     });
   });
@@ -522,11 +487,22 @@ export function createUI(a       ) {
       (results.querySelector("#resScore")               ).textContent = String(st.score);
       (results.querySelector("#resBest")               ).textContent = String(st.best);
       (results.querySelector("#newBestBadge")               ).style.display = isNewBest ? "" : "none";
-      setTimeout(() => {
+      // ★ 这个 750ms 是「让玩家看完塔倒」的延时。卸载后它还会响一次，
+      //   那时 `fx` / `app` 已经销毁 ⇒ 必须记住 timer 并在 destroy 里清掉。
+      gameOverTimer = setTimeout(() => {
+        gameOverTimer = 0;
+        if (disposed) return;
         if (api.getState().mode === 2) { show("results"); if (isNewBest) api.fxConfetti(); }
       }, 750);
     },
     uiMode: () => uiMode,
+    /** 卸载：摘掉 head 里的样式表与容器里的 DOM，否则宿主的 `.btn` 会一直被这份样式影响 */
+    destroy() {
+      disposed = true;
+      if (gameOverTimer) { clearTimeout(gameOverTimer); gameOverTimer = 0; }
+      try { style.remove(); } catch { /* 已被移除 */ }
+      try { root.remove(); } catch { /* 已被移除 */ }
+    },
   };
 
   buildLangRows();

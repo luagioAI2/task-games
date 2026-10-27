@@ -5,6 +5,48 @@ import { loadSoundSystem } from "@makeplay/sound";
                                                            
 import { LANGS, PRIMARY, pickLang,              } from "./i18n.js";
 import { createUI, uiCanDrop } from "./ui.js";
+import { setAssetBase, assetUrl as A } from "./src/asset.js";
+import { makeStore, makeLocalStore, installGp } from "./src/host.js";
+
+/**
+ * 入口 —— 独立网页（`index.html`）和插件（`plugin.js`）调**同一个函数**，
+ * 差别全部通过 `opts` 注入 ⇒ `game.js` 里没有任何 `if (isPlugin)` 分支。
+ *
+ * | opts | 谁传 | 干什么 |
+ * | --- | --- | --- |
+ * | `container` | 插件 | 挂载根节点（默认 `#app`） |
+ * | `assetBase` | 插件 | `ctx.assetUrl('')`；`blob:` 里相对路径会全部 404 |
+ * | `store` | 插件 | 宿主 `storage` 适配出来的同步 store |
+ * | `chargePlay` | 插件 | 开局扣积分；返回 false 就不进对局 |
+ *
+ * 返回**卸载函数**：摘监听 / 销毁 Pixi / 清容器 / 删调试钩子。
+ *
+ * ★★ 整段游戏状态都写在函数体里（不是模块顶层）⇒ 每次挂载都是干净的一份。
+ *    宿主 dev 下 StrictMode 会双挂载，模块级单例会让第二次挂载拿到已被销毁的对象。
+ */
+export async function start(opts = {}) {
+const container = opts.container ?? document.getElementById("app");
+const store = opts.store ?? makeLocalStore("stackmeow:");
+setAssetBase(opts.assetBase ?? "");
+const chargePlay = typeof opts.chargePlay === "function" ? opts.chargePlay : async () => true;
+
+// 存档先 preload：下面 `boot()` 读的就是这份缓存（不 await 的话读到的永远是空档）
+try {
+  await store.preload();
+} catch (e) {
+  console.warn("[stackmeow] 读存档失败，按新档开始", e);
+}
+installGp(store, opts.assetBase ?? "");
+
+let alive = true;
+const listeners = [];
+/** 只在这一个地方注册 window 监听，卸载时一次摘干净 */
+const on = (target, type, fn, opt) => {
+  const wrapped = (ev) => { if (alive) fn(ev); };
+  target.addEventListener(type, wrapped, opt);
+  listeners.push(() => target.removeEventListener(type, wrapped, opt));
+  return wrapped;
+};
 
 // ---------- 言語 ----------
 let T = LANGS[pickLang(navigator.language)];
@@ -12,11 +54,9 @@ let manuallySelectedLanguage = false;
 const setLang = (k         , manual = false) => {
   if (manual) manuallySelectedLanguage = true;
   T = LANGS[k];
-  document.documentElement.lang = k;
-  document.title = T.title;
+  // ★ 不写 `document.documentElement.lang` / `document.title`：宿主页面的
+  //   lang 与标题不是这个插件的东西，改了切走也不会还原。
 };
-document.documentElement.lang = pickLang(navigator.language);
-document.title = T.title;
 
 // ---------- 定数（世界単位 = レーン幅720px基準の論理ピクセル） ----------
 const LANE_W = 720;
@@ -25,8 +65,8 @@ const BASE_W = LANE_W * 0.7; // 504
 const PERFECT_TOL = 6;
 const SPAWN_GAP = 300;
 const GRAVITY = 4300;
-const BLOCK_ASSETS = ["assets/blocks/block-pink.png", "assets/blocks/block-yellow.png", "assets/blocks/block-teal.png", "assets/blocks/block-purple.png"];
-const BG_ASSETS = ["assets/bg/bg-dusk-pink.png", "assets/bg/bg-teal-city.png", "assets/bg/bg-night-purple.png"];
+const BLOCK_ASSETS = ["assets/blocks/block-pink.webp", "assets/blocks/block-yellow.webp", "assets/blocks/block-teal.webp", "assets/blocks/block-purple.webp"];
+const BG_ASSETS = ["assets/bg/bg-dusk-pink.webp", "assets/bg/bg-teal-city.webp", "assets/bg/bg-night-purple.webp"];
 const INK = 0x14110f;
 
 // ---------- 状態 ----------
@@ -48,8 +88,8 @@ let newBestThisRun = false;
 const debrisList           = [];
 
 // ---------- Pixi セットアップ ----------
-const host = document.getElementById("app") ;
 let app                  ;
+let displayHandle                      = null; // mountDisplay 的 handle，卸载时 dispose
 let fx                                          ;
 let sound                  ;
 let impulse = { offsetX: 0, offsetY: 0, roll: 0, fovPunch: 0 };
@@ -62,12 +102,13 @@ const moment = (type        , value         ) => {
   else window.dispatchEvent(new CustomEvent("mp:moment", { detail: { type, score: value } }));
 };
 // サウンドは起動直後に読み込み開始（__mpSound 登録を ready 前に間に合わせる）
-const soundPromise = loadSoundSystem({ manifestUrl: "./sound.manifest.json" });
+// ★ 清单路径必须过 A()：`blob:` 模块里 `./sound.manifest.json` 会以 blob 为基准 ⇒ 404
+const soundPromise = loadSoundSystem({ manifestUrl: A("sound.manifest.json") });
 
 const worldView = new PIXI.Container();   // レーン世界（カメラ変換の対象）
 const bgLayer = new PIXI.Container();     // 画面いっぱいの背景層
 const worldFx = new PIXI.Container();     // ワールドFX層（worldView内）
-const fxScreen = new PIXI.Container();    // 画面FX層
+let fxScreen = new PIXI.Container();      // 画面FX層（app.stage 直下・毎マウント再生成）
 const floatingTexts = new PIXI.Container(); // 世界内のフローティングテキスト
 
 let viewScale = 1;
@@ -451,6 +492,19 @@ function resetToTitle() {
   paused = false;
 }
 
+/**
+ * 「开一局」的唯一入口 —— 先扣积分，扣不到就停在原界面。
+ *
+ * 收费点选在这里（而不是 `mount()` 进场）是因为这款有清晰的**一局**：
+ * 一块块往上堆，掉光就是结算，结算页有「再来一次」。每局都收，不设宽限期。
+ * `resetToTitle()` 里的 `restartRun()` **不走这里** —— 回标题不是新的一局。
+ */
+async function beginRun() {
+  if (!(await chargePlay())) return false;
+  restartRun();
+  return true;
+}
+
 // 保存データからランを復元
 function restoreRun(save     )          {
   try {
@@ -588,19 +642,26 @@ function frame(dtReal        ) {
 // ---------- ブート ----------
 async function boot() {
   app = new PIXI.Application();
-  await app.init({ background: 0x23203c, resizeTo: host, autoDensity: true, antialias: true });
+  await app.init({ background: 0x23203c, resizeTo: container, autoDensity: true, antialias: true });
   app.canvas.setAttribute("data-mp-layer", "");
   (app.canvas.style                       ).position = "absolute";
-  host.appendChild(app.canvas);
+  container.appendChild(app.canvas);
 
   const display = mountDisplay({
-    orientation: "portrait",
+    // ★★ 必须给 `host`：不给的话 `mountDisplay` 量的是 `#app` / `document.body`
+    //    （整个视口）⇒ canvas 比容器大，超出的部分看得见点不到，而控制台干净。
+    host: container,
+    // ★ 原版声明 `portrait`：横屏时它会往 `document.body` 插一张 fixed 全屏
+    //   「请旋转屏幕」，在插件里等于盖住宿主的顶栏和底栏。容器本身就是竖的，
+    //   这里退成 `both`（游戏自己按 `Math.min(w/720, h/1280)` 缩放，不依赖声明）。
+    orientation: "both",
     onResize: () => {
       layoutBg();
       stageEvent();
     },
   });
   display.attachPixi(app);
+  displayHandle = display;
 
   // レイヤー順
   app.stage.addChild(bgLayer);
@@ -632,8 +693,13 @@ async function boot() {
   });
 
   // アセット読み込み（進捗は実数）
+  // ★ `{alias, src}` 形式：`src` 过 A() 拿到带 assetBase 的绝对地址，
+  //   alias 仍是原来的相对键 ⇒ 下面 `loaded[u]` 照旧按相对键取。
   const files = [...BLOCK_ASSETS, ...BG_ASSETS, "assets/blocks/index.json"];
-  const loaded = await PIXI.Assets.load(files, p => setLoadProgress(p));
+  const loaded = await PIXI.Assets.load(
+    files.map((k) => ({ alias: k, src: A(k) })),
+    p => setLoadProgress(p),
+  );
   blockTextures = BLOCK_ASSETS.map(u => loaded[u]                );
   bgTextures = BG_ASSETS.map(u => loaded[u]                );
   blockMeta = loaded["assets/blocks/index.json"]       ;
@@ -684,13 +750,15 @@ async function boot() {
 
   // ---- スクリーンUI ----
   uiHooks = createUI({
+    container,
     T: () => T,
     langKey: () => (Object.keys(LANGS)             ).find(k => LANGS[k] === T) ?? PRIMARY,
     setLang: (k        ) => setLang(k           , true),
     getState: () => ({ mode, score, best, level: levelNow(), combo, muted, hasResume, newBest: false, stacked }),
-    startNewRun: () => restartRun(),
+    // ★ 三个入口都是「新的一局」⇒ 都要过收费闸门；「继续」是接着上一局，不收费。
+    startNewRun: () => beginRun(),
     continueRun: () => { const okR = restoreRun(gp.player.saves.latestSync); if (!okR) restartRun(); },
-    restartRun: () => restartRun(),
+    restartRun: () => beginRun(),
     home: () => resetToTitle(),
     pauseGame: () => { if (mode !== GameMode.Playing) return; paused = true; void sound.setHold("pause-menu", true); },
     resumeGame: () => { paused = false; void sound.setHold("pause-menu", false); },
@@ -710,28 +778,29 @@ async function boot() {
   loadRoot.destroy();
   uiHooks.showTitle();
   void sound.settings.setMuted(muted);
-  window.__gpPlayable = true;
 
-  window.addEventListener("pointerdown", () => onTapAny());
-  window.addEventListener("keydown", e => {
+  on(window, "pointerdown", () => onTapAny());
+  on(window, "keydown", e => {
     if (e.code === "Space" || e.code === "Enter") onTapAny();
   });
+  on(window, "pagehide", () => { void sound?.dispose(); });
 }
 
-window.addEventListener("pagehide", () => { void sound?.dispose(); }, { once: true });
-
-// テスト用デバッグ窓口（出荷バイナリにも影響なし）
-(window       ).__debug = {
+// テスト用デバッグ窓口（只读 + 少量注入，出荷バイナリにも影響なし）
+// ★ 卸载时必须删：留着 `ready: true` 会骗过下一次「已就绪」判断。
+const debugBridge = {
+  ready: true,
+  state: () => ({ mode, score, best, level: levelNow(), combo, stacked, paused, ui: uiHooks?.uiMode?.() }),
   get score() { return score; },
   get stacked() { return stacked; },
   get level() { return levelNow(); },
   get mode() { return mode; },
   get combo() { return combo; },
   get topW() { return segments.length ? topSegment().w : 0; },
-  setDropX(x        ) { if (mode === GameMode.Playing && cur.sliding) { cur.x = x; } },
   get paused() { return paused; },
   getCenter() { return segments.length ? topSegment().x : LANE_W / 2; },
   get speed() { return speedNow(); },
+  setDropX(x        ) { if (mode === GameMode.Playing && cur.sliding) { cur.x = x; } },
   shrinkTop(w        ) { const t = topSegment(); if (t) { t.w = w; cur.w = w; rebuildTower(); } },
   fillTower(n        ) {
     for (let i = 0; i < n; i++) {
@@ -744,4 +813,27 @@ window.addEventListener("pagehide", () => { void sound?.dispose(); }, { once: tr
   },
 };
 
-void boot().catch(err => console.error("boot failed", err));
+await boot();
+window.__stackmeow = debugBridge;
+
+return async function destroy() {
+  if (!alive) return;
+  alive = false;
+  for (const off of listeners) {
+    try { off(); } catch { /* 单个摘失败不影响其它 */ }
+  }
+  listeners.length = 0;
+  try { uiHooks?.destroy?.(); } catch (e) { console.warn("[stackmeow] UI 卸载出错", e); }
+  try { displayHandle?.dispose?.(); } catch { /* 旧版 display 没有 dispose */ }
+  try { await sound?.dispose?.(); } catch { /* 音频已释放 */ }
+  try {
+    // ★ 不销毁纹理：`PIXI.Assets` 的缓存是**模块级**的，销毁后第二次挂载
+    //   会从缓存里拿到已销毁的 texture ⇒ 画面全黑、零报错。
+    app?.destroy(true, { children: true, texture: false, textureSource: false });
+  } catch (e) { console.warn("[stackmeow] Pixi 销毁出错", e); }
+  try { container.replaceChildren(); } catch { /* 容器可能已被宿主移除 */ }
+  if (window.__stackmeow === debugBridge) delete window.__stackmeow;
+  try { await store.flush(); } catch (e) { console.warn("[stackmeow] 存档落盘失败", e); }
+};
+}
+
