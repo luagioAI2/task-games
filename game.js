@@ -11362,6 +11362,29 @@ function qi(e) {
   };
   Z(() => o(t, {}));
 }
+/**
+ * 首页内容比内容区高时，按溢出比例把 `--u` 缩回去。
+ *
+ * ★ 为什么不能「挂载时算一次」：平板实测舞台只有「宽 × 1.6」高（原版按手机
+ *   2.25 倍设计），首页内容比内容区高 ~8% ⇒「开始战斗」被挤到 tabbar 底下，
+ *   中心点 `elementFromPoint` 命中的是中间那颗抬起来的「战斗」（它比 tabbar
+ *   顶还高 7px）。而「切走再切回」是**先恢复对局**（`.menu.tab-home` 还没渲染）
+ *   再返回首页，挂载那一刻根本量不到首页 ⇒ 必须等首页真出现时再补一次。
+ *
+ * 只量**首页**：商店 / 藏品那种本来就该滚动的长列表不能拿来做判据。
+ * 只缩不放（`r <= 1.005` 直接跳过）⇒ 反复调用不会来回抖。
+ */
+function fitScale() {
+  if (!mountRoot) return;
+  const u0 = parseFloat(mountRoot.dataset.u0 || "");
+  if (!u0) return;
+  const home = mountRoot.querySelector(".menu.tab-home .content");
+  if (!home) return;
+  const box = home.clientHeight - 10;
+  if (box <= 0) return;
+  const r = home.scrollHeight / box;
+  if (r > 1.005) mountRoot.style.setProperty("--u", `${u0 / r}px`);
+}
 function gs() {
   let e = () => {
       // ★ 量容器，不量视口：宿主上面有顶栏、下面有底栏，量 window 会溢出到容器外
@@ -11388,7 +11411,11 @@ function gs() {
       // ★ 不写 documentElement：那是宿主的地基（Tailwind 全用 rem）⇒ 会把顶栏底栏一起放大
       const cw = (mountRoot && mountRoot.clientWidth) || window.innerWidth;
       const ch = (mountRoot && mountRoot.clientHeight) || window.innerHeight;
-      if (mountRoot) mountRoot.style.setProperty('--u', `${cw > ch && ch < 600 ? 14 : (16 * t.w) / 390}px`);
+      if (!mountRoot) return;
+      const u0 = cw > ch && ch < 600 ? 14 : (16 * t.w) / 390;
+      mountRoot.dataset.u0 = String(u0);
+      mountRoot.style.setProperty("--u", `${u0}px`);
+      fitScale();
     }, [t.w]),
     t
   );
@@ -11649,6 +11676,25 @@ async function ks(opts = {}) {
   if (resumedBattle) Ur.value = true;
   la(o(Ji, {}), mountRoot);
 
+  /*
+   * 首页可能**晚于**挂载才渲染（切回来先恢复对局），所以盯着 DOM 补算一次缩放。
+   * 节流 200ms：对局里 DOM 基本不动（画面是 canvas），量不到首页时
+   * `fitScale()` 只做一次 querySelector 就返回，不会引起每帧强制布局。
+   */
+  let fitRaf = 0,
+    fitAt = 0;
+  const fitObs = new MutationObserver(() => {
+    if (fitRaf) return;
+    fitRaf = requestAnimationFrame(() => {
+      fitRaf = 0;
+      const now = Date.now();
+      if (now - fitAt < 200) return;
+      fitAt = now;
+      fitScale();
+    });
+  });
+  fitObs.observe(mountRoot, { childList: !0, subtree: !0 });
+
   const off = [];
   const on = (target, type, fn, opt) => {
     target.addEventListener(type, fn, opt);
@@ -11686,6 +11732,8 @@ async function ks(opts = {}) {
 
   return async function destroy() {
     off.forEach((f) => f());
+    fitObs.disconnect();
+    if (fitRaf) cancelAnimationFrame(fitRaf);
     clearInterval(tickTimer);
     tickTimer = 0;
     try {
