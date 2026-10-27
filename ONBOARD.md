@@ -9,7 +9,7 @@
 - 形态：PixiJS v8 纯 2D，多联骨牌拼满矩形（15 道主线 + 105 道随机池），3 语（ja 主 / en / zh）
 - 经济：**C 型 / `chill`** —— 每开一局 **10 积分**，不产出任何宿主资源
 - 开始：2026-10-27 09:50
-- 当前：步骤 0–7 完成，待 8（五层验收）与 9（提交）
+- 当前：步骤 0–8 完成（五层验收两档全绿），待 9（提交）
 
 ## 步骤表
 
@@ -23,8 +23,8 @@
 | 5 | 打包 | ✅ | `dist-plugin/blockfit.plugin.mjs` **4268 KB**，裸说明符 0 · 动态 import 0 · 三引擎全内联 |
 | 6 | 落库（四处登记） | ✅ | `check:registry` → 本地包 **10** · 哈希 **10** · 商城 **10** · PLAN **10** |
 | 7 | 商城详情（文案 + 4 张图） | ✅ | `public/store/blockfit/1..4.webp`（23.6 / 18.1 / 21.7 / 15.4 KB） |
-| 8 | 五层验收 | 🔄 | 静态 ✅ · 假宿主 **32 条全绿** · lint/单测/两档 e2e 见下 |
-| 9 | 提交（两个仓库） | ⬜ | 两边 `git status` 干净 |
+| 8 | 五层验收 | ✅ | 静态 ✅ · 假宿主 **32 条全绿** · `lint` exit 0 · 单测 **774/774** · e2e **手机 390×698 / 平板 672×966 各 9 段全绿** |
+| 9 | 提交（两个仓库） | 🔄 | 两边 `git status` 干净 |
 
 ## 侦察结论（步骤 0，2026-10-27）
 
@@ -100,6 +100,33 @@ node scripts/check-plugin.mjs ../task-games/blockfit/dist-plugin/blockfit.plugin
 ★ ⑥ 第一次写成读 `save.stamps` 得 `[0,0,0]`，看着像没落盘 —— **印章在 `profiles[i].stamps`**，
 顶层的 `stamps` 是「有档案之前」的老档遗留字段。
 
+### 第 4 层 真宿主 e2e（`node scripts/e2e-blockfit.mjs <url> phone|tablet`）
+
+两档各 9 段全绿：
+
+| 段 | 判据 | 手机 390×698 | 平板 672×966 |
+| --- | --- | --- | --- |
+| ① 动手前 | 0 款插件 · 底栏没有那一格 · `gameKv` 没行 | ✅ | ✅ |
+| ② 安装 | 详情页读到「一局 10 积分 / 换不成兑换券」→ 设为当前 | ✅ | ✅ |
+| ③ 底栏那一格 | 4 个字一行（1 行 / 16px）· 不横向溢出 · nav 不被撑高 | ✅ | 1 行 · 溢出 0 · nav 83px · 格宽 120px |
+| ④ 进 tab | **不收费**（150 → 150）· 容器高 == 父容器 · 中心没被底栏盖 | 698/698 · 颜色 237 | 966/966 · 颜色 346 |
+| ⑤ 翻目录 | 也不收费 · 15 张卡都在 | 颜色 108 | 颜色 114 |
+| ⑥ 点开第 1 题 | **150 → 140** · 券 0 · 棋盘 4 块 · 币 0 | 颜色 222 | 颜色 300 |
+| ⑦ 对局中切走 | `__gpPlayable`/`__gpReady`/`__debug` 全摘 · canvas 0 · `gameKv` 出现 blockfit 行 | ✅ | ✅ |
+| ⑧ 切回 | 二次挂载画得出 · **再扣 10**（140 → 130） | 颜色 237 | 颜色 346 |
+| ⑨ 异常 | 0 个 `console.error` | ✅ | ✅ |
+
+★ **收费方向和老游戏相反**：那几款验「进 tab 就扣」，这款必须验「进 tab **不扣**、点开题才扣」
+—— 收费点定在「点开一道题」。两条断言缺一条就漏：`进 tab 积分不动` + `点题卡 -10`。
+
+★ 第一次跑真宿主直接挂：`sound.manifest.json is not valid JSON`。音频清单和 `sound.pack` 在**游戏根目录**，
+而 `install-to-host.mjs` 只拷 `assets/`；假宿主把 `dist-plugin/` 当站点根，文件恰好在那儿
+⇒ **结构上看不见这个 bug**，只有第 4 层能抓到。已加 `ROOT_FILES` 拷贝 + `--check` 逐字节比对。
+
+★ 平板观感：棋盘 / 标题块沿用原作的**固定坐标**，672 宽屏上不放大（棋盘仍 375px、标题块偏上留白多），
+但**不溢出、不重叠、托盘左右各留 12px**（量过右圆角在 x≈660）。属可接受的观感，没去改原作布局 ——
+改坐标会连带标题屏那几张装饰贴纸。
+
 ### 截图走查（`node scripts/capture.mjs`）
 
 4 张图逐张看过：
@@ -118,8 +145,8 @@ cd /e/plan/test25/kid-quest-farm-2d
 npm run lint && npm test && npm run build
 node scripts/check-plugin.mjs ../task-games/blockfit/dist-plugin/blockfit.plugin.mjs --assets ../task-games/blockfit/assets
 # e2e 两档（端口从 4390+ 挑，先 netstat）
-node scripts/e2e-plugin-local.mjs http://127.0.0.1:<port> phone
-node scripts/e2e-plugin-local.mjs http://127.0.0.1:<port> tablet
+node scripts/e2e-blockfit.mjs http://127.0.0.1:<port>/ phone
+node scripts/e2e-blockfit.mjs http://127.0.0.1:<port>/ tablet
 ```
 
 ## 环境坑

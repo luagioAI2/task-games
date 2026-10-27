@@ -56,6 +56,9 @@ const ID = 'blockfit'
 const NAME = '方块填空'
 const BUNDLE = path.join(ROOT, 'dist-plugin', `${ID}.plugin.mjs`)
 const ASSETS = path.join(ROOT, 'dist-plugin', 'assets')
+const DIST = path.join(ROOT, 'dist-plugin')
+/** 站点根上、`assets/` **之外**的运行时文件（音频运行时按裸文件名请求它们） */
+const ROOT_FILES = ['sound.manifest.json', 'sound.pack']
 const DEST = path.join(HOST, 'public', 'games', ID)
 const INDEX = path.join(HOST, 'public', 'games', 'index.json')
 
@@ -113,6 +116,13 @@ if (CHECK) {
   else if (walkCount(destAssets) !== walkCount(ASSETS)) {
     problems.push(`宿主 assets ${walkCount(destAssets)} 个文件 ≠ dist-plugin ${walkCount(ASSETS)} 个`)
   }
+  for (const f of ROOT_FILES) {
+    const dst = path.join(DEST, f)
+    if (!fs.existsSync(dst)) problems.push(`宿主里没有 ${f}（音频运行时起不来）`)
+    else if (!fs.readFileSync(dst).equals(fs.readFileSync(path.join(DIST, f)))) {
+      problems.push(`${f} 和 dist-plugin 里的不是同一份`)
+    }
+  }
 
   if (problems.length) {
     console.error('没装好：')
@@ -131,6 +141,21 @@ fs.rmSync(destAssets, { recursive: true, force: true })
 fs.cpSync(ASSETS, destAssets, { recursive: true })
 console.log(`拷贝  public/games/${ID}/${ID}.plugin.mjs  ${(fs.statSync(BUNDLE).size / 1024).toFixed(0)} KB`)
 console.log(`拷贝  public/games/${ID}/assets/  ${walkCount(destAssets)} 个文件`)
+
+/*
+ * ★★ 站点根的那两个音频文件**必须一起拷**。
+ *
+ * `sound.manifest.json` 里的 `packs.main.url` 是裸的 `sound.pack`、音乐变体是裸的
+ * `assets/bgm-think.m4a` —— 它们**不在 `assets/` 目录里**，而是在游戏根目录。
+ * 只拷 `assets/` 的后果：假宿主测试（把 `dist-plugin/` 当站点根）全绿，
+ * 真宿主里 `sound.manifest.json` 404 ⇒ 音频运行时把 404 的 HTML 当 JSON 解析
+ * ⇒ 抛 `sound manifest … is not valid JSON` ⇒ **整个 mount 失败**，
+ * 界面上是「『方块填空』打不开」。这个坑 2026-10-27 真踩过。
+ */
+for (const f of ROOT_FILES) {
+  fs.copyFileSync(path.join(DIST, f), path.join(DEST, f))
+  console.log(`拷贝  public/games/${ID}/${f}  ${(fs.statSync(path.join(DEST, f)).size / 1024).toFixed(0)} KB`)
+}
 
 // ---- 2) index.json ----
 if (before) {

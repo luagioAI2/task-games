@@ -195,6 +195,15 @@ let T       = LANGS.ja;
 let shakeWrap                , sceneRoot                , dragLayer                ,
   overlayRoot                , fxWorld                , fxScreen                ;
 let bgTile                   ;
+/**
+ * 当前场景里可点控件的**屏幕矩形**，只给 `__debug.hits()` 用。
+ *
+ * 为什么需要它：本作整屏 UI 都是 PixiJS 画的，插件容器里**一个 DOM 按钮都没有**
+ * （`container.querySelectorAll('button')` 恒为 0）⇒ e2e 没法按选择器点，
+ * 只能在测试里复刻一遍布局数学去算坐标 —— 而那份数学一旦和 `buildTitle` 漂移，
+ * 测试就会点到空白处，且**照样绿**（因为点空了不会报错）。
+ */
+let uiHits                   = { title: [], cards: [] };
 
 let scene                                                                 = "title";
 let audioOn = false;
@@ -477,6 +486,18 @@ export async function start(opts = {}) {
     resetNow()       { doReset(); },
     hint()       { doHint(); },
     overlayCount()         { return overlayRoot.children.length; },
+    /**
+     * 当前场景里可点控件的屏幕矩形（CSS px，相对容器）。
+     * 给 e2e / 截图用 —— 整屏 UI 都在 canvas 里，没有选择器可查。
+     */
+    hits()       {
+      const rect = (o) => {
+        if (!o || o.destroyed) return null;
+        const b = o.getBounds();
+        return { x: Math.round(b.x), y: Math.round(b.y), w: Math.round(b.width), h: Math.round(b.height) };
+      };
+      return { title: uiHits.title.map(rect), cards: uiHits.cards.map(rect) };
+    },
     dragPlan(i        )          {
       const p = pieces[i];
       if (!p || p.placed || !puzzle) return null;
@@ -736,10 +757,11 @@ function buildTitle()       {
     [T.players, () => buildPlayers()],
     [T.settings, () => openSettings()],
   ];
-  items.forEach(([label, fn], i) => {
+  uiHits.title = items.map(([label, fn], i) => {
     const b = mkButton(label, bw, bh, fn);
     b.position.set((W - bw) / 2, H * 0.40 + i * (bh + gap));
     sceneRoot.addChild(b);
+    return b;
   });
   sceneRoot.addChild(mkPlayerChip(W));
 }
@@ -984,6 +1006,7 @@ function buildSelect()       {
   const gridW = cols * (cw + 10) - 10, gridH = rows * (ch + 10) - 10;
   const ox = areaX + (areaW - gridW) / 2, oy = areaY + (areaH - gridH) / 2;
 
+  uiHits.cards = [];
   for (let i = 0; i < MAIN_PUZZLES.length; i++) {
     const col = i % cols, row = (i / cols) | 0;
     const p = MAIN_PUZZLES[i];
@@ -1020,6 +1043,7 @@ function buildSelect()       {
       card.on("pointertap", () => { void ensureAudio(); cue("sfx.button"); startMain(i); });
     } else card.alpha = 0.75;
     sceneRoot.addChild(card);
+    uiHits.cards[i] = card;
   }
 }
 
