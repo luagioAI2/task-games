@@ -1,0 +1,147 @@
+/* The entry radar replaces landscape ability boxes, never the preview. */
+#app .entry-panel #trait-radar{height:clamp(110px,17vh,170px);width:100%;margin:0 0 5px;background:transparent}
+#app .entry-panel #trait-radar .radar-label{display:block;font-size:14px}
+body[data-portrait="false"] #app #traits{display:none!important}
+body[data-portrait="true"] #app #traits{display:grid!important}
+body[data-portrait="true"] #app .entry-panel #trait-radar{display:none!important}
+@media(max-height:500px) and (orientation:landscape){#app #studio{padding:0!important}#app .workbench{grid-template-columns:minmax(0,1fr) minmax(0,.8fr) minmax(310px,1.1fr)!important}#app .entry-panel #trait-radar{height:90px;margin:0}#app .entry-panel .trait-focus{margin:0 0 3px;font-size:14px;line-height:1.15}#app .entry-panel .mode-copy{margin:3px 0!important;line-height:1.2}}
+/* Six drawing-derived traits; portrait deliberately omits the radar. */
+#app .traits{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px;margin:0 0 8px!important}
+#app .traits>span{padding:7px 6px 9px;gap:2px;background:var(--doodle-background);border:1px solid var(--doodle-line);border-radius:5px}
+#app .traits>span.focus{border-color:var(--doodle-green)}#app .traits b{font-size:16px}#app .traits>span>span{font-size:14px}
+#app .traits small{display:none}#app .trait-focus{font-size:14px;line-height:1.4;color:var(--doodle-green);margin:0 0 10px}
+#app .trait-radar{position:relative;z-index:3;flex-shrink:0;height:clamp(120px,19vh,190px);background:var(--doodle-background);display:flex;align-items:center;justify-content:center}
+#app .trait-radar svg{width:100%;height:100%;overflow:visible}.radar-grid{fill:none;stroke:var(--doodle-line);stroke-width:1}.radar-label{fill:var(--doodle-text);font:14px "Segoe UI","Microsoft YaHei",sans-serif}.radar-label.focus{font-weight:700;fill:var(--doodle-green)}.radar-shape{fill:var(--doodle-accent);fill-opacity:.25;stroke:var(--doodle-accent);stroke-width:2}.radar-dot{fill:var(--doodle-green)}
+body[data-portrait="true"] #app .trait-radar{display:none!important}body[data-portrait="true"] #app .traits{grid-template-columns:repeat(3,minmax(0,1fr));gap:4px;margin:0 0 4px!important}body[data-portrait="true"] #app .traits>span{flex-direction:row;align-items:center;padding:5px 7px 7px}body[data-portrait="true"] #app .traits b{font-size:14px}body[data-portrait="true"] #app .trait-focus{margin-bottom:6px;font-size:14px}body[data-portrait="true"] #app .mode-copy{margin:5px 0!important}
+@media(max-height:500px) and (orientation:landscape){#app .trait-radar{height:88px}#app .trait-radar .radar-label{display:none}#app .traits{gap:4px;margin:0 0 4px!important}#app .traits>span{flex-direction:row;align-items:center;padding:3px 4px 6px;gap:2px}#app .traits b{font-size:14px}#app .traits>span>span{font-size:14px}#app .trait-focus{font-size:14px;margin-bottom:5px}#app .mode-copy{margin:5px 0!important}#app .preview-caption{padding:6px;font-size:14px}}
+/* Responsive correction: one sizing layer shared by every language. */
+#race-screen{z-index:4}
+#app .topbar{z-index:9;flex-shrink:0;background:var(--doodle-background)}
+#app{display:flex;flex-direction:column}
+#app main{width:100%;flex:1;min-height:0;display:flex;flex-direction:column}
+#app #studio{flex:1;min-height:0;display:flex;flex-direction:column;padding-bottom:0}
+#app .workbench{flex:1;min-height:0;grid-template-columns:minmax(0,1fr) minmax(0,1fr) minmax(250px,.62fr)}
+#app .drawing-panel{display:flex;flex-direction:column;min-width:0;min-height:0}
+#app .paper{flex:1;min-height:60px;max-height:none;width:auto;height:auto;aspect-ratio:auto;display:flex;align-items:center;justify-content:center;background:var(--doodle-background);position:relative}
+#app .paper canvas{flex:none;width:var(--paper-width,100%);height:var(--paper-height,100%);background-color:var(--doodle-background);background-image:radial-gradient(circle,var(--doodle-line) 1px,transparent 1px);background-size:20px 20px;border:0;padding:0;border-radius:0}
+#app .paper::after{content:"";position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:var(--paper-width,100%);height:var(--paper-height,100%);box-shadow:inset 0 0 0 1px var(--doodle-green);pointer-events:none;z-index:2}
+#app .drawing-guide{font-size:14px;line-height:1.4;margin:0 12px 8px}
+#app .panel-title,#app .preview-title{font-size:14px;flex-shrink:0;height:48px;padding:0 12px}
+#app .panel-title .tiny{font-size:14px}
+#app .preview-panel{display:flex;flex-direction:column;height:auto;min-height:0}
+#app #preview-slot{flex:1;height:auto;min-height:0}
+#app .preview-caption{position:relative;left:auto;right:auto;bottom:auto;display:flex;flex-direction:column;align-items:flex-start;gap:8px;padding:12px;font-size:16px;line-height:1.4;color:var(--doodle-text);z-index:3;background:var(--doodle-background)}
+#app .preview-caption .tag{font-size:16px;font-weight:700;color:var(--doodle-green);padding:0;border:0;background:transparent}
+#app .toolbar,#app .drawing-caption,#app .save-status{flex-shrink:0}
+#app .drawing-caption,#app .text-button,#app .save-status{font-size:14px}
+#app .save-status{margin:4px 12px 8px}
+#app .entry-panel{display:flex;flex-direction:column;grid-column:auto;padding:8px 0 0;gap:0;min-height:0;min-width:0}
+#app .entry-panel label{font-size:14px;display:block}
+#app .entry-panel .eyebrow{font-size:14px;margin:0 0 12px;letter-spacing:1px}
+#app .name-field{margin:0 0 8px}
+#app .personality{font-size:14px;line-height:1.5;margin:4px 0 12px}
+#app .mode-picker strong{font-size:15px}
+#app .mode-picker small{font-size:14px;line-height:1.35;opacity:1}
+#app .mode-copy{display:block;font-size:16px;line-height:1.6;margin:12px 0!important;color:var(--doodle-text)}
+#app .entry-foot{font-size:14px;line-height:1.4}
+#app .studio-bottom{font-size:16px;padding:16px 0;flex-shrink:0;color:var(--doodle-green)}
+#app .studio-bottom p{font-size:16px;gap:12px}
+#app .subtitle{font-size:16px;color:var(--doodle-green)}
+#app .traits{margin:4px 0 12px!important}
+#app .traits>span>span,#app .traits small{font-size:14px}
+#app .name-status{display:none!important}
+#app .language-control{position:relative;flex-shrink:0;display:flex;align-items:center}
+#app #language[hidden]{display:none!important}
+#app #language-toggle{display:flex;align-items:center;justify-content:space-between;gap:10px;width:112px;min-height:48px;padding:10px 12px;font:600 16px/1.3 "Segoe UI","Microsoft YaHei",sans-serif;color:var(--doodle-green);background:var(--doodle-background);border:1px solid var(--doodle-green);border-radius:10px;box-shadow:0 2px 0 var(--doodle-line)}
+#app .language-chevron{width:8px;height:8px;border-right:2px solid currentColor;border-bottom:2px solid currentColor;transform:translateY(-2px) rotate(45deg);flex-shrink:0}
+#app #language-toggle[aria-expanded="true"]{box-shadow:0 2px 0 var(--doodle-accent)}
+#app #language-toggle[aria-expanded="true"] .language-chevron{transform:translateY(2px) rotate(225deg)}
+#app #language-menu{position:fixed;z-index:30;width:176px;max-width:calc(100vw - 24px);padding:6px;background:var(--doodle-background);border:1px solid var(--doodle-green);border-radius:12px;box-shadow:3px 4px 0 var(--doodle-line);display:flex;flex-direction:column;gap:4px}
+#app #language-menu[hidden]{display:none!important}
+#app #language-menu button{display:flex;align-items:center;justify-content:space-between;gap:14px;width:100%;min-height:48px;padding:10px 12px;border:1px solid transparent;border-radius:7px;background:var(--doodle-background);color:var(--doodle-green);font:500 16px/1.4 "Segoe UI","Microsoft YaHei",sans-serif;text-align:left;cursor:pointer}
+#app #language-menu button[aria-checked="true"]{border-color:var(--doodle-line);font-weight:700;box-shadow:inset 3px 0 0 var(--doodle-accent)}
+#app .language-check{width:7px;height:12px;border-right:2px solid var(--doodle-accent);border-bottom:2px solid var(--doodle-accent);transform:rotate(45deg);visibility:hidden;margin-right:3px}
+#app #language-menu button[aria-checked="true"] .language-check{visibility:visible}
+#app #language-menu button:hover{background:var(--doodle-line)}
+#app #language-menu button:focus-visible,#app #language-toggle:focus-visible{outline:2px solid var(--doodle-green);outline-offset:-3px}
+
+#app #sound{display:flex;align-items:center;justify-content:center;border-radius:8px;background:var(--doodle-background);border:1px solid var(--doodle-line)}
+#app #sound .speaker-icon{width:25px;height:25px;display:block;background:var(--doodle-green);mask:url('./assets/lib/kenney-game-icons/icons/audioOn.png') center/contain no-repeat;-webkit-mask:url('./assets/lib/kenney-game-icons/icons/audioOn.png') center/contain no-repeat}
+#app #sound[aria-pressed="true"] .speaker-icon{mask-image:url('./assets/lib/kenney-game-icons/icons/audioOff.png');-webkit-mask-image:url('./assets/lib/kenney-game-icons/icons/audioOff.png')}
+#app .race-actions button,#app .score-strip small,#app .leaderboard,#app .race-progress,#app .rhythm-header,#app .rhythm-header span,#app .boost-hint b,#app .boost-hint small,#app .beat-zone{font-size:14px}
+#app .race-top{z-index:5}#app .race-heading .eyebrow{font-size:14px;letter-spacing:.4px}#app .race-heading h2{font-size:24px}
+#app .score-strip{top:114px}#app .leaderboard{top:114px;max-width:32vw}#app .leaderboard>div{min-width:0}#app .leaderboard span{min-width:0;max-width:240px}
+#app .race-controls{font-size:14px}#app .jump-button{min-height:48px}#app .boost-hint{color:var(--doodle-text)}
+#app .result-card p,#app .result-card li,#app .result-card small,#app .modal p{font-size:14px}
+#app .result-card{overflow:auto}#app .result-card .local-note{font-size:14px}
+@media(min-height:700px) and (min-width:1151px){#app .intro{padding:clamp(14px,3vh,36px) 0}#app footer{padding:12px 4vw}}
+@media(max-width:1150px) and (orientation:landscape){
+ #app .intro{padding:12px 0}#app h1{font-size:30px;margin-bottom:5px}#app .intro .eyebrow,#app .stamp,#app .personality,#app .entry-panel>.eyebrow{display:none}
+ #app .workbench{grid-template-columns:minmax(0,1fr) minmax(0,.85fr) minmax(235px,.85fr);gap:12px}
+ #app .entry-panel{padding:0}#app .name-field input{font-size:18px;padding:8px 0;margin:0}
+ #app .mode-copy{font-size:14px;line-height:1.5}#app .mode-picker strong{font-size:14px}
+ #app .studio-bottom,#app .studio-bottom p{font-size:14px}#app .studio-bottom{padding:8px 0}
+ #app .toolbar{justify-content:center}#app .toolbar>div:last-child{flex:1;justify-content:space-around}
+ #app .drawing-caption>span{display:none}#app .drawing-caption{padding:0 8px;justify-content:center}
+ #app .preview-title .live-dot{display:none}#app footer{display:none}
+}
+body[data-portrait="true"] #app .topbar{height:64px;position:relative;margin:0 12px}
+body[data-portrait="true"] #app .brand{font-size:16px!important;gap:4px;letter-spacing:-.4px}
+body[data-portrait="true"] #app .brand-icon .horse-logo{width:32px}
+body[data-portrait="true"] #app .top-actions{gap:6px}
+body[data-portrait="true"] #app #language-toggle{width:100px;padding:10px;gap:6px}
+body[data-portrait="true"] #app main{padding:0 12px}
+body[data-portrait="true"] #app .intro{display:none}
+body[data-portrait="true"] #app .mobile-studio-tabs{margin:8px 0;flex-shrink:0}
+body[data-portrait="true"] #app .mobile-studio-tabs button{font-size:16px}
+body[data-portrait="true"] #app .workbench{display:grid;grid-template-columns:1fr;grid-template-rows:minmax(170px,1fr) auto;gap:10px}
+body[data-portrait="true"] #app .drawing-panel,body[data-portrait="true"] #app .preview-panel{grid-row:1;grid-column:1}
+body[data-portrait="true"][data-studio-tab="draw"] #app .preview-panel,body[data-portrait="true"][data-studio-tab="preview"] #app .drawing-panel{display:none}
+body[data-portrait="true"] #app .paper{width:calc(100% - 20px);height:auto;min-height:70px}
+body[data-portrait="true"] #app .entry-panel{grid-row:2;grid-column:1;display:flex}
+body[data-portrait="true"] #app .entry-panel>label,body[data-portrait="true"] #app .entry-panel>.eyebrow,body[data-portrait="true"] #app .personality{display:none}
+body[data-portrait="true"] #app .name-field{min-height:48px;margin:0 0 8px;padding:0 3px 0 10px}
+body[data-portrait="true"] #app .mode-picker button{padding:6px 3px;min-height:54px}
+body[data-portrait="true"] #app .mode-copy{font-size:14px;line-height:1.45;margin:8px 0!important}
+body[data-portrait="true"] #app .launch-area{position:static;padding:0 0 12px;background:transparent;border:0;backdrop-filter:none}
+body[data-portrait="true"] #app .entry-foot{display:none}
+body[data-portrait="true"] #app .drawing-guide{display:none}
+body[data-portrait="true"] #app .panel-title{height:36px}
+body[data-portrait="true"] #app .preview-title{height:42px}
+body[data-portrait="true"] #app .toolbar{padding:0 6px;flex-wrap:nowrap}
+body[data-portrait="true"] #app .swatches{gap:0}
+body[data-portrait="true"] #app .text-button{padding:4px;font-size:14px}
+body[data-portrait="true"] #app .save-status{margin:0 10px 6px;font-size:14px;line-height:18px}
+body[data-portrait="true"] #app .drawing-caption{padding:0 10px;min-height:48px}
+body[data-portrait="true"] #app .traits{margin:0 0 8px!important}body[data-portrait="true"] #app .traits small{display:none}
+body[data-portrait="true"] #app #race-screen{inset:64px 0 0}
+body[data-portrait="true"] #app .race-heading h2{font-size:20px}
+body[data-portrait="true"] #app .score-strip{top:130px}
+body[data-portrait="true"] #app .leaderboard{top:214px;max-width:none;font-size:14px}
+body[data-portrait="true"] #app .race-callout{top:43%}
+body[data-portrait="true"] #app .race-controls{padding:10px 12px}
+body[data-portrait="true"] #app .result-card{max-height:65dvh}
+@media(max-height:500px) and (orientation:landscape){
+ #app .topbar{height:56px}#app .intro,#app .studio-bottom,#app footer{display:none!important}
+ #app #studio{padding:8px 0}#app .workbench{gap:10px;grid-template-columns:minmax(0,1fr) minmax(0,.82fr) minmax(250px,.92fr)}
+ #app .panel-title,#app .preview-title{height:36px}#app .preview-caption{display:flex;font-size:14px;padding:8px;gap:5px}#app .preview-caption .tag{font-size:14px}
+ #app .toolbar{flex-wrap:wrap;padding:0}#app .swatches{max-width:none;flex-wrap:nowrap}#app .toolbar .swatch{border-width:14px}#app .toolbar>div:last-child{flex-basis:100%;height:48px}
+ #app .entry-panel>label,#app .drawing-guide,#app .tiny{display:none}#app .name-field{margin-bottom:4px}
+ #app .mode-picker button{min-height:52px;padding:4px 2px}#app .mode-picker strong,#app .mode-picker small{font-size:14px}
+ #app .mode-copy{font-size:14px;line-height:1.35;margin:8px 0!important}#app .entry-foot{display:none}#app .traits{margin:0 0 6px!important}#app .traits small{display:none}
+ #app .launch-area .primary{min-height:48px;padding:10px}
+ #app .race-top{top:8px}#app .race-heading h2{font-size:20px}#app .race-heading .eyebrow{font-size:14px}
+ #app .score-strip{top:73px;padding:7px 12px;gap:18px}#app .score-strip strong{font-size:22px}#app .leaderboard{top:73px;font-size:14px;max-width:28vw;gap:3px}#app .leaderboard>div{padding:4px 8px}
+ #app .race-controls{width:min(760px,94vw);bottom:12px;padding:9px 14px}#app .race-progress{margin-bottom:6px}#app .rhythm-header{margin-bottom:6px}#app .boost-hint{min-height:48px;padding:5px 10px}
+ #app .result-card{max-height:100%;overflow:auto}#app .result-card ol{margin:6px 0}
+}
+#app .traits{grid-template-columns:repeat(3,minmax(0,1fr));margin:0 0 8px!important;gap:5px}
+#app .traits>span{padding:6px 5px 8px;gap:2px}
+#app .traits small{display:none}
+body[data-portrait="true"] #app .traits{gap:4px;margin:0 0 4px!important}
+body[data-portrait="true"] #app .traits>span{flex-direction:row;align-items:center;padding:4px 6px 7px}
+@media(max-height:500px) and (orientation:landscape){
+ #app .traits{gap:3px;margin:0 0 4px!important}#app .traits>span{flex-direction:row;align-items:center;padding:3px 4px 6px;gap:2px}#app .traits b{font-size:14px}
+ #app .trait-focus{font-size:14px;line-height:1.2;margin-bottom:4px}#app .mode-copy{line-height:1.25;margin:4px 0!important}
+ #app .trait-radar{height:88px}#app .trait-radar .radar-label{display:none}#app .preview-caption{padding:6px;gap:4px}
+}
