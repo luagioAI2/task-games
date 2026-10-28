@@ -337,7 +337,7 @@ export function pickLang(locale                )       {
   if (l.startsWith('en')) return 'en';
   return 'zh';
 }
-export function setLangRaw(l      ) { cur = l; document.documentElement.lang = l === 'zh' ? 'zh-CN' : l; }
+export function setLangRaw(l      ) { cur = l; /* ★ 不写 documentElement.lang —— 那是宿主的根节点 */ }
 export function getLang()       { return cur; }
 export function t(key        , vars                                  )         {
   let s = TABLE[cur][key] ?? TABLE.en[key] ?? key;
@@ -350,7 +350,7 @@ export function itemName(i        )         { return ITEM_NAMES[cur][i] ?? '?'; 
 export function setName(i        )         { return SET_NAMES[cur][i] ?? '?'; }
 
 // Game title — shown in English in every language (user request).
-export const GAME_TITLE = "Don't Press the Red Button";
+export const GAME_TITLE = '别按红按钮';
 
 // ---- v4: six extra incremental systems ----
 Object.assign(zh, {

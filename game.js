@@ -20,6 +20,38 @@ import { SHOP_ITEMS, SHOP_PRICE, shopOwned } from './ui.js';
 import { Ui, itemStyle, iconStyle, chestStyle, skinCss, wealthScore } from './ui.js';
 import { snd, initSound, applyVolumes } from './audio.js';
 import { setName, GAME_TITLE } from './i18n.js';
+import { AB } from './base.js';
+
+/**
+ * 插件入口（原版是模块体自执行 —— 那种写法第二次挂载会拿到上一次的模块状态）。
+ *
+ * `opts.container` 由宿主给；`opts.store` 是存档适配层（`latestSync` / `putLatest`）。
+ * 返回的 `destroy()` 必须把 ticker / 监听 / 样式 / 调试钩子全部摘掉。
+ */
+export async function start(opts = {}) {
+  /*
+   * ★ 名字不能叫 `host`：原版模块体里本来就有一句 `const host = document.getElementById('app')`，
+   *   整段包进 start() 之后两处同域 ⇒ `SyntaxError: Identifier 'host' has already been declared`
+   *   （而且报在源码第 99 行，看着像「原版代码坏了」）。
+   */
+  const mountContainer = opts.container ?? document.getElementById('app');
+  /** 存档适配层（`latestSync` / `putLatest`）；模块顶层不能声明，每次挂载重设 */
+  let saveApi = opts.store ?? null;
+  /** 收费回调：由 plugin 侧注入（读存档 paidAt + 扣积分）；独立网页跑时恒放行 */
+  let chargePlayFn = opts.chargePlay ?? (async () => true);
+  /** 要摘掉的 window/document 监听（卸载时统一摘，别留 `onkeydown` 在宿主上） */
+  const offWin = [];
+  const listen = (t, type, fn, opt) => { t.addEventListener(type, fn, opt); offWin.push(() => t.removeEventListener(type, fn, opt)); };
+
+  /*
+   * ★ 挂载根：宿主容器里再套一层 `#rb-root`，canvas 与 `#ui` 都挂它。
+   *   样式表用 `scopeCss(css, '#rb-root')` 收进来 —— 原版那套 CSS 里全是
+   *   `.hud` / `.pill` / `.tabs` 这种通用类名，不收会把宿主的顶栏底栏一起改样。
+   */
+  const hostRoot = document.createElement('div');
+  hostRoot.id = 'rb-root';
+  hostRoot.style.cssText = 'position:absolute;inset:0;overflow:hidden';
+  mountContainer.appendChild(hostRoot);
 
 // ---------------- state ----------------
 let S        = newState();
@@ -40,7 +72,7 @@ function decodeSave(raw     )               {
   } catch (e) { console.warn('save decode failed', e); }
   return null;
 }
-const boot = decodeSave(window.gp?.player?.saves?.latestSync);
+const boot = decodeSave(saveApi?.latestSync);
 let hadSave = !!boot;
 // writes stay off until we are sure no cloud save is still arriving (never overwrite a real save with a fresh state)
 let saveReady = !!boot;
@@ -48,20 +80,17 @@ if (boot) S = boot;
 if ((S       ).prefs) prefs = { ...prefs, ...(S       ).prefs };
 D = derive(S);
 const savedLang = (S       ).lang                    ;
-setLangRaw(savedLang || 'en'); // user request: English by default; zh/ja via settings
+setLangRaw(savedLang || 'zh'); // ★ 宿主是中文儿童 App ⇒ 默认中文；设置里仍可切 en / ja
 
 function loadFont(lang      ) {
   try {
-    if (window.gp?.fonts?.use) { if (lang !== 'ja') void gp.fonts.use({ display: 'smiley-sans/SmileySans-Oblique.woff2', lang }); return; }
   } catch { /* fall through */ }
-  const url = 'https://static.makeplay.ai/fonts/v1/smiley-sans/SmileySans-Oblique.woff2';
-  const f = new FontFace('SmileySans', `url("${url}")`);
-  void f.load().then(() => document.fonts.add(f)).catch(() => {});
+  // 平台字体：宿主没有 gp.fonts，源站那份 woff2 也 404 ⇒ 直接用 FONT 栈里的系统字体
 }
 loadFont(getLang());
 
 let saveT = 0;
-let shopOn = !!window.gp?.pay?.available;
+let shopOn = false; // 内购（gp.pay）在宿主里没有通道，整块拆掉
 let shopBusy = '';
 let ui     = null                 ;
 function save() {
@@ -69,13 +98,13 @@ function save() {
   S.lastSeen = Date.now();
   if (!saveReady) return;
   sanitize(S); // never let Infinity/NaN become null in the cloud save
-  const sv = window.gp?.player?.saves;
+  const sv = saveApi;
   if (!sv?.putLatest) return;
-  void sv.putLatest(JSON.stringify(S), 'text').then((ok         ) => { if (!ok) console.warn('autosave failed:', sv.lastError); });
+  void sv.putLatest(JSON.stringify(S), 'text').then((ok) => { if (!ok) console.warn('autosave failed'); });
 }
 
 // ---------------- pixi ----------------
-const host = document.getElementById('app') ;
+const host = hostRoot; // 原版是 document.getElementById('app')
 const app = new PIXI.Application();
 await app.init({ resizeTo: host, autoDensity: true, antialias: true, background: '#DDF3E6', resolution: Math.min(window.devicePixelRatio || 1, 2) });
 host.appendChild(app.canvas);
@@ -553,7 +582,7 @@ const hintText = new PIXI.Text({ text: '', style: { fontFamily: FONT, fontSize: 
 hintText.anchor.set(0.5);
 const titleText = new PIXI.Text({ text: GAME_TITLE, style: { fontFamily: FONT, fontSize: 30, fontWeight: '900', fill: '#17264A', align: 'center', wordWrap: true, wordWrapWidth: 300 } });
 titleText.anchor.set(0.5);
-document.title = GAME_TITLE;
+// ★ 不写 document.title —— 那是宿主的标题栏
 textLayer.addChild(comboText, hintText, titleText, frenzyBanner);
 
 // robots orbiting
@@ -563,6 +592,25 @@ let autoHandT = 0;
 
 // ---------------- clicking ----------------
 let combo = 0, comboT = 0;
+/*
+ * 收费点：**这一档的第一次真实按键**。
+ *
+ * 本作是放置点击器，没有「开始一局」这个动作 —— 进来的核心操作就是按那颗红按钮，
+ * 所以把「一局」定义成「一次进场的第一下」。收过就不再收；切走再切回来时，
+ * plugin 侧用**存档里的 paidAt** 判 10 分钟宽限，不会重复扣。
+ *
+ * ★ 必须 await 扣款再按键：放行之前按下去就是白玩。
+ * ★ 被挡时**不卸载界面**，只是这一下不算 —— 孩子还能看见游戏、看见提示。
+ */
+let paidThisMount = false;
+async function pressManual(px, py) {
+  if (!paidThisMount) {
+    if (!(await chargePlayFn())) return;
+    paidThisMount = true;
+  }
+  pressButton(px, py, true);
+}
+
 function pressButton(px        , py        , manual         ) {
   const r = Math.random();
   let mult = 1, kind = 0;
@@ -618,12 +666,12 @@ function startFrenzy(sec        , x = 7) {
 
 btnC.on('pointerdown', (e                            ) => {
   const p = world.toLocal(e.global);
-  pressButton(p.x, p.y, true);
+  void pressManual(p.x, p.y);
 });
-window.addEventListener('keydown', (e) => {
+listen(window, 'keydown', (e) => {
   if ((e.code === 'Space' || e.code === 'Enter') && !e.repeat && ready) {
     e.preventDefault();
-    pressButton(btnC.x + (Math.random() - 0.5) * R, btnC.y - R * 0.3, true);
+    void pressManual(btnC.x + (Math.random() - 0.5) * R, btnC.y - R * 0.3, true);
   }
 });
 
@@ -700,9 +748,10 @@ function fxAction(verb        , arg        )         {
       break;
     }
     case 'spin': {
-      const free = arg === 'free';
-      if (free ? f.wheelFree > now : f.wheelTok <= 0) break;
-      if (free) f.wheelFree = now + WHEEL_FREE_MS; else f.wheelTok--;
+      // ★ 「每 4 小时 1 次免费」已拆：那是「不上线就亏」的钩子。
+      //   保留「每按 100 次得 1 张券」，券是本作唯一的转盘来源。
+      if (f.wheelTok <= 0) break;
+      f.wheelTok--;
       const p = pickWeighted(WHEEL.map(x => x.w)); const w = WHEEL[p];
       f.spins++;
       void snd?.playCue('sfx.gacha', { eventId: 'spin:' + f.spins });
@@ -886,9 +935,9 @@ const api = {
     void snd?.playCue('sfx.levelup', { eventId: 'perk:' + id + ':' + S.perks[id] });
     save();
   },
-  shopOn: () => shopOn,
-  shopBusy: () => shopBusy,
-  buyShop(id        ) { void buyShop(id); },
+  shopOn: () => false,
+  shopBusy: () => '',
+  buyShop() { /* 内购已拆 */ },
   equipSkin(i        ) {
     if (!(S.skins & (1 << i)) || S.skin === i) return;
     S.skin = i; drawButton();
@@ -922,7 +971,7 @@ function setLang(l      , persist         ) {
   if (ui) ui.relabel();
 }
 
-ui = new Ui(host, api);
+ui = new Ui(hostRoot, api);
 
 // ---------------- layout ----------------
 function relayout(w        , h        ) {
@@ -1052,15 +1101,7 @@ function syncRobots() {
 let lastSubmitted = -1;
 let submitting = false;
 async function submitBest() {
-  const sc = wealthScore(S.lifeCoins);
-  if (sc <= 0 || sc === lastSubmitted || submitting || !window.gp?.player?.submitScore) return;
-  submitting = true;
-  try {
-    const r = await window.gp.player.submitScore(sc);
-    lastSubmitted = sc;
-    if (r && 'rank' in r && r.rank != null) ui.toast(iconStyle(7), t('lb_rank', { v: r.rank }), '#FFC928');
-  } catch { /* offline: try later */ }
-  submitting = false;
+  // 宿主没有排行榜后端（原版走 gp.player.submitScore）
 }
 // submit once per 100-point milestone (each 10x of lifetime coins) — never spams
 let nextMilestone = (Math.floor(wealthScore(S.lifeCoins) / 100) + 1) * 100;
@@ -1309,13 +1350,13 @@ function tick() {
 app.ticker.add(tick);
 
 // ---------------- boot ----------------
-const display = mountDisplay({ orientation: 'portrait', onResize: ({ width, height }                                   ) => relayout(width, height) });
+const display = mountDisplay({ orientation: 'both', host: hostRoot, onResize: ({ width, height }                                   ) => relayout(width, height) });
 display.attachPixi(app);
 relayout(app.screen.width, app.screen.height);
 drawLoad();
-window.__gpReady = true;
+// 平台钩子 __gpReady 不留（会骗过下一次「已就绪」）
 
-const urls = ['assets/sheets/chests-c.webp', 'assets/sheets/icons-c.webp', 'assets/sheets/items-animals-c.webp', 'assets/sheets/items-food-c.webp', 'assets/sheets/items-magic-c.webp', 'assets/sheets/hand.webp'];
+const urls = ['assets/sheets/chests-c.webp', 'assets/sheets/icons-c.webp', 'assets/sheets/items-animals-c.webp', 'assets/sheets/items-food-c.webp', 'assets/sheets/items-magic-c.webp', 'assets/sheets/hand.webp'].map((u) => AB + u);
 const soundP = initSound();
 const loaded = await PIXI.Assets.load(urls, (p        ) => { loadP = p; drawLoad(); });
 await soundP;
@@ -1338,98 +1379,15 @@ syncRobots();
 syncPets(true);
 D = derive(S);
 ui.hud();
-window.__gpPlayable = true;
+// 平台钩子 __gpPlayable 不留
 
-// ---------------- shop: gp.pay, every item 1 platform coin ----------------
-const SHOP_DEF                                                 = {};
-for (const it of SHOP_ITEMS) SHOP_DEF[it.id] = { key: it.key, once: it.once };
-function grantShop(itemId        , purchaseId        ) {
-  if (purchaseId && S.paid.includes(purchaseId)) return;   // idempotent delivery
-  if (purchaseId) { S.paid.push(purchaseId); if (S.paid.length > 300) S.paid.splice(0, S.paid.length - 300); }
-  const cx = btnC.x, cy = btnC.y;
-  const before = D.cps.add(D.clickValue);          // for the "income ×N" readout
-  let big = '';                                    // headline number floated over the button
-  if (itemId === 'gems300') { S.gems += SHOP_GEMS; big = '+' + SHOP_GEMS; sparkBurst(cx, cy, 60, ['#7FD8F0', '#2F8BFF', '#ffffff'], { speed: 560, up: 160, size: 1.3 }); }
-  else if (itemId === 'cosmic3') {
-    let gems = 0;
-    for (let k = 0; k < SHOP_CHESTS; k++) if (!dropChest(3)) gems += Math.round(25 * D.gemMult);
-    if (gems) { S.gems += gems; ui.toast(iconStyle(5), t('chestToGems', { v: gems }), '#8B5CF6'); }
-    big = '×' + SHOP_CHESTS;
-    sparkBurst(cx, cy, 50, RAINBOW, { speed: 600, up: 200, size: 1.3, tex: 0 });
-  }
-  else if (itemId === 'frenzy60') { startFrenzy(SHOP_FRENZY_SEC, SHOP_FRENZY_X); big = t('frenzy_super'); flash(cx, cy, R * 3, '#FF8A3D', 0.7); }
-  else if (itemId === 'warp4h') {
-    const v = Decimal.max(D.cps.mul(SHOP_WARP_H * 3600), D.clickValue.mul(3000));
-    addCoins(S, v); burstCoins(cx, cy, 40); big = '+' + fmt(v);
-  }
-  else if (itemId === 'golden') { S.shop.golden = 1; }
-  else if (itemId === 'skin_neon') { S.shop.skin = 1; D = derive(S); checkTabs(true); if (S.skins & (1 << 13)) { S.skin = 13; drawButton(); } }
-  else if (itemId === 'pact') { S.shop.pact = 1; big = t('it_pact_big'); }
-  else if (itemId === 'perpetual') { S.shop.perpetual = 1; big = t('it_perp_big'); }
-  else return;
-  D = derive(S);
-  const after = D.cps.add(D.clickValue);
-  if (!big && after.gt(before) && before.gt(0)) big = t('shop_incx', { v: fmt2(after.div(before)) });
-  // celebration: double confetti, two-colour rays, white flash, shake, coin fountain
-  confetti(90); rays(cx, cy, R * 3.4, '#FFE36E', 1.8); rays(cx, cy, R * 2.4, '#FF8A3D', 1.4);
-  flash(col.width / 2, col.height / 2, Math.max(col.width, col.height), '#FFF6C8', 0.55, 0.9);
-  sparkBurst(cx, cy, 40, ['#FFC928', '#FFE36E', '#ffffff', '#FF3B47'], { speed: 620, up: 220, size: 1.2 });
-  burstCoins(cx, cy, 24); shake(10, 0.45);
-  if (big) critText(cx, cy - R * 1.1, t(SHOP_DEF[itemId]?.key || 'shop_got'), big, true);
-  window.gp?.haptics?.notify?.('success');
-  void snd?.playCue('sfx.rare', { eventId: 'shop:' + itemId + ':' + (purchaseId || Date.now()) });
-  const def = SHOP_DEF[itemId];
-  ui.toast('background:url(assets/ui/icon_coin_selected.svg) center/contain no-repeat', t('shop_got', { v: def ? t(def.key) : itemId }), '#FF3B47');
-  ui.hud(); bumpCoins();
-  save();
-}
-const SHOP_GEMS = 3000, SHOP_CHESTS = 10, SHOP_FRENZY_SEC = 600, SHOP_FRENZY_X = 10, SHOP_WARP_H = 24;
-async function settlePurchases() {
-  const pay = window.gp?.pay;
-  if (!pay?.available) return;
-  try {
-    const r = await pay.pending();
-    if (!r.ok) return;   // query failed: try again next launch, NOT an empty list
-    for (const p of r.items) { grantShop(p.itemId, p.purchaseId); void pay.ack(p.purchaseId); }
-  } catch { /* try again next launch */ }
-}
-async function buyShop(id        ) {
-  const pay = window.gp?.pay; const def = SHOP_DEF[id];
-  if (!pay?.available || !def || shopBusy) return;
-  if (def.once && shopOwned(S, id)) return;
-  shopBusy = id;
-  const r = await pay.purchase({ itemId: id, title: t(def.key).slice(0, 40), titles: { en: tIn('en', def.key).slice(0, 40), zh: tIn('zh', def.key).slice(0, 40), ja: tIn('ja', def.key).slice(0, 40) }, desc: t(def.key + '_d').slice(0, 120), price: SHOP_PRICE });
-  shopBusy = '';
-  if (r.ok) { grantShop(id, r.purchaseId); void pay.ack(r.purchaseId); return; }
-  const err = (r                      ).error;
-  if (err === 'pending') ui.toast('background:url(assets/ui/icon_coin_selected.svg) center/contain no-repeat', t('shop_pending'), '#5B6B8C');
-  else if (err === 'bad_request') console.error('gp.pay bad call', r);
-  else if (err === 'disabled' || err === 'offline') { shopOn = false; ui.open(null); }
-}
+// ---------------- 内购商店：整块拆掉 ----------------
+// 原版走 gp.pay（平台币商品 + 发货），宿主里没有支付通道，也不该有。
+// 商店按钮（#shopBtn）与 shop 面板一起不渲染；SHOP_ITEMS 只剩死数据。
 
 // late cloud save: the handshake may land after this module started
 async function resolveLateSave() {
-  if (saveReady) return;
-  const gpp = window.gp?.player;
-  if (!gpp) { saveReady = true; return; }
-  try { await Promise.race([gpp.ready, new Promise(r => setTimeout(r, 4000))]); } catch { /* ignore */ }
-  let late = decodeSave(gpp.saves?.latestSync);
-  if (!late && gpp.saves?.getLatest) {
-    try { const r = await Promise.race([gpp.saves.getLatest(), new Promise      (r => setTimeout(() => r(null), 5000))]); late = decodeSave(r?.data); } catch { /* ignore */ }
-  }
-  if (late && late.lifeCoins.gte(S.lifeCoins)) {
-    const keepLang = (late       ).lang;
-    S = late; hadSave = true;
-    if ((S       ).prefs) { prefs = { ...prefs, ...(S       ).prefs }; applyVolumes(prefs.music, prefs.sfx); }
-    if (keepLang) setLangRaw(keepLang);
-    D = derive(S);
-    computeSlots(); rebuildChests(); syncRobots(); drawButton();
-    for (const p of pets) p.g = -1;
-    syncPets(true);
-    for (const k of S.tabs) ui.unlockTab(k, false);
-    ui.relabel(); ui.hud();
-    checkOffline();
-  }
+  // 宿主的存档是同步拿到的（saveApi.latestSync），没有「迟到的云存档」这回事
   saveReady = true;
   save();
 }
@@ -1441,7 +1399,7 @@ function checkOffline() {
     ui.offlineModal(away, coins, () => { addCoins(S, coins); burstCoins(btnC.x, btnC.y, 20); void snd?.playCue('sfx.buy', { eventId: 'offline:' + Date.now() }); save(); });
   }
 }
-void resolveLateSave().then(() => settlePurchases());
+void resolveLateSave();
 // offline earnings
 if (hadSave) {
   const away = (Date.now() - (S.lastSeen || Date.now())) / 1000;
@@ -1451,8 +1409,8 @@ if (hadSave) {
     ui.offlineModal(away, coins, () => { addCoins(S, coins); burstCoins(btnC.x, btnC.y, 20); void snd?.playCue('sfx.buy', { eventId: 'offline:' + Date.now() }); save(); });
   }
 }
-window.addEventListener('pagehide', () => save());
-document.addEventListener('visibilitychange', () => { if (document.hidden) save(); });
+listen(window, 'pagehide', () => save());
+listen(document, 'visibilitychange', () => { if (document.hidden) save(); });
 
 // debug hooks for playtests
 // ---------------- test-only cheats (only when the URL has playtest=1; normal play can never reach this) ----------------
@@ -1470,8 +1428,6 @@ function applyTestState(next       ) {
 // offline = keep the state but pretend the player was away 2 h (opens the offline-earnings dialog)
 function cheat(preset        ) {
   if (!PLAYTEST) return false;
-  if (preset.startsWith('shop:')) { grantShop(preset.slice(5), ''); return true; }   // deliver a shop item without paying
-  if (preset === 'shopui') { shopOn = true; ui.hud(); return true; }                     // show the shop button (pay is off in the sandbox)
   if (preset === 'offline') { S.lastSeen = Date.now() - 2 * 3600e3; checkOffline(); return true; }
   const n = newState();
   const c = preset === 'huge' ? new Decimal('1e5000') : new Decimal('1e400');
@@ -1508,5 +1464,37 @@ if (PLAYTEST) {
   const pre = new URLSearchParams(location.search).get('cheat');
   if (pre) setTimeout(() => { for (const x of pre.split(',')) cheat(x.trim()); }, 0);  // e.g. cheat=huge,offline
 }
-(window       ).__game = { S: () => S, D: () => D, press: () => pressButton(btnC.x, btnC.y, true), ui, ...(PLAYTEST ? { cheat, give: (n                 ) => { addCoins(S, n); D = derive(S); } } : {}) };
+/*
+ * 调试桥（e2e / 截图脚本用）：只读 state + 一个 press。
+ * ★ 卸载时必须删：留着 ready: true 会骗过下一次「已就绪」判断。
+ */
+const bridge = {
+  ready: true,
+  state: () => ({
+    coins: S.coins.toString(), life: S.lifeCoins.toString(), cps: D.cps.toString(),
+    clicks: S.clicks, level: S.level, rebirths: S.rebirths, gems: S.gems, pulls: S.pulls,
+    opened: S.opened, tab: ui.tab, sheet: !!ui.tab, ready,
+  }),
+  // ★ 走 pressManual：调试桥不许绕开收费点，否则 e2e 测的是一条假路径
+  press: () => pressManual(btnC.x, btnC.y),
+};
+window.__redbutton = bridge;
+
 void bestGrade; void GRADES; void chestStyle; void gemTex; void lastLevelCheck;
+
+return async function destroy() {
+  try { save(); } catch { /* 存档失败也要继续拆 */ }
+  offWin.forEach((f) => f());
+  try { app.ticker.remove(tick); } catch { /* 已经停了 */ }
+  try { ui.destroy(); } catch { /* 已经拆过 */ }
+  try { display.dispose(); } catch { /* 已经拆过 */ }
+  // 卸载后别还在放音乐：静音比 dispose 安全（dispose 会把 @makeplay/sound 的上下文关掉，切回来就哑了）
+  try { applyVolumes(false, false); } catch { /* 没声音系统 */ }
+  try { app.destroy(true, { children: true, texture: false }); } catch { /* 已经拆过 */ }
+  ready = false;
+  if (window.__redbutton === bridge) delete window.__redbutton;
+  if (window.__game) delete window.__game;
+  if (window.__cheat) delete window.__cheat;
+  if (globalThis.__MAKEPLAY_PLAYTEST__) delete globalThis.__MAKEPLAY_PLAYTEST__;
+};
+}

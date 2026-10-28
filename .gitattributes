@@ -1,4 +1,6 @@
-* text=auto
+# ★ 必须写 eol=lf：只写 `text=auto` 时 checkout 会按本机平台转成 CRLF，
+#   而 scripts/_patch.mjs 的锚点全是 LF 写的 ⇒ 每处都「命中 0 次」，看着像源码对不上。
+* text=auto eol=lf
 # 插件包按**字节**算 SHA-256，换行符一改哈希就对不上（症状是「装不上」）
 *.mjs -text
 *.pack -text

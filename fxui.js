@@ -1,5 +1,6 @@
 // Panel HTML for the six top-row systems. Pure rendering — actions go through data-a="fx" data-id=<verb> data-v=<arg>.
 import { t } from './i18n.js';
+import { AB } from './base.js';
 import { fmt, fmtTime } from './fmt.js';
 const dur = (sec        ) => fmtTime(sec, v => t('hours', { v }), v => t('minutes', { v }));
 const clock = (sec        ) => { sec = Math.max(0, Math.ceil(sec)); const h = Math.floor(sec / 3600), m = Math.floor(sec / 60) % 60, x = sec % 60; const p = (n        ) => String(n).padStart(2, '0'); return h ? h + ':' + p(m) + ':' + p(x) : m + ':' + p(x); };
@@ -13,11 +14,11 @@ import {
 
 export function fxIcon(i        ) {
   const r = i >> 2, c = i & 3;
-  return `background-image:url(assets/sheets/fx-icons-c.webp);background-size:400% 200%;background-position:${c * 33.333}% ${r * 100}%`;
+  return `background-image:url(${AB}assets/sheets/fx-icons-c.webp);background-size:400% 200%;background-position:${c * 33.333}% ${r * 100}%`;
 }
 export function gardenImg(i        ) {
   const r = i >> 2, c = i & 3;
-  return `background-image:url(assets/sheets/fx-garden-c.webp);background-size:400% 200%;background-position:${c * 33.333}% ${r * 100}%`;
+  return `background-image:url(${AB}assets/sheets/fx-garden-c.webp);background-size:400% 200%;background-position:${c * 33.333}% ${r * 100}%`;
 }
 
 export const FX_CSS = `
@@ -68,7 +69,7 @@ export const FX_CSS = `
 .wheel .hubc{position:absolute;left:50%;top:50%;width:46px;height:46px;margin:-23px;border-radius:50%;background:#fff;border:5px solid #17264A}
 .achrow{display:flex;align-items:center;gap:8px;background:#fff;border-radius:14px;padding:8px 10px;margin-bottom:6px;box-shadow:0 2px 0 #DCE9E3}
 .achrow.done{opacity:.55}
-.gi{display:inline-block;width:15px;height:15px;vertical-align:-3px;margin-left:2px;background:url(assets/sheets/icons-c.webp) 33.333% 100%/400% 200% no-repeat}
+.gi{display:inline-block;width:15px;height:15px;vertical-align:-3px;margin-left:2px;background:url(${AB}assets/sheets/icons-c.webp) 33.333% 100%/400% 200% no-repeat}
 .gi.c{background-position:100% 100%}
 .achrow .info{flex:1;min-width:0}
 .achrow .nm{font-weight:900;font-size:14px;line-height:1.2}
@@ -78,7 +79,7 @@ export const FX_CSS = `
 const GEMI = '<i class="gi"></i>';
 const COINI = '<i class="gi c"></i>';
 const MEDAL = ['#C7834A', '#9AA5B8', '#FFB800', '#2F8BFF', '#8B5CF6', '#FF3B47', '#17264A'];
-const chestIcon = (tier        ) => `background-image:url(assets/sheets/chests-c.webp);background-size:400% 200%;background-position:${tier * 33.333}% 0%`;
+const chestIcon = (tier        ) => `background-image:url(${AB}assets/sheets/chests-c.webp);background-size:400% 200%;background-position:${tier * 33.333}% 0%`;
 
 export function wheelPrizeLabel(i        ) {
   const p = WHEEL[i];
@@ -128,9 +129,11 @@ export function fxPanel(id      , s       , d         , iconStyle               
         ${o.done ? `<button class="btn off">${t('ach_done')}</button>` : `<button class="btn ${o.ok ? '' : 'off'}" data-a="fx" data-id="claim" data-v="${o.i}">${t('ach_claim')}<small>+${achGems(o.a)}${GEMI}</small></button>`}</div>`;
     }
   } else if (id === 'wheel') {
-    const free = f.wheelFree <= now;
+    // ★ 免费转盘（每 4 小时 1 次）已拆：那是「不上线就亏」的钩子。
+    //   置 false 后下面的免费按钮与倒计时自然不渲染，不用删模板。
+    const free = false;
     h += `<div class="wheelbox">${wheelHtml(iconStyle)}</div>`;
-    h += `<div class="bigstat"><div class="v">${t('wh_tokens')} ${f.wheelTok}/${WHEEL_MAX}</div><div class="l">${t('wh_prog', { a: f.wheelProg, b: WHEEL_PER })} · ${free ? t('wh_freeNow') : t('wh_free', { t: clock((f.wheelFree - now) / 1000) })}</div></div>`;
+    h += `<div class="bigstat"><div class="v">${t('wh_tokens')} ${f.wheelTok}/${WHEEL_MAX}</div><div class="l">${t('wh_prog', { a: f.wheelProg, b: WHEEL_PER })}</div></div>`;
     h += `<div class="btnrow">${free ? `<button class="btn" data-a="fx" data-id="spin" data-v="free" style="background:#2FC48D">${t('wh_spinFree')}</button>` : ''}<button class="btn ${f.wheelTok > 0 ? '' : 'off'}" data-a="fx" data-id="spin" data-v="tok">${t('wh_spin')}<small>1 ${t('wh_tokens')}</small></button></div>`;
   } else if (id === 'bank') {
     const cap = bankCap(f, d), full = f.bank.gte(cap) && f.bank.gt(0);

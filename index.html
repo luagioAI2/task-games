@@ -1,5 +1,5 @@
 <!doctype html><html><head>
-<title>别按红按钮</title><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>html,body,#app{margin:0;width:100%;height:100%;overflow:hidden;background:#0b0d12;}#app{position:fixed;inset:0}canvas{display:block}</style><script type="importmap">
+<title>别按红按钮</title><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>html,body,#app{margin:0;width:100%;height:100%;overflow:hidden;background:#DDF3E6;}#app{position:fixed;inset:0}canvas{display:block}</style><script type="importmap">
 {
   "imports": {
     "pixi.js": "./engines/pixi.min.mjs",
@@ -7,4 +7,13 @@
     "@makeplay/display": "./runtime/display-1.js"
   }
 }
-</script></head><body><div id="app"></div><script type="module" src="./game.js"></script></body></html>
+</script></head><body><div id="app"></div><script type="module">
+/*
+ * 独立网页入口。
+ * ★ 原版是模块体自执行；改成 `start(opts)` 之后入口必须跟着改 ——
+ *   忘了就是「整页全白、canvas 0、零报错」（模块确实求值了，只是没人调 start）。
+ */
+import { start } from './game.js';
+const stop = await start({ container: document.getElementById('app') });
+window.__rbStop = stop;
+</script></body></html>

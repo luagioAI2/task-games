@@ -51,17 +51,17 @@ import { fxPanel, fxIcon, FX_CSS, wheelHtml, wheelPrizeLabel, wheelPrizeIcon } f
  
 
 // ---------- sprite helpers ----------
-const ITEM_SHEETS = ['assets/sheets/items-animals-c.webp', 'assets/sheets/items-food-c.webp', 'assets/sheets/items-magic-c.webp'];
+const ITEM_SHEETS = ['assets/sheets/items-animals-c.webp', 'assets/sheets/items-food-c.webp', 'assets/sheets/items-magic-c.webp'].map((u) => AB + u);
 export function itemStyle(sp        ) {
   const sh = Math.floor(sp / 16), k = sp % 16, r = Math.floor(k / 4), c = k % 4;
   return `background-image:url(${ITEM_SHEETS[sh]});background-size:400% 400%;background-position:${c * 33.333}% ${r * 33.333}%`;
 }
 export function iconStyle(i        ) {
   const r = i >> 2, c = i & 3;
-  return `background-image:url(assets/sheets/icons-c.webp);background-size:400% 200%;background-position:${c * 33.333}% ${r * 100}%`;
+  return `background-image:url(${AB}assets/sheets/icons-c.webp);background-size:400% 200%;background-position:${c * 33.333}% ${r * 100}%`;
 }
 export function chestStyle(tier        , open = false) {
-  return `background-image:url(assets/sheets/chests-c.webp);background-size:400% 200%;background-position:${tier * 33.333}% ${open ? 100 : 0}%`;
+  return `background-image:url(${AB}assets/sheets/chests-c.webp);background-size:400% 200%;background-position:${tier * 33.333}% ${open ? 100 : 0}%`;
 }
 export function skinCss(i        ) {
   const k = SKINS[i];
@@ -89,7 +89,7 @@ const SHOP_FLAG                         = { golden: 'golden', skin_neon: 'skin',
 export function shopOwned(s                                  , id        ) { const f = SHOP_FLAG[id]; return !!(f && s.shop[f]); }
 export const SHOP_PRICE = 1;
 const PCOIN = (n        ) => `<span class="pcoin" aria-label="${t('shop_coin', { v: n })}"><img src="assets/ui/icon_coin_selected.svg" width="20" height="20" alt="" aria-hidden="true"><span>${n}</span></span>`;
-const HAND = 'background-image:url(assets/sheets/hand.webp);background-size:contain;background-position:center;background-repeat:no-repeat';
+const HAND = `background-image:url(${AB}assets/sheets/hand.webp);background-size:contain;background-position:center;background-repeat:no-repeat`;
 
 const GEN_ICON = [
   iconStyle(6), iconStyle(7), iconStyle(1), chestStyle(2), itemStyle(41), itemStyle(32), itemStyle(47), itemStyle(33), itemStyle(42), itemStyle(38),
@@ -251,6 +251,9 @@ const CSS = `
 
 const GEAR = '<svg viewBox="0 0 24 24" fill="#fff"><path d="M19.4 13a7.5 7.5 0 0 0 0-2l2.1-1.6-2-3.5-2.5 1a7.4 7.4 0 0 0-1.7-1L15 3.3h-4l-.4 2.6a7.4 7.4 0 0 0-1.7 1l-2.5-1-2 3.5L6.5 11a7.5 7.5 0 0 0 0 2l-2.1 1.6 2 3.5 2.5-1a7.4 7.4 0 0 0 1.7 1l.4 2.6h4l.4-2.6a7.4 7.4 0 0 0 1.7-1l2.5 1 2-3.5zM13 15.5a3.5 3.5 0 1 1 0-7 3.5 3.5 0 0 1 0 7z" transform="translate(-1 0)"/></svg>';
 
+import { AB } from './base.js';
+import { scopeCss } from './scope-css.js';
+
 export class Ui {
   api       ;
   root                ;
@@ -269,12 +272,14 @@ export class Ui {
 
   constructor(host             , api       ) {
     this.api = api;
-    const style = document.createElement('style'); style.textContent = CSS + FX_CSS; document.head.appendChild(style);
+    // ★ 收进 #rb-root：这份 CSS 里有 .hud / .pill / .tabs / .sheet 这种通用类名，
+    //   不收进作用域会把宿主的顶栏底栏一起改样（未分层样式胜过 Tailwind 的 @layer）
+    const style = document.createElement('style'); style.textContent = scopeCss(CSS + FX_CSS, '#rb-root'); document.head.appendChild(style); this.styleEl = style;
     const r = document.createElement('div'); r.id = 'ui'; host.appendChild(r); this.root = r;
     r.innerHTML = `
       <div class="hud">
         <div class="hrow"><div class="pill coins"><div class="spr" style="${iconStyle(7)}"></div><span id="coinTxt">0</span></div>
-        <div class="pill cps hidden" id="cpsPill"><div class="spr" style="${iconStyle(7)}"></div><span id="cpsTxt"></span></div><button class="lbbtn hidden" id="lbBtn" aria-label="leaderboard">${TROPHY}</button><button class="shopbtn hidden" id="shopBtn" aria-label="shop"><img src="assets/ui/icon_coin_selected.svg" alt="" aria-hidden="true"></button></div>
+        <div class="pill cps hidden" id="cpsPill"><div class="spr" style="${iconStyle(7)}"></div><span id="cpsTxt"></span></div></div>
         <div class="hrow"><div class="pill small hidden" id="gemPill"><div class="spr" style="${iconStyle(5)}"></div><span id="gemTxt">0</span></div>
         <div class="lv hidden" id="lvBox"><span id="lvTxt">Lv1</span><div class="bar"><i id="lvBar"></i></div></div>
         <div class="pill small hidden" id="dpPill"><div class="spr" style="${iconStyle(4)}"></div><span id="dpTxt">0</span></div>
@@ -286,7 +291,7 @@ export class Ui {
       <div class="sheet hidden" id="sheet"><header><div class="spr" id="shIcon" style="width:34px;height:34px"></div><div class="grow" id="shTitle"></div><button class="xbtn" id="shClose">×</button></header><div class="body" id="shBody"></div></div>
       <div class="tabs hidden" id="tabs">${TAB_DEF.map(d => `<button class="tab lock" data-tab="${d.id}"><div class="spr" style="${iconStyle(d.icon)}"></div><span></span><i class="dot hidden"></i></button>`).join('')}</div>
       <div id="modalHost"></div>`;
-    for (const id of ['coinTxt', 'cpsTxt', 'cpsPill', 'gemPill', 'gemTxt', 'lvBox', 'lvTxt', 'lvBar', 'dpPill', 'dpTxt', 'gear', 'toasts', 'sheet', 'shIcon', 'shTitle', 'shClose', 'shBody', 'tabs', 'modalHost', 'skinBtn', 'skinMini', 'skinDot', 'lbBtn', 'fxRow', 'shopBtn']) {
+    for (const id of ['coinTxt', 'cpsTxt', 'cpsPill', 'gemPill', 'gemTxt', 'lvBox', 'lvTxt', 'lvBar', 'dpPill', 'dpTxt', 'gear', 'toasts', 'sheet', 'shIcon', 'shTitle', 'shClose', 'shBody', 'tabs', 'modalHost', 'skinBtn', 'skinMini', 'skinDot', 'fxRow', ]) {
       this.els[id] = r.querySelector('#' + id)               ;
     }
     this.els.tabs.addEventListener('click', (e) => {
@@ -310,11 +315,13 @@ export class Ui {
       const el = downEl; downEl = null; downId = -1; this.pressing = false;
       if (fire && el && Math.hypot(e.clientX - downX, e.clientY - downY) < 12) this.onBody(el);
     };
-    window.addEventListener('pointerup', (e) => end(e, true));
-    window.addEventListener('pointercancel', (e) => end(e, false));
+    const onUp = (e) => end(e, true), onCancel = (e) => end(e, false);
+    window.addEventListener('pointerup', onUp);
+    window.addEventListener('pointercancel', onCancel);
+    this.offWin = [() => window.removeEventListener('pointerup', onUp), () => window.removeEventListener('pointercancel', onCancel)];
     this.els.skinBtn.addEventListener('click', () => { void snd?.playCue('sfx.ui', { eventId: 'skin:' + Date.now() }); this.newSkin = false; this.open(this.tab === 'skin' ? null : 'skin'); });
-    this.els.shopBtn.addEventListener('click', () => { void snd?.playCue('sfx.ui', { eventId: 'shop:' + Date.now() }); this.open(this.tab === 'shop' ? null : 'shop'); });
-    this.els.lbBtn.addEventListener('click', () => { void snd?.playCue('sfx.ui', { eventId: 'lb:' + Date.now() }); this.leaderboard(); });
+
+
     this.els.fxRow.addEventListener('click', (e) => {
       const b = (e.target               ).closest('.fxb')                      ;
       if (!b) return;
@@ -330,6 +337,14 @@ export class Ui {
     });
     this.els.dpPill.addEventListener('click', () => { void snd?.playCue('sfx.ui', { eventId: 'dp:' + Date.now() }); this.dpModal(); });
     this.relabel();
+  }
+
+  /** 卸载：DOM + 样式 + window 监听。★ 少一样就是「切走以后宿主的按钮还是游戏的样子」 */
+  destroy() {
+    (this.offWin || []).forEach((f) => f());
+    this.offWin = [];
+    this.styleEl?.remove();
+    this.root?.remove();
   }
 
   layout(left        , width        , height        ) {
@@ -383,7 +398,7 @@ export class Ui {
       let dot = false;
       if (un) {
         if (id === 'ach') dot = ACHS.some((a, i) => !f.ach.includes(i) && achStat(s, d, a.stat) >= a.v);
-        else if (id === 'wheel') dot = f.wheelTok > 0 || f.wheelFree <= now;
+        else if (id === 'wheel') dot = f.wheelTok > 0;
         else if (id === 'garden') { const n = plotCount(f); for (let i = 0; i < n; i++) { const p = f.garden[i]; if (!p || now >= p.t + CROPS[p.c].min * 60e3) dot = true; } }
         else if (id === 'exp') dot = EXPS.some((e, i) => d.collected >= e.need && (!f.exp[i] || now >= f.exp[i] + e.min * 60e3));
         else if (id === 'lab') dot = LABS.some(l => labLv(f, l.id) < l.max && (l.gems ? s.gems : f.rp) >= labCost(f, l));
@@ -430,7 +445,7 @@ export class Ui {
     if (id) {
       const td = TAB_DEF.find(d => d.id === id);
       const fxid = id.startsWith('f_') ? id.slice(2)         : null;
-      this.els.shIcon.setAttribute('style', `width:34px;height:34px;${td ? iconStyle(td.icon) : fxid ? fxIcon(FX_ICON[fxid]) : id === 'shop' ? 'background:url(assets/ui/icon_coin_selected.svg) center/contain no-repeat' : skinCss(this.api.st().skin)}`);
+      this.els.shIcon.setAttribute('style', `width:34px;height:34px;${td ? iconStyle(td.icon) : fxid ? fxIcon(FX_ICON[fxid]) : id === 'shop' ? `background:url(${AB}assets/ui/icon_coin_selected.svg) center/contain no-repeat` : skinCss(this.api.st().skin)}`);
       this.els.fxRow.querySelectorAll('.fxb').forEach((b) => b.classList.toggle('on', 'f_' + (b               ).dataset.fx === id));
       this.els.shBody.scrollTop = 0;
       this.renderPanel();
@@ -456,8 +471,8 @@ export class Ui {
     if (this.skinShown !== s.skin) { this.skinShown = s.skin; this.els.skinMini.setAttribute('style', skinCss(s.skin)); }
     this.els.skinBtn.classList.toggle('hidden', s.clicks < 30 && s.skins <= 1);
     this.els.skinDot.classList.toggle('hidden', !this.newSkin);
-    this.els.lbBtn.classList.toggle('hidden', s.clicks < 10);
-    this.els.shopBtn.classList.toggle('hidden', !this.api.shopOn() || s.clicks < 10);
+
+
     // badges
     const dots                          = {
       up: UPS.some(u => lvl(s, u.id) < u.max && s.coins.gte(upCost(s, u))) || GENS.some(g => this.genVisible(g.cost) && s.coins.gte(genCost(s, g))),
@@ -910,31 +925,7 @@ export class Ui {
     });
   }
 
-  leaderboard() {
-    const s = this.api.st();
-    const my = wealthScore(s.lifeCoins);
-    const guest = !window.gp?.player?.user;
-    this.modal(`<div class="spr huge" style="display:flex;align-items:center;justify-content:center">${TROPHY}</div><h3>${t('lb_title')}</h3>
-      <div style="font-size:14px;color:#5B6B8C;line-height:1.35">${t('lb_d')}</div>
-      <div class="stats"><span>${t('lb_mine')}</span><b>${my}</b><span>${t('st_life')}</span><b>${fmt(s.lifeCoins)}</b></div>
-      <div class="lbl" id="lbList"><div style="padding:12px;color:#5B6B8C">${t('lb_loading')}</div></div>
-      ${guest ? `<div style="font-size:13px;color:#5B6B8C">${t('lb_guest')}</div><button class="btn blue" data-login>${t('lb_login')}</button>` : ''}
-      <button class="btn" data-x>${t('close')}</button>`, (box, close) => {
-      box.addEventListener('click', (e) => {
-        const el = e.target               ;
-        if (el.closest('[data-x]')) close();
-        else if (el.closest('[data-login]')) { close(); window.gp?.player?.requestLogin?.(); }
-      });
-      void this.api.submitBest().then(async () => {
-        const list = box.querySelector('#lbList')                      ;
-        if (!list) return;
-        let top                                                                     = [];
-        try { top = (await window.gp?.player?.topScores?.(20)) || []; } catch { top = []; }
-        if (!top.length) { list.innerHTML = `<div style="padding:12px;color:#5B6B8C">${t('lb_empty')}</div>`; return; }
-        list.innerHTML = top.map((r, i) => `<div class="lbr ${r.isMe ? 'me' : ''}"><span class="rk">${i + 1}</span>${r.avatar ? `<img src="${escapeHtml(r.avatar)}" alt="">` : '<img alt="">'}<span class="nmx">${escapeHtml(r.name || t('lb_anon'))}</span><span class="sc">${r.score}</span></div>`).join('');
-      });
-    });
-  }
+
 
   toast(iconCss        , text        , color         ) {
     const host = this.els.toasts;

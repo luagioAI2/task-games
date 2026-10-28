@@ -7,5 +7,11 @@ dist-plugin/
 node_modules/
 *.log
 
-# smoke.mjs 的调试截图（临时，别当商城截图用）
-shots/smoke-*.png
+# smoke.mjs / 走查脚本的调试截图（临时，别当商城截图用）。
+# ⚠️ 要留的图进 screenshots/ —— build-store-shots.py 的源图必须在**已入库**的目录里，
+#    否则详情页那 4 张图的唯一来源没有版本控制，清一次就再也生成不出来，且不报错。
+shots/
+
+# 一次性脚本（_patch / _probe / _check-* / _lf）。
+# ★ 前缀必须带 `scripts/`：只写 `_*` 会把 `_originals/` 也一起忽略。
+scripts/_*
