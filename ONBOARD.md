@@ -19,7 +19,7 @@
 | 6 | 落库 | ✅ | `check:registry` → 本地包 20 款 · 哈希 20 条 · 商城 20 条 · 截图 PLAN 20 行，0 条不一致 |
 | 7 | 商城详情 | ✅ | 4 张图（标题 / 球在半空 / 新元素卡 / 第 5 本笔记本）；`capture-store-detail` 20/20 全过 |
 | 8 | 五层验收 | ✅ | `lint` 0 · `test` 774 过 · `build` 过 · e2e phone + tablet 全过 · `e2e-guardshift` 回归全过 |
-| 9 | 提交推送 | ⬜ | 待提交（见文末） |
+| 9 | 提交推送 | ✅ | 游戏仓 `1228c95` · 宿主 `29ed33d` · 已推 `origin farm-2d`，`ls-remote` == HEAD |
 
 ## 三个设计判断（已定案）
 
@@ -38,13 +38,11 @@
 
 ## 下次从这继续
 
-只剩提交推送：
+**已经上完了**（游戏仓 `1228c95` / 宿主 `29ed33d`，已推 `origin farm-2d`）。
+要改的话照常：改源码 → `build-plugin` → `install-to-host` → 宿主 `build` → e2e → 两边各自提交。
 
-```bash
-cd task-games/hoopsneak && git add -A && git commit -F msg.txt      # 别 -m，消息里有反引号
-cd ../../kid-quest-farm-2d && git add -A && git commit -F msg.txt
-git push farm-2d main    # 大包优先直连，见用户级 MEMORY.md
-```
+推送注意：这个 worktree 的 `origin/farm-2d` 本地一直显示 `gone`（`refs/remotes` 写不进去的
+老坑，`git ls-remote` 查是好的），**别看 `git branch -vv` 判断远端有没有这个分支**。
 
 ## 环境坑（本款新踩的）
 
