@@ -9,21 +9,8 @@ export const STR = {
     cont: '继续',
     levels: '选关',
     world: '笔记本 {n}',
-    title: 'Sneaky Hoops\nin Class',
-    ranking: '星星排行榜',
-    starTotal: '我的累计星星：{n} / 600',
+    title: '偷偷投篮',
     starCount: '{n} 星',
-    rankingRule: '各关最佳星数相加 · 前10名',
-    rankingLoading: '正在读取排行榜…',
-    rankingEmpty: '还没有排名，快来收集星星！',
-    rankingOffline: '暂时无法读取排行榜，请稍后刷新。',
-    rankingPending: '星数尚未同步，可稍后刷新重试。',
-    rankingGuest: '登录即可将现有星星加入排名。',
-    rankingLogin: '登录上榜',
-    rankingRefresh: '刷新',
-    rankingYou: '我',
-    rankingPrevious: '上一页',
-    rankingNext: '下一页',
     sub: '按住蓄力 · 松手投篮',
     back: '返回',
     next: '下一关',
@@ -92,20 +79,7 @@ export const STR = {
     levels: 'Levels',
     world: 'NOTEBOOK {n}',
     title: 'Sneaky Hoops\nin Class',
-    ranking: 'Star Rankings',
-    starTotal: 'Your total stars: {n} / 600',
     starCount: '{n} stars',
-    rankingRule: 'Best stars per level · Top 10',
-    rankingLoading: 'Loading rankings…',
-    rankingEmpty: 'No scores yet. Collect your first stars!',
-    rankingOffline: 'Rankings unavailable. Please refresh later.',
-    rankingPending: 'Stars not synced yet. Refresh to retry.',
-    rankingGuest: 'Sign in to rank with your collected stars.',
-    rankingLogin: 'Sign in',
-    rankingRefresh: 'Refresh',
-    rankingYou: 'You',
-    rankingPrevious: 'Previous page',
-    rankingNext: 'Next page',
     sub: 'Hold to charge · release to shoot',
     back: 'Back',
     next: 'Next',
@@ -174,20 +148,7 @@ export const STR = {
     levels: 'ステージ',
     world: 'ノート {n}',
     title: 'Sneaky Hoops\nin Class',
-    ranking: 'スターランキング',
-    starTotal: '獲得スター：{n} / 600',
     starCount: '{n} 個',
-    rankingRule: '各ステージの最高スター合計 · 上位10名',
-    rankingLoading: 'ランキングを読み込み中…',
-    rankingEmpty: '記録はまだありません。スターを集めよう！',
-    rankingOffline: '読み込めませんでした。後でもう一度お試しください。',
-    rankingPending: 'スター未送信。更新して再試行できます。',
-    rankingGuest: 'ログインすると獲得スターで参加できます。',
-    rankingLogin: 'ログイン',
-    rankingRefresh: '更新',
-    rankingYou: '自分',
-    rankingPrevious: '前のページ',
-    rankingNext: '次のページ',
     sub: '長押しでため・はなしてシュート',
     back: 'もどる',
     next: 'つぎへ',
@@ -253,9 +214,10 @@ export const STR = {
 
 let cur       = 'en';
 export function getLang()       { return cur; }
-export function setLang(l      ) {
+export function setLang(l) {
+  // ★ 原版会写 document.documentElement.lang —— 插件里那是**宿主页面**的 <html>，
+  //   写了就把 App 的语言标记改成 zh-CN（读屏、字体回退都会跟着变）。
   cur = l;
-  document.documentElement.lang = l === 'zh' ? 'zh-CN' : l;
 }
 export function pickLang(locale                           )       {
   const s = (locale || '').toLowerCase();

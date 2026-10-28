@@ -1,5 +1,15 @@
-<!doctype html><html><head>
-<title>偷偷投篮</title><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>html,body,#app{margin:0;width:100%;height:100%;overflow:hidden;background:#0b0d12;}#app{position:fixed;inset:0}canvas{display:block}</style><script type="importmap">
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<title>偷偷投篮</title>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+  html, body, #app { margin: 0; width: 100%; height: 100%; overflow: hidden; background: #f6f0e1; }
+  #app { position: fixed; inset: 0; }
+  canvas { display: block; }
+</style>
+<script type="importmap">
 {
   "imports": {
     "pixi.js": "./engines/pixi.min.mjs",
@@ -8,4 +18,15 @@
     "@makeplay/display": "./runtime/display-1.js"
   }
 }
-</script></head><body><div id="app"></div><script type="module" src="./game.js"></script></body></html>
+</script>
+</head>
+<body>
+<div id="app"></div>
+<script type="module">
+  // ★ 模块体已经改成 `export async function start()`，不再自执行 ——
+  //   这里必须真的调一次，否则整页全白、canvas 0、零报错。
+  import { start } from './game.js'
+  start({ container: document.getElementById('app') })
+</script>
+</body>
+</html>

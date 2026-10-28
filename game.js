@@ -10,11 +10,35 @@ import { THEMES, Boil, boilTick, jrect, jcircle, jpath, stroke, hatchRect, hatch
                                             
 import { t, setLang, getLang, pickLang, LANGS, elName, elDesc } from './i18n.js';
                                       
-import { keepBestStars, totalStars, syncStars, openLeaderboard, closeLeaderboard, leaderboardOpen } from './leaderboard.js';
+import { keepBestStars, totalStars, syncStars, closeLeaderboard, leaderboardOpen } from './leaderboard.js';
 import { createPixiFx } from '@makeplay/fx';
+import { AB } from './base.js';
+
+/**
+ * 宿主入口。独立网页（`index.html`）和插件（`plugin.js`）调的是**同一个函数**，
+ * 差别全部通过 `opts` 注入 —— 这里没有 `if (isPlugin)` 分支。
+ *
+ * @param {object} opts
+ * @param {HTMLElement} opts.container  挂载容器（宿主给的那一格）
+ * @param {{getLatest:()=>Promise<any>, putLatest:(d:any)=>Promise<any>}} [opts.store] 存档适配层
+ * @param {()=>Promise<boolean>} [opts.chargePlay] 开局收费；返回 false 表示余额不足、不要开
+ * @returns {Promise<() => Promise<void>|void>} 卸载函数
+ */
+export async function start(opts = {}) {
+const { container: mountContainer, store, chargePlay } = opts;
+
+/** 注册 window 监听并记下卸载函数（原版是裸 addEventListener，卸载时全留在全局）。 */
+const offs = [];
+const winOn = (type, fn, o) => {
+  window.addEventListener(type, fn, o);
+  offs.push(() => window.removeEventListener(type, fn, o));
+};
+/** 插件在 `plugin.js` 里已经 await 过 host.storage.get；独立网页没有 store ⇒ 全新档。 */
+let initialSave = null;
 
 const C = 40, W = 1280, H = 720;
-const TITLE = 'Sneaky Hoops in Class';
+// 中文名（商城名同）：加载页与标题页都用它
+const TITLE = '偷偷投篮';
 let FONT = '"MpFontDisplay", "SmileySans", "PingFang SC", "Hiragino Sans", "Microsoft YaHei", sans-serif';
 
 // ───────────────────────── save ─────────────────────────
@@ -22,20 +46,19 @@ let FONT = '"MpFontDisplay", "SmileySans", "PingFang SC", "Hiragino Sans", "Micr
 function freshSave()       { return { v: 1, unlocked: 0, stars: new Array(NLEVELS).fill(0), sound: true, seen: [] }; }
 let save       = freshSave();
 function loadSave() {
-  try {
-    const s = (window       ).gp?.player?.saves?.latestSync;
-    const info = (window       ).gp?.player?.saves?.latestInfo;
-    if (s && !info?.legacy && s.v === 1 && Array.isArray(s.stars)) {
-      save = { ...freshSave(), ...s };
-      while (save.stars.length < NLEVELS) save.stars.push(0);
-      // players who cleared the old last level (1-50) get notebook 11 unlocked
-      if (save.unlocked === 49 && save.stars[49] > 0) save.unlocked = 50;
-      if (save.unlocked === 99 && save.stars[99] > 0) save.unlocked = 100; // old last level cleared → notebook 21 opens
-    }
-  } catch { /* keep fresh */ }
+  // 原版读的是 `gp.player.saves.latestSync`（MakePlay 平台），插件里没有 gp
+  const s = initialSave;
+  if (s && s.v === 1 && Array.isArray(s.stars)) {
+    save = { ...freshSave(), ...s };
+    while (save.stars.length < NLEVELS) save.stars.push(0);
+    // players who cleared the old last level (1-50) get notebook 11 unlocked
+    if (save.unlocked === 49 && save.stars[49] > 0) save.unlocked = 50;
+    if (save.unlocked === 99 && save.stars[99] > 0) save.unlocked = 100; // old last level cleared → notebook 21 opens
+  }
 }
 function persist() {
-  try { void (window       ).gp?.player?.saves?.putLatest(save); } catch { /* offline */ }
+  // ★ 适配层的 putLatest 必须真的返回 Promise：调用处有 `.then()`
+  try { void store?.putLatest?.(save); } catch { /* offline */ }
 }
 
 // ───────────────────────── sound ─────────────────────────
@@ -44,7 +67,7 @@ let audioUnlocked = false;
 let chargeVoice                = null;
 async function initSound() {
   try {
-    sound = (await loadSoundSystem({ manifestUrl: './sound.manifest.json' }))                    ;
+    sound = (await loadSoundSystem({ manifestUrl: AB + 'sound.manifest.json' }))                    ;
     sound.settings.setMuted(!save.sound);
   } catch { sound = null; }
 }
@@ -55,8 +78,8 @@ function onGesture() {
     if (sound && save.sound) void sound.setMusicState('main', { eventId: 'boot' });
   }).catch(() => { audioUnlocked = false; });
 }
-window.addEventListener('pointerdown', onGesture);
-window.addEventListener('keydown', onGesture);
+winOn('pointerdown', onGesture);
+winOn('keydown', onGesture);
 let sfxN = 0;
 function sfx(id       , pitch = 0) {
   if (!sound || !audioUnlocked) return;
@@ -72,13 +95,17 @@ function stopChargeSfx() {
   if (sound && chargeVoice) { try { void sound.stop(chargeVoice); } catch { /* ignore */ } }
   chargeVoice = null;
 }
-window.addEventListener('pagehide', () => { if (sound) void sound.dispose(); }, { once: true });
+winOn('pagehide', () => { if (sound) void sound.dispose(); }, { once: true });
 
 // ───────────────────────── app / display ─────────────────────────
-const host = document.getElementById('app') ;
+// 挂载根：宿主容器里再套一层，根节点是定位上下文（canvas 铺满它，纸面背景画在 canvas 里）
+const mountRoot = document.createElement('div');
+mountRoot.className = 'hs';
+mountRoot.style.cssText = 'position:absolute;inset:0;overflow:hidden;touch-action:none;';
+mountContainer.appendChild(mountRoot);
 const app = new PIXI.Application();
-await app.init({ resizeTo: host, autoDensity: true, antialias: true, background: 0xf6f0e1 });
-host.appendChild(app.canvas);
+await app.init({ resizeTo: mountRoot, autoDensity: true, antialias: true, background: 0xf6f0e1 });
+mountRoot.appendChild(app.canvas);
 const root = new PIXI.Container();
 app.stage.addChild(root);
 const paperG = new PIXI.Graphics();
@@ -104,7 +131,10 @@ function drawPaperBg() {
   drawPaper(paperG, paperTheme, x, y, w, h, 7, 60);
   if (paperStain) coffeeStain(paperG, 40, 50, 46);
 }
-const display = mountDisplay({ orientation: 'landscape', onResize: ({ width, height }                                   ) => relayout(width, height) });
+// ★ orientation 必须 'both'：本作设计空间是 1280×720（横屏），而宿主容器是竖的。
+//   写 'landscape' 会让 mountDisplay 在竖屏插一张 fixed 全屏提示（挂到 document.body 上，
+//   连宿主顶栏底栏一起盖住）。这里让它按容器实测尺寸走，游戏自己 letterbox 居中。
+const display = mountDisplay({ host: mountRoot, orientation: 'both', lang: 'zh', onResize: ({ width, height }) => relayout(width, height) });
 display.attachPixi(app);
 app.renderer.on('resize', (w        , h        ) => relayout(w, h));
 relayout(app.screen.width, app.screen.height);
@@ -113,7 +143,7 @@ const rankingFxWorld = new PIXI.Container();
 root.addChild(rankingFxWorld);
 app.stage.addChild(rankingFxScreen);
 const fx = await createPixiFx({ PIXI, app, world: rankingFxWorld, screen: rankingFxScreen });
-window.addEventListener('pagehide', () => fx.dispose(), { once: true });
+winOn('pagehide', () => fx.dispose(), { once: true });
 
 function setPaper(th       , stain         ) {
   paperTheme = th; paperStain = stain;
@@ -1310,6 +1340,25 @@ function startLevel(i        , fresh = true, intro = true) {
   if (cur % 5 === 0 && intro) showTutorial(w);
 }
 
+/**
+ * 进一关。**收费点就在这**（原版所有入口最后都落到 `startLevel`）。
+ *
+ * | 入口 | 收不收 | 为什么 |
+ * | --- | --- | --- |
+ * | 标题页「开始 / 继续」 | 收 | 新的一关 |
+ * | 选关页点某一关 | 收 | 新的一关 |
+ * | 结算页「下一关」 | 收 | 新的一关 |
+ * | 结算页「重玩」/ HUD 重试 / 按 R | **不收** | 同一关，已经付过 |
+ *
+ * ★ 不能把收费写进 `startLevel` 本身：重试和重玩走的也是它，那样每按一次重试都扣 10。
+ */
+function enterLevel(i, intro = true) {
+  const go = () => startLevel(i, true, intro);
+  if (typeof chargePlay !== 'function') { go(); return; }
+  // 扣分是宿主事务（异步）。余额不够时 chargePlay 自己弹 toast 并返回 false ⇒ 不进关。
+  Promise.resolve(chargePlay()).then((ok) => { if (ok) go(); }).catch((e) => console.error('[hoopsneak] 开局扣分失败', e));
+}
+
 function buildHud() {
   hudLayer.removeChildren().forEach(c => c.destroy({ children: true }));
   const ink = th.ink;
@@ -1384,9 +1433,9 @@ function release() {
   }
   if (aimG) aimG.clear();
 }
-window.addEventListener('pointerup', () => release());
-window.addEventListener('pointercancel', () => release());
-window.addEventListener('keydown', (e) => {
+winOn('pointerup', () => release());
+winOn('pointercancel', () => release());
+winOn('keydown', (e) => {
   if (leaderboardOpen()) { if (e.code === 'Escape') closeLeaderboard(); return; }
   if (e.repeat) return;
   if (e.code === 'Space') {
@@ -1398,7 +1447,7 @@ window.addEventListener('keydown', (e) => {
   } else if (e.code === 'KeyR' && scene === 'play') { stopChargeSfx(); startLevel(cur, true, false); }
   else if (e.code === 'Escape' && scene === 'play') { stopChargeSfx(); showLevels(worldOf(cur)); }
 });
-window.addEventListener('keyup', (e) => { if (e.code === 'Space') release(); });
+winOn('keyup', (e) => { if (e.code === 'Space') release(); });
 
 function handleEvents() {
   for (const ev of sim.events) {
@@ -2040,14 +2089,11 @@ function showResult(stars        ) {
   const sh = txt(t('starsGot', { n: Math.max(0, stars - 1) }), 28, 0x1f2a44);
   sh.position.set(0, 30);
   c.addChild(sh);
-  const ranking = rankButton(240, 60, 28);
-  ranking.position.set(0, 76);
-  c.addChild(ranking);
   const bRe = doodleButton(t('replay'), 150, 64, () => { closeOverlay(); startLevel(cur, true, false); }, 0xffffff, 0x1f2a44, 28);
   const bLv = doodleButton(t('levels'), 150, 64, () => { closeOverlay(); showLevels(worldOf(cur)); }, 0xffffff, 0x1f2a44, 28);
   const bNx = doodleButton(last ? t('levels') : t('next'), 170, 64, () => {
     closeOverlay();
-    if (last) showAllClear(); else startLevel(cur + 1, true);
+    if (last) showAllClear(); else enterLevel(cur + 1);
   }, 0xffd166, 0x1f2a44, 30);
   bRe.position.set(-180, 164); bLv.position.set(0, 164); bNx.position.set(180, 164);
   c.addChild(bRe, bLv, bNx);
@@ -2065,13 +2111,6 @@ function showAllClear() {
 }
 
 // ───────────────────────── title & level select ─────────────────────────
-function rankButton(w = 250, h = 84, size = 32) {
-  const b = doodleButton(t('ranking'), w, h, () => {
-    fx.play('button-highlight', { screenPos: b.toGlobal(new PIXI.Point(0, 0)), power: 0.3 });
-    openLeaderboard(save.stars, FONT, () => sfx('sfx.click'));
-  }, 0xfffdf6, 0x1f2a44, size);
-  return b;
-}
 function firstUnbeaten() {
   for (let i = 0; i <= save.unlocked; i++) if (!save.stars[i]) return i;
   return Math.min(NLEVELS - 1, save.unlocked);
@@ -2246,20 +2285,20 @@ function showTitle() {
   setupTitleShooter(deco, ink);
   // buttons
   const hasProgress = save.stars.some(s => s > 0);
-  const startBtn = doodleButton(hasProgress ? t('cont') : t('start'), 250, 84, () => startLevel(firstUnbeaten(), true), 0xffd166, ink, 44);
+  const startBtn = doodleButton(hasProgress ? t('cont') : t('start'), 250, 84, () => enterLevel(firstUnbeaten()), 0xffd166, ink, 44);
   startBtn.position.set(W / 2 - 280, H - 110);
   const lvBtn = doodleButton(t('levels'), 220, 84, () => showLevels(worldOf(firstUnbeaten())), 0xffffff, ink, 40);
   lvBtn.position.set(W / 2, H - 110);
-  const rank = rankButton(); rank.position.set(W / 2 + 280, H - 110);
-  layer.addChild(startBtn, lvBtn, rank);
+  // 「星星排行榜」按钮删掉了（联网 + 要登录，插件里没有账号体系）
+  startBtn.position.set(W / 2 - 140, H - 110);
+  lvBtn.position.set(W / 2 + 150, H - 110);
+  layer.addChild(startBtn, lvBtn);
   tween(0.8, k => { startBtn.rotation = Math.sin(k * Math.PI * 2) * 0.03; });
   // corner buttons: language + sound
-  const lang = iconButton('lang', () => cycleLang(), ink);
-  lang.position.set(W - 150, 50);
-  const lname = txt(t('langName'), 22, ink); lname.position.set(W - 150, 92);
+  // 语言切换删掉了：这个 App 面向中文家庭，语言固定 zh（见 boot 里的 setLang('zh')）
   const snd = iconButton(save.sound ? 'sound' : 'mute', () => { toggleSound(); showTitle(); }, ink);
   snd.position.set(W - 60, 50);
-  hudLayer.addChild(lang, lname, snd);
+  hudLayer.addChild(snd);
 }
 
 function cycleLang() {
@@ -2318,7 +2357,7 @@ function showLevels(w        ) {
       c.hitArea = new PIXI.Circle(0, 0, 66);
       c.on('pointerdown', (e) => { e.stopPropagation(); c.scale.set(0.92); });
       c.on('pointerupoutside', () => { if (!c.destroyed) c.scale.set(1); });
-      c.on('pointerup', (e) => { e.stopPropagation(); sfx('sfx.click'); startLevel(idx, true); });
+      c.on('pointerup', (e) => { e.stopPropagation(); sfx('sfx.click'); enterLevel(idx); });
     }
     c.position.set(W / 2 + (k - 2) * 190, 370 + (k % 2 ? 20 : -10));
     sceneLayer.addChild(c);
@@ -2337,7 +2376,6 @@ function showLevels(w        ) {
   if (w < WORLDS - 1) { const r = iconButton('right', () => showLevels(w + 1), ink); r.position.set(W - 90, 380); r.scale.set(1.6); hudLayer.addChild(r); }
   const home = iconButton('home', () => showTitle(), ink); home.position.set(70, 60); hudLayer.addChild(home);
   const snd = iconButton(save.sound ? 'sound' : 'mute', () => { toggleSound(); showLevels(w); }, ink); snd.position.set(W - 70, 60); hudLayer.addChild(snd);
-  const rank = rankButton(320, 88, 34); rank.position.set(W / 2, 538); hudLayer.addChild(rank);
   // swipe between pages
   const catcher = new PIXI.Graphics();
   catcher.rect(-2000, -2000, 5280, 4720).fill({ color: 0xffffff, alpha: 0.001 });
@@ -2349,26 +2387,22 @@ function showLevels(w        ) {
 }
 
 // ───────────────────────── language / fonts ─────────────────────────
-function applyLang(l      )                {
+function applyLang(l) {
   setLang(l);
-  document.title = TITLE;
-  const gpf = (window       ).gp?.fonts;
-  const face = l === 'ja' ? 'open-huninn/OpenHuninn.woff2' : 'smiley-sans/SmileySans-Oblique.woff2';
-  // resolves once the face is really usable (or failed), so the loading screen can count it
-  const waitFace = (fam        ) => (document       ).fonts?.load ? (document       ).fonts.load(`32px "${fam}"`, t('start')).catch(() => {}) : Promise.resolve();
-  if (gpf?.use) {
-    return gpf.use({ display: face, lang: l }).then(async (r                     ) => {
-      if (r?.display) { await waitFace(r.display); FONT = `"${r.display}", "PingFang SC", "Hiragino Sans", "Microsoft YaHei", sans-serif`; }
+  // 原版从 `https://static.makeplay.ai/fonts/v1/...` 拉字体（还要经过 gp.fonts），
+  // 插件里是离线的 ⇒ 换成本地 woff2（随包发布，见 assets/fonts/）。
+  // 原来那行 `document.title = TITLE` 删掉了：插件里 document 是宿主的，改了会改宿主标签页。
+  const fam = 'SmileySans';
+  const waitFace = () => (document.fonts?.load ? document.fonts.load(`32px "${fam}"`, t('start')).catch(() => {}) : Promise.resolve());
+  try {
+    const f = new FontFace(fam, `url("${AB}assets/fonts/SmileySans-Oblique.woff2")`);
+    return f.load().then(async () => {
+      document.fonts.add(f);
+      FONT = `"${fam}", "PingFang SC", "Hiragino Sans", "Microsoft YaHei", sans-serif`;
+      await waitFace();
       refreshScene();
     }).catch(() => {});
-  } else {
-    const url = 'https://static.makeplay.ai/fonts/v1/' + face;
-    const fam = l === 'ja' ? 'OpenHuninn' : 'SmileySans';
-    try {
-      const f = new FontFace(fam, `url("${url}")`);
-      return f.load().then(() => { (document.fonts       ).add(f); FONT = `"${fam}", "PingFang SC", "Hiragino Sans", "Microsoft YaHei", sans-serif`; refreshScene(); }).catch(() => {});
-    } catch { return Promise.resolve(); }
-  }
+  } catch { return Promise.resolve(); }
 }
 
 // ───────────────────────── main ticker ─────────────────────────
@@ -2471,19 +2505,20 @@ function showLoading()                                                          
   return { set: (p        ) => { target = Math.max(target, Math.min(1, p)); }, finished: () => done };
 }
 
+// ───────────────────────── 启动 ─────────────────────────
+// 存档：插件由 plugin.js 先读好再传进来（getLatest 返回 Promise）；独立网页没有 store ⇒ 全新档。
+try { initialSave = (await store?.getLatest?.()) ?? null; } catch { initialSave = null; }
 loadSave();
-const pl = (window       ).gp?.player;
-// ① canvas exists → ② paint the loading screen → ③ ready → ④ await the real loading work behind it
-setLang(save.lang || pickLang(navigator.language || pl?.user?.locale));
+
+// 语言固定中文（原版的三语切换按钮已拆掉）
+setLang('zh');
+
 const loader = showLoading();
 loadTick?.(0);
 app.render();
-(window       ).__gpReady = true;
-const bootTasks                     = [
-  applyLang(getLang()),
-  initSound(),
-  pl?.ready ? Promise.race([pl.ready.catch(() => {}), new Promise(r => setTimeout(r, 3000))]) : Promise.resolve(),
-];
+window.__gpReady = true;
+
+const bootTasks = [applyLang(getLang()), initSound()];
 let bootDone = 0;
 for (const p of bootTasks) p.then(() => { bootDone++; loader.set(bootDone / bootTasks.length); }, () => { bootDone++; loader.set(bootDone / bootTasks.length); });
 // never strand the player: if a task hangs, finish after 10 s anyway
@@ -2492,10 +2527,72 @@ await loader.finished();
 clearTimeout(bootCap);
 loadTick = null;
 showTitle();
-(window       ).__gpPlayable = true;
-if (pl?.ready) {
-  pl.ready.then((r     ) => {
-    if (!save.lang && !navigator.language && r?.user?.locale) { const l = pickLang(r.user.locale); if (l !== getLang()) { applyLang(l); refreshScene(); } }
-  }).catch(() => {});
+window.__gpPlayable = true;
+
+// ───────────────────────── 调试桥（e2e / 截图用）─────────────────────────
+// 整屏都是 canvas 画的 ⇒ DOM 里找不到按钮。桥只读状态 + 少量动作，
+// 卸载时必须删掉（留着会让下一次「已就绪」判断立刻为真）。
+const bridge = {
+  ready: true,
+  get scene() { return scene; },
+  get phase() { return phase; },
+  get level() { return cur; },
+  get shots() { return shots; },
+  get power() { return power; },
+  /** 球的设计坐标（1280×720）。截图/走查要「球真的在空中」只能靠它：
+   *  headless 下游戏时钟慢约 7×，`sleep(900)` 只等于游戏内 0.13 秒，球还没离手。 */
+  get ball() { return { x: sim.bx, y: sim.by }; },
+  get stars() { return [...save.stars]; },
+  get totalStars() { return totalStars(save.stars); },
+  get unlocked() { return save.unlocked; },
+  get soundOn() { return save.sound; },
+  get levels() { return NLEVELS; },
+  /** 设计坐标（1280×720）→ 容器内 CSS 坐标 */
+  designToScreen: (x, y) => ({ x: offX + x * scaleS, y: offY + y * scaleS }),
+  /** 当前画面上可点的按钮（label + 容器内 CSS 坐标），按 label 点，别写死像素 */
+  buttons: () => {
+    const out = [];
+    const walk = (node) => {
+      for (const ch of node.children) {
+        if (ch.eventMode === 'static' && ch.visible && !ch.destroyed) {
+          const label = ch.children.find((k) => k instanceof PIXI.Text)?.text;
+          if (label) {
+            const p = ch.getGlobalPosition();
+            out.push({ label: String(label), x: p.x, y: p.y });
+          }
+        }
+        walk(ch);
+      }
+    };
+    walk(app.stage);
+    return out;
+  },
+  startLevel: (i, intro = false) => startLevel(i, true, intro),
+  // 声音开关：存档探针用它（点一下就能改、重挂载能读回，见 e2e 第 ⑦ 段）
+  toggleSound: () => { toggleSound(); refreshScene(); },
+  beginCharge,
+  release,
+  setPower: (p) => { power = p; },
+};
+window.__hoopsneak = bridge;
+
+// ───────────────────────── 卸载 ─────────────────────────
+async function destroy() {
+  for (const off of offs) { try { off(); } catch { /* ignore */ } }
+  offs.length = 0;
+  try { loadTick = null; } catch { /* ignore */ }
+  try { sound?.dispose?.(); } catch { /* ignore */ }
+  try { display.dispose(); } catch { /* ignore */ }
+  try { fx.dispose(); } catch { /* ignore */ }
+  try {
+    app.ticker?.stop?.();
+    app.destroy({ removeView: true }, { children: true, texture: false, textureSource: false });
+  } catch (e) { console.warn('[hoopsneak] Pixi destroy 失败', e); }
+  if (window.__hoopsneak === bridge) delete window.__hoopsneak;
+  if (window.__gpPlayable) delete window.__gpPlayable;
+  if (window.__gpReady) delete window.__gpReady;
+  try { mountRoot.remove(); } catch { /* ignore */ }
+  return undefined;
 }
-(window       ).__game = { app, startLevel, get sim() { return sim; }, get phase() { return phase; }, get scene() { return scene; }, get stars() { return [...save.stars]; }, get totalStars() { return totalStars(save.stars); }, get rankingOpen() { return leaderboardOpen(); }, get power() { return power; }, get shots() { return shots; }, get unlocked() { return save.unlocked; }, get net() { return netN.map(n => ({x:n.x,y:n.y})); }, get boilFrame() { return Math.floor(boilClock*8); }, beginCharge, release, setPower: (p        ) => { power = p; } };
+return destroy;
+}
