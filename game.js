@@ -319,7 +319,7 @@ function loop(timestamp){
 docOn('pointerdown',()=>{void audio.unlock();},{once:true});
 docOn('keydown',()=>{void audio.unlock();},{once:true});
 winOn('pagehide',()=>{audio.dispose();archive.dispose();world.fx?.dispose();},{once:true});
-responsiveLayout=mountResponsiveLayout({app,root:mountRoot,onResize:resize});
+responsiveLayout=mountResponsiveLayout({app,root:mountRoot,host:mountContainer,onResize:resize});
 setStudioTab('draw');resize();applyLanguage();world.render(0,null);
 window.__gpReady=true;window.__gpPlayable=true;
 /*

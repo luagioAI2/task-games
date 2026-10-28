@@ -43,3 +43,15 @@
 - `node` 传 MSYS 风格 `/c/...` 会解析成 `E:\c\...` ⇒ 脚本路径写 `C:/Users/...`。
 - `scaffold.mjs` 的 `--dir` 是**相对当前目录**拼 ⇒ 在 `task-games/` 里跑必须给 `--dir .`。
 - 这台机器端口常被占（4180/4190/5190/4391/4394）⇒ 预览从 **4390+ / 5390+** 里挑没被占的。
+
+## 踩过的坑（改造阶段，按发现顺序）
+
+| 症状 | 原因 | 修法 |
+| --- | --- | --- |
+| 整套 CSS 一条都不生效，**零报错**、pageerror 0、smoke 颜色数 356 照样绿 | `<style>` 在 `createUI(app)` **之前**挂进挂载根，而它里面是 `app.innerHTML = …`，把 style 冲掉了 | style 只建不挂，**`createUI(app)` 之后**再 `appendChild`；`_patch.mjs` 里加了一条顺序断言 |
+| 竖屏紧凑布局塌成 `35px 35px 280px` | `body[data-compact][data-studio-tab=…]` 整串正则只吞了第一个属性 ⇒ 变成 `#dd-app[a][b] #dd-app .x`（要求嵌套两层） | `gen-styles.mjs` **逐选择器**重写；`scopeCss` 认 `root + '['`；`auditSelectors` 把 `#dd-app #dd-app` 判失败 |
+| `url('./assets/…')` 404、图标静默不见 | CSS 内联后相对路径按**文档**解析，不是按包 | 生成期改写成 `url('__AB__assets/…')`，运行时 `SCOPED_CSS.replaceAll('__AB__',AB)` |
+| 存档一个字都不落盘、界面只显示「保存失败」 | `gp.player.saves.putLatest` 是**唯一**存档通道，离线桩恒 `false` | 改接 `host.storage`；standalone 退回 `localStorage` |
+| `world-board.js` 抛 `ReferenceError: gp is not defined` | 它用的是**裸全局** `gp`（原先靠 `platform.js` 往 window 上写） | 改成 `import { gp } from './platform.js'` |
+| ★★ 参赛页底部的「03 送它去比赛」**被裁掉**，手指点不到，而 e2e 全绿 | 布局函数量的是**自己的挂载根**，而挂载根高度正是它写进去的 `--window-h`（`height:var(--window-h,100dvh)`）⇒ 循环，永远停在 `100dvh`(844)，容器只有 698 | `mountResponsiveLayout({host:mountContainer})`，量宿主给的容器；e2e 加 `elementFromPoint` 判据 |
+| 清单里版本写成 `"none"` | `/version:\s*["']/` 命中了 three 的 `colorSpaceConversion: "none"`（「con**Version**」里含 version） | 先定位 `id:"doodlederby"`，再从它后面找 version |
