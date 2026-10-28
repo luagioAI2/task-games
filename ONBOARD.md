@@ -6,7 +6,7 @@
 - 经济：**C 型纯玩** · `expectedPayout: 0` · `kind: 'chill'` · 票价 10 积分/一场
 - 引擎：three.js（3D 画室 + 赛道）+ `@makeplay/{sound,fx}`；DOM 界面层（`index.html` 里只有一个 `#app`，全部标记由 `src/ui.js` 的 `app.innerHTML` 生成）
 - 资源：镜像 45 个文件 / 4.79 MB。**零贴图**（马、赛道、树全是 three 几何体），只有 3 张 Kenney 图标（48 KB）+ 1 条 m4a 音乐（977 KB）+ `sound.pack`（153 KB）
-- 当前：步骤 1–4 完成，正在打包
+- 当前：**九步走完**（第 21 款，已上架 farm-2d）
 
 | # | 步骤 | 状态 | 判据 / 产物 |
 | --- | --- | --- | --- |
@@ -17,8 +17,8 @@
 | 5 | 打包 | ✅ | `4317.9 KB` · 0 裸说明符 / 0 动态 import · `=== 打包校验通过 ===`；宿主 `check-plugin.mjs` = 通过（1 条提示：chill 不开放兑换） |
 | 6 | 落库 | ✅ | `check:registry` 四处一致 **21 款**（本地包 / 哈希清单 / 商城条目 / 截图 PLAN） |
 | 7 | 商城详情 | ✅ | 4 张图 + **逐张自己看过**（CSS 那次回归就是靠看图才发现的） |
-| 8 | 五层验收 | ⬜ | 两档 e2e + 老款回归 |
-| 9 | 提交推送 | ⬜ | `ls-remote origin refs/heads/farm-2d` == HEAD |
+| 8 | 五层验收 | ✅ | `lint` ✓ · 774 单测 ✓ · `build` ✓ · e2e **phone + tablet 全绿** · `e2e-hoopsneak` 回归 ✓ · 21 款详情页走查 ✓ |
+| 9 | 提交推送 | ✅ | 游戏 `f9dd358`（本地仓库，无远端）；宿主 `a7991eb` → `ls-remote origin refs/heads/farm-2d` == HEAD ✓ |
 
 ## 要拆的联网面（§0.5 报价）
 
