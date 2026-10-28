@@ -4,19 +4,19 @@
 - 原名：**Doodle Derby**（`一场不太正经的运动会`）—— 手绘一匹马 → 变成 3D 马 → 踩节奏赛跑
 - 商城名：画马赛跑 · 底栏「画马赛跑」（4 字）
 - 经济：**C 型纯玩** · `expectedPayout: 0` · `kind: 'chill'` · 票价 10 积分/一场
-- 引擎：three.js（3D 画室 + 赛道）+ `@makeplay/{display,sound,fx}`；DOM 界面层（index.html 里一堆 id）
-- 资源：待抓完统计
-- 当前：步骤 1 抓镜像
+- 引擎：three.js（3D 画室 + 赛道）+ `@makeplay/{sound,fx}`；DOM 界面层（`index.html` 里只有一个 `#app`，全部标记由 `src/ui.js` 的 `app.innerHTML` 生成）
+- 资源：镜像 45 个文件 / 4.79 MB。**零贴图**（马、赛道、树全是 three 几何体），只有 3 张 Kenney 图标（48 KB）+ 1 条 m4a 音乐（977 KB）+ `sound.pack`（153 KB）
+- 当前：步骤 1–4 完成，正在打包
 
 | # | 步骤 | 状态 | 判据 / 产物 |
 | --- | --- | --- | --- |
-| 1 | 抓镜像 | 🔄 | `failed` 为空；`find -size 0` 为空 |
-| 2 | 立工程 | ⬜ | `index.html` 重写；`.gitattributes` 写 `* text=auto eol=lf`；首次提交 |
-| 3 | 压资源 | ⬜ | 前后 KB；压完重看截图 |
-| 4 | 改造 | ⬜ | 联网四处归零（排行榜 / 录像库 / 名字翻译 / 云存档） |
-| 5 | 打包 | ⬜ | `=== 打包校验通过 ===` |
-| 6 | 落库 | ⬜ | `check:registry` 四处一致（21 款） |
-| 7 | 商城详情 | ⬜ | 4 张图 + 逐张自己看 |
+| 1 | 抓镜像 | ✅ | 45 文件 / 4.79 MB；`sound.pack` + `doodle-percussion.m4a` 用 `fetch-audio.mjs` 补抓（静态扫和 `--browse` 都收不到）；`find -size 0` 只有 favicon |
+| 2 | 立工程 | ✅ | `index.html` 重写为 `import { start }`；`.gitattributes` 写 `* text=auto eol=lf`；首次提交 |
+| 3 | 压资源 | ✅ | **无可压**：3 张 48 KB 图标 + 1 条已是 aac 的 m4a + 1 个 pack。压了只会更糊/更慢 |
+| 4 | 改造 | ✅ | 联网四处归零；`scripts/_patch.mjs` 32 条锚点唯一；`gen-styles.mjs` 7 份 CSS 收进 `#dd-app` |
+| 5 | 打包 | ✅ | `4317.9 KB` · 0 裸说明符 / 0 动态 import · `=== 打包校验通过 ===`；宿主 `check-plugin.mjs` = 通过（1 条提示：chill 不开放兑换） |
+| 6 | 落库 | ✅ | `check:registry` 四处一致 **21 款**（本地包 / 哈希清单 / 商城条目 / 截图 PLAN） |
+| 7 | 商城详情 | ✅ | 4 张图 + **逐张自己看过**（CSS 那次回归就是靠看图才发现的） |
 | 8 | 五层验收 | ⬜ | 两档 e2e + 老款回归 |
 | 9 | 提交推送 | ⬜ | `ls-remote origin refs/heads/farm-2d` == HEAD |
 

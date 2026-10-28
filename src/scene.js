@@ -22,6 +22,24 @@ export class World {
     this.buildTrack();this.awards=makeAwards(this);this.racers=[];this.obstacleGroup=new THREE.Group();this.scene.add(this.obstacleGroup);
     this.resizeObserver=new ResizeObserver(()=>this.resize());this.resizeObserver.observe(container);this.resize();
   }
+  /**
+   * 卸载。
+   *
+   * ★ 三样必须显式收：`ResizeObserver`（不摘会继续拿已卸载的容器量尺寸）、
+   *   `fx`（`@makeplay/fx` 自己挂了 rAF 与 GL 资源）、以及 **WebGL context**
+   *   （`forceContextLoss()` —— 只 `dispose()` 的话上下文留在 GPU 里，
+   *   来回切几次游戏就撞浏览器「最多 16 个上下文」的上限，症状是画面全黑零报错）。
+   */
+  dispose(){
+    try{this.resizeObserver?.disconnect();}catch{}
+    try{this.fx?.dispose();}catch{}
+    this.fx=null;
+    try{this.previewHorse?.dispose();}catch{}
+    try{this.racers?.forEach(h=>h.dispose());}catch{}
+    try{this.renderer?.dispose();}catch{}
+    try{this.renderer?.forceContextLoss?.();}catch{}
+    try{this.renderer?.domElement?.remove();}catch{}
+  }
   async initFx(){const {createThreeFx}=await import('@makeplay/fx');this.fx=await createThreeFx({THREE,renderer:this.renderer,world:this.scene,camera:this.camera,viewport:()=>({width:this.w,height:this.h}),referenceSpan:3});this.fx.post.configure({glow:false,vignette:false,grading:'neutral'});}
   tickFx(realDt){
     if(!this.fx)return 1;

@@ -1,3 +1,8 @@
+// ★ 裸全局 `gp` → 显式导入（插件里不许留 `window.gp`）。
+//   插件里 `gp.ai.chat` 恒 `{ok:false,error:'disabled'}` ⇒ `pump()` 什么也不做，
+//   `display()` 回落到 `NAME_TABLE` 里的本地三语名 —— 录像回放本来就是空的
+//   （`createOfflineArchive` 的 `sample()` 恒失败），这条路径实际不会被走到。
+import { gp } from './platform.js';
 import { NAME_TABLE } from './names.js';
 import { horseName,compactHorseNames } from './horse-names.js';
 export function createLegacyNameTranslator(refresh){

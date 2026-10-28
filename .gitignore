@@ -8,4 +8,7 @@ node_modules/
 *.log
 
 # smoke.mjs 的调试截图（临时，别当商城截图用）
-shots/smoke-*.png
+shots/
+
+# 一次性补丁 / 探针脚本（scratch，不是工程的一部分）
+scripts/_*

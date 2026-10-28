@@ -1,3 +1,9 @@
+// ★ 原来这里的 `gp` 是**裸全局**（`platform.js` 偷偷写 `window.gp` 兜着）。
+//   插件里不许留全局 ⇒ 显式导入。`gp.ai.chat` 在插件里恒返回
+//   `{ok:false,error:'disabled'}` ⇒ 翻译直接走 `nameFallback`，
+//   `display()` 原样返回用户手打的名字（不翻译，但**不会报错、不会卡住**）。
+import { gp } from './platform.js';
+
 const LANGS=['zh','en','ja'];
 export class CustomName {
   constructor(value,onChange,onStatus){this.value=value||{source:'',lang:'zh',ready:false,translations:{}};this.onChange=onChange;this.onStatus=onStatus;this.version=0;this.pending=null;this.disabled=false;this.retryAt=0;this.status='nameAuto';}
