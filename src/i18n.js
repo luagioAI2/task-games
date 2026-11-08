@@ -117,6 +117,9 @@ const zh       =
   "a11y.close": "关闭",
   "a11y.log": "农场事件",
   "a11y.settings": "设置", "a11y.hideBars": "收起上下栏", "a11y.showBars": "展开上下栏",
+  /* 宽屏右侧竖排按钮上的短标签：跟左栏一样「图标 + 两个字」，
+     所以不能用 a11y.log（那是「农场事件」，四个字放不下）。 */
+  "side.log": "日志", "side.settings": "设置",
   "a11y.mute": "静音开关",
   "a11y.cancelSeed": "取消播种",
   "seed.title": "种子商店",
@@ -320,6 +323,7 @@ const en       =
   "a11y.close": "Close",
   "a11y.log": "Farm events",
   "a11y.settings": "Settings", "a11y.hideBars": "Hide bars", "a11y.showBars": "Show bars",
+  "side.log": "Log", "side.settings": "Settings",
   "a11y.mute": "Mute on/off",
   "a11y.cancelSeed": "Stop planting",
   "seed.title": "Seed Shop",
@@ -524,6 +528,7 @@ const ja       =
   "a11y.close": "閉じる",
   "a11y.log": "農場イベント",
   "a11y.settings": "設定", "a11y.hideBars": "バーをしまう", "a11y.showBars": "バーを出す",
+  "side.log": "ログ", "side.settings": "設定",
   "a11y.mute": "ミュート切替",
   "a11y.cancelSeed": "植えるのをやめる",
   "seed.title": "種屋さん",

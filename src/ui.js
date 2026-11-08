@@ -244,7 +244,10 @@ html[lang=ja] #ui{font-family:${FONT_JA}}
      分区胶囊带 margin:0 auto，两枚按钮一让开它就自动居中。 */
 #ui .side{position:absolute;top:0;bottom:0;right:12px;display:none;flex-direction:column;justify-content:center;gap:8px;pointer-events:none;transition:transform .32s cubic-bezier(.2,.9,.3,1),opacity .25s}
 #ui.wide .side{display:flex}
-#ui.wide .side .iconbtn{width:100%;height:58px;border-radius:18px;background:rgba(255,252,245,.74);border:1px solid rgba(255,255,255,.72);box-shadow:${SH1};pointer-events:auto}
+/* 顶栏里只要图标（横向一行放不下字）；宽屏右侧竖排时跟左栏一样「图标 + 两个字」。 */
+#ui .slb{display:none}
+#ui.wide .side .iconbtn{width:100%;height:62px;flex-direction:column;gap:3px;border-radius:18px;background:rgba(255,252,245,.74);border:1px solid rgba(255,255,255,.72);box-shadow:${SH1};pointer-events:auto}
+#ui.wide .side .slb{display:block;font-size:11px;font-weight:800;line-height:1.1;color:${C.text}}
 #ui.wide .side .iconbtn .ic{width:28px;height:28px}
 #ui.bars-off .side{transform:translateX(calc(100% + 18px));opacity:0;pointer-events:none}
 /* ---- 收起状态 ---- */
@@ -648,8 +651,8 @@ export function installUi(api     ) {
           <button data-zone="ranch" role="tab">${esc(t("hud.ranch"))}</button><button data-zone="field" role="tab">${esc(t("hud.field"))}</button><button data-zone="pond" role="tab">${esc(t("hud.pond"))}</button>
           <i class="ssep"></i><button class="fold" id="foldBtn" aria-label="${esc(t("a11y.hideBars"))}" title="${esc(t("a11y.hideBars"))}">${CHEV_UP}</button>
         </div>
-        <button class="iconbtn" id="logBtn" aria-label="${esc(t("a11y.log"))}">${ico("log", 22)}<i class="dot" id="logDot" hidden></i></button>
-        <button class="iconbtn" id="setBtn" aria-label="${esc(t("a11y.settings"))}">${ico("gear", 22)}</button>
+        <button class="iconbtn" id="logBtn" aria-label="${esc(t("a11y.log"))}">${ico("log", 22)}<i class="dot" id="logDot" hidden></i><span class="slb">${esc(t("side.log"))}</span></button>
+        <button class="iconbtn" id="setBtn" aria-label="${esc(t("a11y.settings"))}">${ico("gear", 22)}<span class="slb">${esc(t("side.settings"))}</span></button>
       </div>`;
     hud.classList.add("tv-a"); // v58：两版比稿后选 A（等级圆徽章带进度外圈）
     hud.querySelector("#foldBtn") .addEventListener("click", () => setBarsHidden(true));
