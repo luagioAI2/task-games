@@ -238,6 +238,15 @@ html[lang=ja] #ui{font-family:${FONT_JA}}
 #ui.wide .rbtn.on{background:#fff;box-shadow:${SH2}}
 #ui.wide .rbtn .ic{width:28px;height:28px}
 #ui.wide .rbtn span{font-size:11px}
+/* ---- 宽屏：日志 / 设置搬到右侧留白 ----
+   ★ 左边一条 5 个按钮的竖栏、右边 178px 纯奶油底 ⇒ 左右不对称（1024×768 最明显）。
+     把顶栏那两枚图标钮搬过去：右侧也有东西；顶栏在横屏上也松开了 ——
+     分区胶囊带 margin:0 auto，两枚按钮一让开它就自动居中。 */
+#ui .side{position:absolute;top:0;bottom:0;right:12px;display:none;flex-direction:column;justify-content:center;gap:8px;pointer-events:none;transition:transform .32s cubic-bezier(.2,.9,.3,1),opacity .25s}
+#ui.wide .side{display:flex}
+#ui.wide .side .iconbtn{width:100%;height:58px;border-radius:18px;background:rgba(255,252,245,.74);border:1px solid rgba(255,255,255,.72);box-shadow:${SH1};pointer-events:auto}
+#ui.wide .side .iconbtn .ic{width:28px;height:28px}
+#ui.bars-off .side{transform:translateX(calc(100% + 18px));opacity:0;pointer-events:none}
 /* ---- 收起状态 ---- */
 #ui.bars-off .hud{transform:translateY(calc(-100% - 12px));opacity:0}
 #ui.bars-off .rail{transform:translateY(calc(100% + 16px));opacity:0;pointer-events:none}
@@ -506,6 +515,9 @@ export function installUi(api     ) {
     return Math.min(vw, Math.max(360, Math.min(cap, landscape ? bySection : byPortrait)));
   };
   const railEl = document.createElement("div"); railEl.className = "rail glass";
+  /* 宽屏右侧留白里那两枚（日志 / 设置）。节点是**搬**过来的不是复制 ——
+     复制一份就多一套 id 和监听器。 */
+  const sideEl = document.createElement("div"); sideEl.className = "side";
   const hud = document.createElement("div"); hud.className = "hud";
   const toasts = document.createElement("div"); toasts.className = "toasts";
   const layer = document.createElement("div"); layer.style.cssText = "position:absolute;inset:0;pointer-events:none";
@@ -513,7 +525,7 @@ export function installUi(api     ) {
   const unfold = document.createElement("button"); unfold.className = "unfold glass"; unfold.id = "unfoldBtn";
   /* ★ rail 挂 root 不挂 col：宽屏时它要落到左侧「舞台」里，而 `.rail` 是 absolute，
      挂在 col 下的话 left:12px 是从游戏列左边算起 —— 会压在田地上。 */
-  col.append(hud, unfold, toasts, layer, overlay); root.appendChild(railEl);
+  col.append(hud, unfold, toasts, layer, overlay); root.append(railEl, sideEl);
   // v57：上下栏可收起——收起后只留右上角一个小胶囊（金币 + 展开箭头）；偏好存 __sys 设置槽（不进玩法存档）
   let barsHidden = !!api.audioPrefs().barsHidden;
   function syncBars() {
@@ -521,6 +533,7 @@ export function installUi(api     ) {
     unfold.setAttribute("aria-label", t("a11y.showBars")); unfold.title = t("a11y.showBars");
     unfold.setAttribute("aria-hidden", String(!barsHidden)); unfold.tabIndex = barsHidden ? 0 : -1;
     hud.toggleAttribute("inert", barsHidden); railEl.toggleAttribute("inert", barsHidden);
+    sideEl.toggleAttribute("inert", barsHidden);
   }
   function setBarsHidden(h         , persist = true) {
     if (h === barsHidden) return;
@@ -573,6 +586,9 @@ export function installUi(api     ) {
       const rw = Math.max(76, Math.min(gut - 40, 112));
       railEl.style.left = Math.round((gut - rw) / 2) + "px"; railEl.style.right = "auto";
       railEl.style.width = rw + "px";
+      // 右侧那两枚跟左栏同宽、同样在留白里居中 —— 左右才对称。
+      sideEl.style.width = rw + "px";
+      sideEl.style.right = Math.round((gut - rw) / 2) + "px";
     } else {
       // 竖栏还原成「贴在游戏列里的底栏」：列是居中的，所以左右各让出 gut。
       railEl.style.left = gut + 8 + "px"; railEl.style.right = gut + 8 + "px";
@@ -582,10 +598,22 @@ export function installUi(api     ) {
     const bottom = barsHidden ? 0 : rh + 10;
     toasts.style.bottom = bottom + 8 + (guideEl ? 60 : 0) + "px";
     if (guideEl) guideEl.style.bottom = bottom + 6 + "px";
+    syncSide();
     return { colW: w, top: 0, bottom, wide, gut };
   };
 
   let G       ;
+  // 顶栏那两枚图标钮的引用：`buildHud()` 会重建 innerHTML，所以每次重建后重新取。
+  let logBtn = null, setBtn = null;
+  /* 宽屏搬右、窄屏回顶栏。**必须是同一批节点**（append 会移动而不是复制），
+     否则 `#logBtn` / `#setBtn` 会有两个、监听器也各挂一套。 */
+  function syncSide() {
+    if (!logBtn || !setBtn) return;
+    const wide = root.classList.contains("wide");
+    const host = wide ? sideEl : hud.querySelector(".topbar");
+    if (!host || logBtn.parentElement === host) return;
+    host.append(logBtn, setBtn);
+  }
   void api.gameReady.then(g => { G = g; start(); });
 
   // ---------------- HUD ----------------
@@ -625,10 +653,12 @@ export function installUi(api     ) {
       </div>`;
     hud.classList.add("tv-a"); // v58：两版比稿后选 A（等级圆徽章带进度外圈）
     hud.querySelector("#foldBtn") .addEventListener("click", () => setBarsHidden(true));
-    hud.querySelector("#logBtn") .addEventListener("click", () => { G.cue("sfx.tap"); openSheet("log"); });
-    hud.querySelector("#setBtn") .addEventListener("click", () => { G.cue("sfx.tap"); openSheet("settings"); });
+    logBtn = hud.querySelector("#logBtn"); setBtn = hud.querySelector("#setBtn");
+    logBtn.addEventListener("click", () => { G.cue("sfx.tap"); openSheet("log"); });
+    setBtn.addEventListener("click", () => { G.cue("sfx.tap"); openSheet("settings"); });
     hud.querySelectorAll                   ("[data-zone]").forEach(b => b.addEventListener("click", () => { G.cue("sfx.tap"); G.scrollToZone(b.dataset.zone           ); setTimeout(syncZoneSeg, 400); }));
     hudCache = {}; segZone = ""; setTimeout(syncZoneSeg, 0);
+    syncSide(); // 换语言会重建顶栏 ⇒ 节点是新的，得重新摆一次
   }
   // 分段控件选中态 = 当前可视中心所在区域
   let segZone = "";
