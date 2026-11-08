@@ -14,9 +14,15 @@
  *
  * ## 经济口径
  *
- * 「只花积分」（2026-11-08 用户选的 B）：玩一次花积分，游戏内的钱/宝石
- * **不出农场**，也没有「币 → 兑换券」的出口。所以
- * `voucherPerCoin: 0`（不开放兑换）、`expectedPayout: 0`。
+ * 「只花积分」（2026-11-08 用户选的 B）：游戏内的钱/宝石**不出农场**，
+ * 也没有「币 → 兑换券」的出口 ⇒ `voucherPerCoin: 0`、`expectedPayout: 0`。
+ *
+ * ⚠️ **先不收积分**（2026-11-08 用户第二次拍板）：`playCost` 只能是正数
+ * （`checkPluginEconomy` 硬校验），所以填 `1` 当占位，**插件里一行扣分都没有**。
+ * 详情页那行会显示「一局 1 积分」—— 那是 manifest 声明的价，实际不扣。
+ * 真要开始收的时候：改成 20，并在 `plugin-template.mjs` 挂载前按
+ * `host.spendPoints(...)` 那套（参考 `hoopsneak` 的 `chargePlay`）收，
+ * 别忘了「作物最短 10 分钟成熟」⇒ 按次收会把「回来看一眼」变成收费动作。
  */
 import fs from 'node:fs'
 import path from 'node:path'
@@ -30,13 +36,20 @@ const MANIFEST = {
   name: '我是一个农场主',
   emoji: '🌾',
   tabLabel: '农场主',
-  version: '1.0.0',
+  version: '1.0.1',
   minHostApi: 4,
   coin: { id: 'crop', name: '庄稼', emoji: '🌾' },
   economy: {
-    playCost: 20,
+    // 占位值：先不收积分（理由见文件头「经济口径」）。校验要求必须 > 0。
+    playCost: 1,
     expectedPayout: 0,
-    capPerPrize: 0,
+    /*
+     * ⚠️ `capPerPrize` 必须 ≥ 1（`checkPluginEconomy` 硬校验），填 0 会在
+     * **装包那一刻**报「经济参数不合法（cap）：capPerPrize 必须 ≥ 1」——
+     * 不是打包时报，是玩家点安装才报。这一款一分产出都没有，
+     * 这个上限实际用不到，但契约要求它在。
+     */
+    capPerPrize: 1,
     voucherPerCoin: 0,
   },
 }
