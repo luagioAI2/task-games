@@ -9,3 +9,8 @@ node_modules/
 
 # smoke.mjs 的调试截图（临时，别当商城截图用）
 shots/smoke-*.png
+
+# 探针的临时落地（下载中的分片 / 线上清单快照），不是发布物
+_probe-assets/
+_tables.json
+_peek.mjs

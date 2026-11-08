@@ -35,6 +35,9 @@
 </nav>
 <div id="toasts"></div>
 <div id="loading"><img src="assets/ui_logo.webp" alt="Harvest Heist"></div>
+<!-- 必须排在 main.js 前面：原版第一句就 `await window.gp.player.ready`，
+     拿不到 gp 直接 TypeError，首屏停在加载态。两个都是 module，按文档顺序求值。 -->
+<script type="module" src="gp-bridge.js"></script>
 <script type="module" src="main.js?v=20"></script>
 <script type="module" src="tutorial.js?v=20"></script>
 </body>
