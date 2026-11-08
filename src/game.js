@@ -256,7 +256,7 @@ async function boot() {
     const w = app.screen.width, h = app.screen.height;
     const L = ui.layout();
     const colW = L.colW || Math.min(w, Math.max(360, Math.min(600, h * 0.62)));
-    view.layout(w, h, Math.min(w, colW), L.top, L.bottom);
+    view.layout(w, h, Math.min(w, colW), L.top, L.bottom, !L.wide);
   }
   viewReady = true;
   relayout();

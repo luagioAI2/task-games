@@ -171,6 +171,20 @@ html[lang=ja] #ui{font-family:${FONT_JA}}
 #ui *{box-sizing:border-box}
 #ui [hidden]{display:none!important}
 #ui .col{position:absolute;top:0;bottom:0;left:50%;transform:translateX(-50%);pointer-events:none}
+/* ---- 宽屏两侧舞台（平板横屏）----
+   ★ 原来两侧画的是「同一个世界放大 + blur(10) + alpha .75」。在 iPad 上量下来
+     缩放比 sb = max(vw/750, vh/WORLD_H) ≈ 1.37，等于把 750 宽的世界拉满 1024 再糊
+     20px —— 糊成一片荧光绿，用户的原话是「中间有内容，两侧[很怪]」。
+   现在改成奶油底 + 上下两团暖光，边缘一道内阴影把游戏列「框」出来。
+   好处有两个：① 看起来是有意为之的舞台，不是渲染坏了；② PIXI 那层全屏
+   BlurFilter 可以关掉（view.layout 的 showBackdrop=false），平板省一大笔 GPU。 */
+#ui .gut{position:absolute;top:0;bottom:0;display:none;pointer-events:none;overflow:hidden;background:radial-gradient(120% 46% at 50% 0%,rgba(255,224,150,.34),rgba(255,246,230,0) 64%),radial-gradient(90% 40% at 50% 100%,rgba(198,232,170,.26),rgba(255,246,230,0) 62%),linear-gradient(180deg,#FFF6E8,#FFFAF2 46%,#F7FAF0)}
+#ui.wide .gut{display:block}
+#ui .gut.l{left:0}
+#ui .gut.r{right:0}
+#ui .gut.l::after,#ui .gut.r::after{content:"";position:absolute;top:0;bottom:0;width:22px}
+#ui .gut.l::after{right:0;background:linear-gradient(90deg,rgba(90,56,20,0),rgba(90,56,20,.11))}
+#ui .gut.r::after{left:0;background:linear-gradient(270deg,rgba(90,56,20,0),rgba(90,56,20,.11))}
 #ui button{font-family:inherit;color:inherit;cursor:pointer;-webkit-tap-highlight-color:transparent;transition:transform .12s cubic-bezier(.3,1.6,.5,1),background-color .15s,box-shadow .15s}
 #ui button:active{transform:scale(.92)}
 #ui button:disabled{cursor:default}
@@ -215,9 +229,19 @@ html[lang=ja] #ui{font-family:${FONT_JA}}
 #ui .rbtn.on{background:rgba(255,255,255,.7);box-shadow:${SH1};color:${C.harvestDark}}
 .rbtn span{max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding:0 2px;line-height:1.1}
 .badge{position:absolute;top:1px;left:calc(50% + 6px);min-width:18px;height:18px;border-radius:9px;background:${C.danger};color:#fff;font-size:11px;font-weight:800;display:flex;align-items:center;justify-content:center;padding:0 5px;box-shadow:0 0 0 2px #fff}
+/* ---- 宽屏：底栏改成左侧竖排 ----
+   ★ 横屏平板上，这条底栏正好压在宿主底栏的上方，两条栏叠着，还吃掉一整行画面。
+     两侧本来就有空（iPad 4:3 横屏每侧 130~178px），搬过去正好。
+     竖排时不再需要那层通栏玻璃底，玻璃挪到每个按钮自己身上。 */
+#ui.wide .rail{left:12px;right:auto;top:0;bottom:0;grid-template-columns:1fr;grid-auto-rows:min-content;align-content:center;gap:6px;padding:0;background:transparent;border:none;box-shadow:none;-webkit-backdrop-filter:none;backdrop-filter:none}
+#ui.wide .rbtn{min-height:58px;padding:7px 0;background:rgba(255,252,245,.74);border:1px solid rgba(255,255,255,.72);box-shadow:${SH1};border-radius:18px}
+#ui.wide .rbtn.on{background:#fff;box-shadow:${SH2}}
+#ui.wide .rbtn .ic{width:28px;height:28px}
+#ui.wide .rbtn span{font-size:11px}
 /* ---- 收起状态 ---- */
 #ui.bars-off .hud{transform:translateY(calc(-100% - 12px));opacity:0}
 #ui.bars-off .rail{transform:translateY(calc(100% + 16px));opacity:0;pointer-events:none}
+#ui.wide.bars-off .rail{transform:translateX(calc(-100% - 18px));opacity:0;pointer-events:none}
 #ui .unfold{position:absolute;top:calc(16px + env(safe-area-inset-top));right:16px;display:flex;align-items:center;gap:4px;height:48px;padding:0 6px 0 10px;border:none;border-radius:999px;box-shadow:${SH2};pointer-events:auto;font-weight:800;font-size:14px;color:${C.text};font-variant-numeric:tabular-nums;opacity:0;transform:translateY(-8px) scale(.9);transition:opacity .25s,transform .3s cubic-bezier(.2,.9,.3,1);visibility:hidden}
 #ui .unfold img{width:22px;height:22px}
 #ui .unfold svg{width:18px;height:18px;color:${C.wood}}
@@ -434,8 +458,11 @@ export function installUi(api     ) {
   const style = document.createElement("style"); style.textContent = finalCss; document.head.appendChild(style);
   const root = document.createElement("div"); root.id = "ui";
   if (scoped) root.style.position = "absolute";
+  /* 宽屏两侧的「舞台」（见 layout() 里 wide 的说明）。放在 col **之前** ⇒ 天然压在游戏列下面。 */
+  const gutL = document.createElement("div"); gutL.className = "gut l";
+  const gutR = document.createElement("div"); gutR.className = "gut r";
   const col = document.createElement("div"); col.className = "col";
-  root.appendChild(col); mountTo.appendChild(root);
+  root.append(gutL, gutR, col); mountTo.appendChild(root);
 
   // 容器尺寸变化（旋转 / 宿主布局变动）都要重排。原版只监听 window resize。
   let ro = null;
@@ -484,7 +511,9 @@ export function installUi(api     ) {
   const layer = document.createElement("div"); layer.style.cssText = "position:absolute;inset:0;pointer-events:none";
   const overlay = document.createElement("div"); overlay.style.cssText = "position:absolute;inset:0;pointer-events:none";
   const unfold = document.createElement("button"); unfold.className = "unfold glass"; unfold.id = "unfoldBtn";
-  col.append(hud, railEl, unfold, toasts, layer, overlay);
+  /* ★ rail 挂 root 不挂 col：宽屏时它要落到左侧「舞台」里，而 `.rail` 是 absolute，
+     挂在 col 下的话 left:12px 是从游戏列左边算起 —— 会压在田地上。 */
+  col.append(hud, unfold, toasts, layer, overlay); root.appendChild(railEl);
   // v57：上下栏可收起——收起后只留右上角一个小胶囊（金币 + 展开箭头）；偏好存 __sys 设置槽（不进玩法存档）
   let barsHidden = !!api.audioPrefs().barsHidden;
   function syncBars() {
@@ -520,15 +549,40 @@ export function installUi(api     ) {
   // v55：右侧悬浮的事件调试按钮已移除——入口改在「设置」里（新手引导旁边）。
   let guideEl                        = null;
 
+  /**
+   * 两侧各留多宽才值得把底栏搬到左边。
+   *
+   * 实测（宿主容器尺寸）：手机 390 两侧 0、iPad 竖屏 70~72、iPad 4:3 横屏 130~178。
+   * 104 这个门槛刚好把「横屏」圈进来、把「竖屏」留在外面 —— 竖屏那 70px 放不下
+   * 一条能点的竖栏（按钮要 44px 起），硬搬过去只会挤。
+   */
+  const GUT_MIN = 104;
   api.ui.layout = () => {
+    const { vw } = viewport();
     const w = colWidth();
     col.style.width = w + "px";
     col.classList.toggle("narrow", w < 380);
-    const rh = railEl.getBoundingClientRect().height;
+    const gut = Math.max(0, Math.round((vw - w) / 2));
+    const wide = gut >= GUT_MIN;
+    root.classList.toggle("wide", wide);
+    if (wide) {
+      // +1 是为了盖住半像素缝：vw-w 是奇数时 round 会在列边留一道 0.5px 亮线。
+      gutL.style.width = gut + 1 + "px";
+      gutR.style.width = gut + 1 + "px";
+      // 竖栏在留白里**居中**，两侧各留 20px 呼吸 —— 贴死游戏列会显得像被挤出来的。
+      const rw = Math.max(76, Math.min(gut - 40, 112));
+      railEl.style.left = Math.round((gut - rw) / 2) + "px"; railEl.style.right = "auto";
+      railEl.style.width = rw + "px";
+    } else {
+      // 竖栏还原成「贴在游戏列里的底栏」：列是居中的，所以左右各让出 gut。
+      railEl.style.left = gut + 8 + "px"; railEl.style.right = gut + 8 + "px";
+      railEl.style.width = "";
+    }
+    const rh = wide ? 0 : railEl.getBoundingClientRect().height;
     const bottom = barsHidden ? 0 : rh + 10;
     toasts.style.bottom = bottom + 8 + (guideEl ? 60 : 0) + "px";
     if (guideEl) guideEl.style.bottom = bottom + 6 + "px";
-    return { colW: w, top: 0, bottom };
+    return { colW: w, top: 0, bottom, wide, gut };
   };
 
   let G       ;

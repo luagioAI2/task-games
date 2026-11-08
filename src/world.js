@@ -1197,13 +1197,16 @@ export class WorldView {
   }
   hideBobber() { if (this.bobber) { this.bobber.destroy(); this.bobber = null; } }
 
-  layout(vw        , vh        , colW        , topInset        , bottomInset        ) {
+  layout(vw        , vh        , colW        , topInset        , bottomInset        , showBackdrop = true) {
     this.viewW = vw; this.viewH = vh; this.topInset = topInset; this.bottomInset = bottomInset;
     this.scale = colW / WORLD_W; this.colX = (vw - colW) / 2;
     this.wxBandH = this.viewH / this.scale + 240; this.wxResizeRects(); // 天气层按可视高度重铺遮罩
     this.world.scale.set(this.scale); this.world.x = this.colX;
     const wide = vw > colW + 2;
-    this.backdrop.visible = wide;
+    /* ★ showBackdrop=false 是 UI 层给的：宽屏时两侧那块已经由 CSS 的 `.gut` 舞台
+       盖住了（ui.js），这层「世界放大 + BlurFilter」纯属白算 —— 全屏 blur 在平板上
+       是实打实的 GPU 开销，而且糊出来的颜色还很脏。 */
+    this.backdrop.visible = wide && showBackdrop !== false;
     const sb = Math.max(vw / WORLD_W, vh / WORLD_H);
     this.backdrop.scale.set(sb); this.backdrop.x = (vw - WORLD_W * sb) / 2;
     this.clampScroll(true);
