@@ -1,0 +1,1082 @@
+[
+ {
+  "url": "https://hw9mzzjpe2.mkplay.zone/v/1/index.html",
+  "status": 200,
+  "bytes": 44830
+ },
+ {
+  "url": "https://hw9mzzjpe2.mkplay.zone/v/1/game.js",
+  "status": 200,
+  "bytes": 180988
+ },
+ {
+  "url": "https://makeplay.ai/engines/phaser.min.js",
+  "status": 200,
+  "bytes": 1196122
+ },
+ {
+  "url": "https://makeplay.ai/runtime/publish-72d21830.js",
+  "status": 200,
+  "bytes": 1785
+ },
+ {
+  "url": "https://makeplay.ai/runtime/scaffold.js",
+  "status": 200,
+  "bytes": 41073
+ },
+ {
+  "url": "https://hw9mzzjpe2.mkplay.zone/v/1/assets/bg-garden.jpg",
+  "status": 200,
+  "bytes": 220676
+ },
+ {
+  "url": "https://makeplay.ai/runtime/sound-1.js",
+  "status": 200,
+  "bytes": 76028
+ },
+ {
+  "url": "https://hw9mzzjpe2.mkplay.zone/v/1/i18n.js",
+  "status": 200,
+  "bytes": 18353
+ },
+ {
+  "url": "https://hw9mzzjpe2.mkplay.zone/v/1/assets/front/c0/body.webp",
+  "status": 200,
+  "bytes": 43264
+ },
+ {
+  "url": "https://hw9mzzjpe2.mkplay.zone/v/1/assets/front/c0/pawR.webp",
+  "status": 200,
+  "bytes": 7880
+ },
+ {
+  "url": "https://hw9mzzjpe2.mkplay.zone/v/1/assets/front/c0/pawL.webp",
+  "status": 200,
+  "bytes": 7512
+ },
+ {
+  "url": "https://hw9mzzjpe2.mkplay.zone/v/1/assets/front/c0/earL.webp",
+  "status": 200,
+  "bytes": 12298
+ },
+ {
+  "url": "https://hw9mzzjpe2.mkplay.zone/v/1/assets/front/c0/earR.webp",
+  "status": 200,
+  "bytes": 12102
+ },
+ {
+  "url": "https://hw9mzzjpe2.mkplay.zone/v/1/assets/front/c0/bodyH.webp",
+  "status": 200,
+  "bytes": 44034
+ },
+ {
+  "url": "https://hw9mzzjpe2.mkplay.zone/v/1/assets/front/c0/headB.webp",
+  "status": 200,
+  "bytes": 53688
+ },
+ {
+  "url": "https://hw9mzzjpe2.mkplay.zone/v/1/assets/front/c0/headH.webp",
+  "status": 200,
+  "bytes": 52882
+ },
+ {
+  "url": "https://hw9mzzjpe2.mkplay.zone/v/1/assets/misc/0.webp",
+  "status": 200,
+  "bytes": 12144
+ },
+ {
+  "url": "https://hw9mzzjpe2.mkplay.zone/v/1/assets/front/c0/headT.webp",
+  "status": 200,
+  "bytes": 53632
+ },
+ {
+  "url": "https://hw9mzzjpe2.mkplay.zone/v/1/assets/misc/2.webp",
+  "status": 200,
+  "bytes": 17038
+ },
+ {
+  "url": "https://hw9mzzjpe2.mkplay.zone/v/1/assets/front/c0/headTH.webp",
+  "status": 200,
+  "bytes": 53004
+ },
+ {
+  "url": "https://hw9mzzjpe2.mkplay.zone/v/1/assets/front/c0/head.webp",
+  "status": 200,
+  "bytes": 53466
+ },
+ {
+  "url": "https://hw9mzzjpe2.mkplay.zone/v/1/assets/front/c0/headW.webp",
+  "status": 200,
+  "bytes": 53168
+ },
+ {
+  "url": "https://hw9mzzjpe2.mkplay.zone/v/1/assets/misc/5.webp",
+  "status": 200,
+  "bytes": 18134
+ },
+ {
+  "url": "https://hw9mzzjpe2.mkplay.zone/v/1/assets/bg-title-p.jpg",
+  "status": 200,
+  "bytes": 216504
+ },
+ {
+  "url": "https://hw9mzzjpe2.mkplay.zone/v/1/assets/corgi/c0/body.webp",
+  "status": 200,
+  "bytes": 26584
+ },
+ {
+  "url": "https://hw9mzzjpe2.mkplay.zone/v/1/assets/corgi/c0/cheekR.webp",
+  "status": 200,
+  "bytes": 7356
+ },
+ {
+  "url": "https://hw9mzzjpe2.mkplay.zone/v/1/assets/corgi/c0/heart.webp",
+  "status": 200,
+  "bytes": 3514
+ },
+ {
+  "url": "https://hw9mzzjpe2.mkplay.zone/v/1/assets/corgi/c0/legL.webp",
+  "status": 200,
+  "bytes": 2210
+ },
+ {
+  "url": "https://hw9mzzjpe2.mkplay.zone/v/1/assets/corgi/c0/tail.webp",
+  "status": 200,
+  "bytes": 6006
+ },
+ {
+  "url": "https://hw9mzzjpe2.mkplay.zone/v/1/assets/pup/ps/0.webp",
+  "status": 200,
+  "bytes": 32252
+ },
+ {
+  "url": "https://hw9mzzjpe2.mkplay.zone/v/1/assets/costume/1b.webp",
+  "status": 200,
+  "bytes": 74610
+ },
+ {
+  "url": "https://hw9mzzjpe2.mkplay.zone/v/1/assets/corgi/c0/peek.webp",
+  "status": 200,
+  "bytes": 43940
+ },
+ {
+  "url": "https://hw9mzzjpe2.mkplay.zone/v/1/assets/pup/pw/0.webp",
+  "status": 200,
+  "bytes": 30410
+ },
+ {
+  "url": "https://hw9mzzjpe2.mkplay.zone/v/1/assets/costume/2b.webp",
+  "status": 200,
+  "bytes": 24118
+ },
+ {
+  "url": "https://hw9mzzjpe2.mkplay.zone/v/1/assets/snacks/0.webp",
+  "status": 200,
+  "bytes": 15780
+ },
+ {
+  "url": "https://hw9mzzjpe2.mkplay.zone/v/1/assets/misc/1.webp",
+  "status": 200,
+  "bytes": 16982
+ },
+ {
+  "url": "https://hw9mzzjpe2.mkplay.zone/v/1/assets/costume/1.webp",
+  "status": 200,
+  "bytes": 21758
+ },
+ {
+  "url": "https://hw9mzzjpe2.mkplay.zone/v/1/assets/costume/0.webp",
+  "status": 200,
+  "bytes": 16106
+ },
+ {
+  "url": "https://hw9mzzjpe2.mkplay.zone/v/1/assets/snacks/2.webp",
+  "status": 200,
+  "bytes": 18610
+ },
+ {
+  "url": "https://hw9mzzjpe2.mkplay.zone/v/1/assets/corgi/c0/cheekL.webp",
+  "status": 200,
+  "bytes": 7170
+ },
+ {
+  "url": "https://hw9mzzjpe2.mkplay.zone/v/1/assets/corgi/c0/legR.webp",
+  "status": 200,
+  "bytes": 2132
+ },
+ {
+  "url": "https://hw9mzzjpe2.mkplay.zone/v/1/assets/snacks/1.webp",
+  "status": 200,
+  "bytes": 20656
+ },
+ {
+  "url": "https://hw9mzzjpe2.mkplay.zone/v/1/assets/snacks/3.webp",
+  "status": 200,
+  "bytes": 16800
+ },
+ {
+  "url": "https://hw9mzzjpe2.mkplay.zone/v/1/assets/costume/2.webp",
+  "status": 200,
+  "bytes": 25864
+ },
+ {
+  "url": "https://hw9mzzjpe2.mkplay.zone/v/1/assets/misc/3.webp",
+  "status": 200,
+  "bytes": 14870
+ },
+ {
+  "url": "https://hw9mzzjpe2.mkplay.zone/v/1/assets/misc/4.webp",
+  "status": 200,
+  "bytes": 13388
+ },
+ {
+  "url": "https://hw9mzzjpe2.mkplay.zone/v/1/assets/snacks/5.webp",
+  "status": 200,
+  "bytes": 17660
+ },
+ {
+  "url": "https://hw9mzzjpe2.mkplay.zone/v/1/assets/snacks/4.webp",
+  "status": 200,
+  "bytes": 18386
+ },
+ {
+  "url": "https://hw9mzzjpe2.mkplay.zone/v/1/assets/costume/4.webp",
+  "status": 200,
+  "bytes": 21110
+ },
+ {
+  "url": "https://hw9mzzjpe2.mkplay.zone/v/1/assets/costume/5.webp",
+  "status": 200,
+  "bytes": 12808
+ },
+ {
+  "url": "https://hw9mzzjpe2.mkplay.zone/v/1/assets/misc/6.webp",
+  "status": 200,
+  "bytes": 12484
+ },
+ {
+  "url": "https://hw9mzzjpe2.mkplay.zone/v/1/assets/snacks/7.webp",
+  "status": 200,
+  "bytes": 24558
+ },
+ {
+  "url": "https://hw9mzzjpe2.mkplay.zone/v/1/assets/snacks/6.webp",
+  "status": 200,
+  "bytes": 11342
+ },
+ {
+  "url": "https://hw9mzzjpe2.mkplay.zone/v/1/assets/costume/6.webp",
+  "status": 200,
+  "bytes": 13808
+ },
+ {
+  "url": "https://hw9mzzjpe2.mkplay.zone/v/1/assets/costume/3.webp",
+  "status": 200,
+  "bytes": 24892
+ },
+ {
+  "url": "https://hw9mzzjpe2.mkplay.zone/v/1/assets/snacks/4e.webp",
+  "status": 200,
+  "bytes": 15264
+ },
+ {
+  "url": "https://hw9mzzjpe2.mkplay.zone/v/1/assets/misc/7.webp",
+  "status": 200,
+  "bytes": 11084
+ },
+ {
+  "url": "https://hw9mzzjpe2.mkplay.zone/v/1/assets/costume/7.webp",
+  "status": 200,
+  "bytes": 14472
+ },
+ {
+  "url": "https://hw9mzzjpe2.mkplay.zone/v/1/assets/costume/9.webp",
+  "status": 200,
+  "bytes": 15192
+ },
+ {
+  "url": "https://hw9mzzjpe2.mkplay.zone/v/1/assets/costume/wing.webp",
+  "status": 200,
+  "bytes": 60696
+ },
+ {
+  "url": "https://hw9mzzjpe2.mkplay.zone/v/1/assets/costume/8.webp",
+  "status": 200,
+  "bytes": 14914
+ },
+ {
+  "url": "https://hw9mzzjpe2.mkplay.zone/v/1/assets/misc/8.webp",
+  "status": 200,
+  "bytes": 17488
+ },
+ {
+  "url": "https://static.makeplay.ai/fonts/v1/google-fonts-apache/luckiest-guy/LuckiestGuy-Regular.ttf",
+  "status": 200,
+  "bytes": 73320
+ },
+ {
+  "url": "https://hw9mzzjpe2.mkplay.zone/v/1/sound.manifest.json",
+  "status": 200,
+  "bytes": 10374
+ },
+ {
+  "url": "https://static.makeplay.ai/fonts/v1/smiley-sans/SmileySans-Oblique.woff2",
+  "status": 200,
+  "bytes": 1150924
+ },
+ {
+  "url": "https://hw9mzzjpe2.mkplay.zone/v/1/assets/corgi/c1/cheekL.webp",
+  "status": 200,
+  "bytes": 9908
+ },
+ {
+  "url": "https://hw9mzzjpe2.mkplay.zone/v/1/assets/corgi/c1/cheekR.webp",
+  "status": 200,
+  "bytes": 10046
+ },
+ {
+  "url": "https://hw9mzzjpe2.mkplay.zone/v/1/assets/corgi/c1/heart.webp",
+  "status": 200,
+  "bytes": 4068
+ },
+ {
+  "url": "https://hw9mzzjpe2.mkplay.zone/v/1/assets/corgi/c1/legR.webp",
+  "status": 200,
+  "bytes": 2344
+ },
+ {
+  "url": "https://hw9mzzjpe2.mkplay.zone/v/1/assets/corgi/c1/peek.webp",
+  "status": 200,
+  "bytes": 41714
+ },
+ {
+  "url": "https://hw9mzzjpe2.mkplay.zone/v/1/assets/corgi/c1/legL.webp",
+  "status": 200,
+  "bytes": 2320
+ },
+ {
+  "url": "https://hw9mzzjpe2.mkplay.zone/v/1/assets/corgi/c1/tail.webp",
+  "status": 200,
+  "bytes": 5884
+ },
+ {
+  "url": "https://hw9mzzjpe2.mkplay.zone/v/1/assets/front/c1/pawL.webp",
+  "status": 200,
+  "bytes": 7362
+ },
+ {
+  "url": "https://hw9mzzjpe2.mkplay.zone/v/1/assets/front/c1/pawR.webp",
+  "status": 200,
+  "bytes": 7662
+ },
+ {
+  "url": "https://hw9mzzjpe2.mkplay.zone/v/1/assets/front/c1/earL.webp",
+  "status": 200,
+  "bytes": 10904
+ },
+ {
+  "url": "https://hw9mzzjpe2.mkplay.zone/v/1/assets/front/c1/body.webp",
+  "status": 200,
+  "bytes": 38186
+ },
+ {
+  "url": "https://hw9mzzjpe2.mkplay.zone/v/1/assets/front/c1/earR.webp",
+  "status": 200,
+  "bytes": 11214
+ },
+ {
+  "url": "https://hw9mzzjpe2.mkplay.zone/v/1/assets/front/c1/headH.webp",
+  "status": 200,
+  "bytes": 46726
+ },
+ {
+  "url": "https://hw9mzzjpe2.mkplay.zone/v/1/assets/front/c1/headW.webp",
+  "status": 200,
+  "bytes": 46956
+ },
+ {
+  "url": "https://hw9mzzjpe2.mkplay.zone/v/1/assets/front/c1/headT.webp",
+  "status": 200,
+  "bytes": 47112
+ },
+ {
+  "url": "https://hw9mzzjpe2.mkplay.zone/v/1/assets/front/c1/headB.webp",
+  "status": 200,
+  "bytes": 46640
+ },
+ {
+  "url": "https://hw9mzzjpe2.mkplay.zone/v/1/assets/front/c1/headTH.webp",
+  "status": 200,
+  "bytes": 46356
+ },
+ {
+  "url": "https://hw9mzzjpe2.mkplay.zone/v/1/assets/corgi/c2/cheekR.webp",
+  "status": 200,
+  "bytes": 7556
+ },
+ {
+  "url": "https://hw9mzzjpe2.mkplay.zone/v/1/assets/corgi/c2/tail.webp",
+  "status": 200,
+  "bytes": 4988
+ },
+ {
+  "url": "https://hw9mzzjpe2.mkplay.zone/v/1/assets/corgi/c2/heart.webp",
+  "status": 200,
+  "bytes": 3606
+ },
+ {
+  "url": "https://hw9mzzjpe2.mkplay.zone/v/1/assets/corgi/c2/body.webp",
+  "status": 200,
+  "bytes": 20676
+ },
+ {
+  "url": "https://hw9mzzjpe2.mkplay.zone/v/1/assets/pup/pw/1.webp",
+  "status": 200,
+  "bytes": 30504
+ },
+ {
+  "url": "https://hw9mzzjpe2.mkplay.zone/v/1/assets/corgi/c2/peek.webp",
+  "status": 200,
+  "bytes": 36286
+ },
+ {
+  "url": "https://hw9mzzjpe2.mkplay.zone/v/1/assets/corgi/c2/legL.webp",
+  "status": 200,
+  "bytes": 2184
+ },
+ {
+  "url": "https://hw9mzzjpe2.mkplay.zone/v/1/assets/corgi/c2/legR.webp",
+  "status": 200,
+  "bytes": 2232
+ },
+ {
+  "url": "https://hw9mzzjpe2.mkplay.zone/v/1/assets/corgi/c2/cheekL.webp",
+  "status": 200,
+  "bytes": 7682
+ },
+ {
+  "url": "https://hw9mzzjpe2.mkplay.zone/v/1/assets/front/c2/body.webp",
+  "status": 200,
+  "bytes": 38472
+ },
+ {
+  "url": "https://hw9mzzjpe2.mkplay.zone/v/1/assets/front/c2/pawL.webp",
+  "status": 200,
+  "bytes": 7304
+ },
+ {
+  "url": "https://hw9mzzjpe2.mkplay.zone/v/1/assets/corgi/c1/body.webp",
+  "status": 200,
+  "bytes": 23658
+ },
+ {
+  "url": "https://hw9mzzjpe2.mkplay.zone/v/1/assets/front/c1/bodyH.webp",
+  "status": 200,
+  "bytes": 39298
+ },
+ {
+  "url": "https://hw9mzzjpe2.mkplay.zone/v/1/assets/front/c1/head.webp",
+  "status": 200,
+  "bytes": 47136
+ },
+ {
+  "url": "https://static.makeplay.ai/fonts/v1/open-huninn/OpenHuninn.woff2",
+  "status": 200,
+  "bytes": 2180736
+ },
+ {
+  "url": "https://hw9mzzjpe2.mkplay.zone/v/1/assets/pup/ps/1.webp",
+  "status": 200,
+  "bytes": 30232
+ },
+ {
+  "url": "https://hw9mzzjpe2.mkplay.zone/v/1/assets/front/c2/pawR.webp",
+  "status": 200,
+  "bytes": 7594
+ },
+ {
+  "url": "https://hw9mzzjpe2.mkplay.zone/v/1/assets/front/c2/earL.webp",
+  "status": 200,
+  "bytes": 9570
+ },
+ {
+  "url": "https://hw9mzzjpe2.mkplay.zone/v/1/assets/front/c2/headH.webp",
+  "status": 200,
+  "bytes": 38008
+ },
+ {
+  "url": "https://hw9mzzjpe2.mkplay.zone/v/1/assets/front/c2/bodyH.webp",
+  "status": 200,
+  "bytes": 38910
+ },
+ {
+  "url": "https://hw9mzzjpe2.mkplay.zone/v/1/assets/front/c2/headW.webp",
+  "status": 200,
+  "bytes": 38760
+ },
+ {
+  "url": "https://hw9mzzjpe2.mkplay.zone/v/1/assets/front/c2/headB.webp",
+  "status": 200,
+  "bytes": 37952
+ },
+ {
+  "url": "https://hw9mzzjpe2.mkplay.zone/v/1/assets/front/c2/headT.webp",
+  "status": 200,
+  "bytes": 39476
+ },
+ {
+  "url": "https://hw9mzzjpe2.mkplay.zone/v/1/assets/front/c2/head.webp",
+  "status": 200,
+  "bytes": 39322
+ },
+ {
+  "url": "https://hw9mzzjpe2.mkplay.zone/v/1/assets/front/c2/headTH.webp",
+  "status": 200,
+  "bytes": 38044
+ },
+ {
+  "url": "https://hw9mzzjpe2.mkplay.zone/v/1/assets/pup/ps/2.webp",
+  "status": 200,
+  "bytes": 25278
+ },
+ {
+  "url": "https://hw9mzzjpe2.mkplay.zone/v/1/assets/pup/pw/2.webp",
+  "status": 200,
+  "bytes": 28570
+ },
+ {
+  "url": "https://hw9mzzjpe2.mkplay.zone/v/1/assets/corgi/c3/body.webp",
+  "status": 200,
+  "bytes": 24626
+ },
+ {
+  "url": "https://hw9mzzjpe2.mkplay.zone/v/1/assets/corgi/c3/cheekL.webp",
+  "status": 200,
+  "bytes": 9674
+ },
+ {
+  "url": "https://hw9mzzjpe2.mkplay.zone/v/1/assets/corgi/c3/legR.webp",
+  "status": 200,
+  "bytes": 2216
+ },
+ {
+  "url": "https://hw9mzzjpe2.mkplay.zone/v/1/assets/corgi/c3/legL.webp",
+  "status": 200,
+  "bytes": 2178
+ },
+ {
+  "url": "https://hw9mzzjpe2.mkplay.zone/v/1/assets/front/c2/earR.webp",
+  "status": 200,
+  "bytes": 10852
+ },
+ {
+  "url": "https://hw9mzzjpe2.mkplay.zone/v/1/assets/front/c3/pawL.webp",
+  "status": 200,
+  "bytes": 7268
+ },
+ {
+  "url": "https://hw9mzzjpe2.mkplay.zone/v/1/assets/front/c3/body.webp",
+  "status": 200,
+  "bytes": 37752
+ },
+ {
+  "url": "https://hw9mzzjpe2.mkplay.zone/v/1/assets/front/c3/pawR.webp",
+  "status": 200,
+  "bytes": 7646
+ },
+ {
+  "url": "https://hw9mzzjpe2.mkplay.zone/v/1/assets/corgi/c3/cheekR.webp",
+  "status": 200,
+  "bytes": 9886
+ },
+ {
+  "url": "https://hw9mzzjpe2.mkplay.zone/v/1/assets/corgi/c3/peek.webp",
+  "status": 200,
+  "bytes": 41486
+ },
+ {
+  "url": "https://hw9mzzjpe2.mkplay.zone/v/1/assets/corgi/c3/tail.webp",
+  "status": 200,
+  "bytes": 5762
+ },
+ {
+  "url": "https://hw9mzzjpe2.mkplay.zone/v/1/assets/corgi/c3/heart.webp",
+  "status": 200,
+  "bytes": 3946
+ },
+ {
+  "url": "https://hw9mzzjpe2.mkplay.zone/v/1/assets/front/c3/earL.webp",
+  "status": 200,
+  "bytes": 10854
+ },
+ {
+  "url": "https://hw9mzzjpe2.mkplay.zone/v/1/assets/front/c3/earR.webp",
+  "status": 200,
+  "bytes": 10276
+ },
+ {
+  "url": "https://hw9mzzjpe2.mkplay.zone/v/1/assets/front/c3/bodyH.webp",
+  "status": 200,
+  "bytes": 38620
+ },
+ {
+  "url": "https://hw9mzzjpe2.mkplay.zone/v/1/assets/front/c3/head.webp",
+  "status": 200,
+  "bytes": 47876
+ },
+ {
+  "url": "https://hw9mzzjpe2.mkplay.zone/v/1/assets/front/c3/headH.webp",
+  "status": 200,
+  "bytes": 47508
+ },
+ {
+  "url": "https://hw9mzzjpe2.mkplay.zone/v/1/assets/front/c3/headB.webp",
+  "status": 200,
+  "bytes": 47578
+ },
+ {
+  "url": "https://hw9mzzjpe2.mkplay.zone/v/1/assets/front/c3/headW.webp",
+  "status": 200,
+  "bytes": 47744
+ },
+ {
+  "url": "https://hw9mzzjpe2.mkplay.zone/v/1/assets/front/c3/headT.webp",
+  "status": 200,
+  "bytes": 47726
+ },
+ {
+  "url": "https://hw9mzzjpe2.mkplay.zone/v/1/assets/pup/pw/3.webp",
+  "status": 200,
+  "bytes": 29628
+ },
+ {
+  "url": "https://hw9mzzjpe2.mkplay.zone/v/1/assets/corgi/c4/body.webp",
+  "status": 200,
+  "bytes": 24970
+ },
+ {
+  "url": "https://hw9mzzjpe2.mkplay.zone/v/1/assets/pup/ps/3.webp",
+  "status": 200,
+  "bytes": 31872
+ },
+ {
+  "url": "https://hw9mzzjpe2.mkplay.zone/v/1/assets/front/c3/headTH.webp",
+  "status": 200,
+  "bytes": 47524
+ },
+ {
+  "url": "https://hw9mzzjpe2.mkplay.zone/v/1/assets/corgi/c4/cheekL.webp",
+  "status": 200,
+  "bytes": 9946
+ },
+ {
+  "url": "https://hw9mzzjpe2.mkplay.zone/v/1/assets/corgi/c4/cheekR.webp",
+  "status": 200,
+  "bytes": 9870
+ },
+ {
+  "url": "https://hw9mzzjpe2.mkplay.zone/v/1/assets/corgi/c4/tail.webp",
+  "status": 200,
+  "bytes": 5748
+ },
+ {
+  "url": "https://hw9mzzjpe2.mkplay.zone/v/1/assets/corgi/c4/heart.webp",
+  "status": 200,
+  "bytes": 3932
+ },
+ {
+  "url": "https://hw9mzzjpe2.mkplay.zone/v/1/assets/corgi/c4/peek.webp",
+  "status": 200,
+  "bytes": 42000
+ },
+ {
+  "url": "https://hw9mzzjpe2.mkplay.zone/v/1/assets/corgi/c4/legL.webp",
+  "status": 200,
+  "bytes": 2168
+ },
+ {
+  "url": "https://hw9mzzjpe2.mkplay.zone/v/1/assets/corgi/c4/legR.webp",
+  "status": 200,
+  "bytes": 2010
+ },
+ {
+  "url": "https://hw9mzzjpe2.mkplay.zone/v/1/assets/front/c4/pawL.webp",
+  "status": 200,
+  "bytes": 7286
+ },
+ {
+  "url": "https://hw9mzzjpe2.mkplay.zone/v/1/assets/front/c4/body.webp",
+  "status": 200,
+  "bytes": 37714
+ },
+ {
+  "url": "https://hw9mzzjpe2.mkplay.zone/v/1/assets/front/c4/earR.webp",
+  "status": 200,
+  "bytes": 10304
+ },
+ {
+  "url": "https://hw9mzzjpe2.mkplay.zone/v/1/assets/front/c4/head.webp",
+  "status": 200,
+  "bytes": 47984
+ },
+ {
+  "url": "https://hw9mzzjpe2.mkplay.zone/v/1/assets/front/c4/earL.webp",
+  "status": 200,
+  "bytes": 10862
+ },
+ {
+  "url": "https://hw9mzzjpe2.mkplay.zone/v/1/assets/front/c4/bodyH.webp",
+  "status": 200,
+  "bytes": 38586
+ },
+ {
+  "url": "https://hw9mzzjpe2.mkplay.zone/v/1/assets/front/c4/headW.webp",
+  "status": 200,
+  "bytes": 47716
+ },
+ {
+  "url": "https://hw9mzzjpe2.mkplay.zone/v/1/assets/front/c4/pawR.webp",
+  "status": 200,
+  "bytes": 7630
+ },
+ {
+  "url": "https://hw9mzzjpe2.mkplay.zone/v/1/assets/front/c4/headH.webp",
+  "status": 200,
+  "bytes": 47596
+ },
+ {
+  "url": "https://hw9mzzjpe2.mkplay.zone/v/1/assets/front/c4/headB.webp",
+  "status": 200,
+  "bytes": 47564
+ },
+ {
+  "url": "https://hw9mzzjpe2.mkplay.zone/v/1/assets/front/c4/headT.webp",
+  "status": 200,
+  "bytes": 47736
+ },
+ {
+  "url": "https://hw9mzzjpe2.mkplay.zone/v/1/assets/pup/pw/4.webp",
+  "status": 200,
+  "bytes": 31252
+ },
+ {
+  "url": "https://hw9mzzjpe2.mkplay.zone/v/1/assets/pup/ps/4.webp",
+  "status": 200,
+  "bytes": 28018
+ },
+ {
+  "url": "https://hw9mzzjpe2.mkplay.zone/v/1/assets/front/c4/headTH.webp",
+  "status": 200,
+  "bytes": 47596
+ },
+ {
+  "url": "https://hw9mzzjpe2.mkplay.zone/v/1/assets/corgi/c5/body.webp",
+  "status": 200,
+  "bytes": 20008
+ },
+ {
+  "url": "https://hw9mzzjpe2.mkplay.zone/v/1/assets/corgi/c5/cheekL.webp",
+  "status": 200,
+  "bytes": 7608
+ },
+ {
+  "url": "https://hw9mzzjpe2.mkplay.zone/v/1/assets/corgi/c5/tail.webp",
+  "status": 200,
+  "bytes": 4624
+ },
+ {
+  "url": "https://hw9mzzjpe2.mkplay.zone/v/1/assets/corgi/c5/cheekR.webp",
+  "status": 200,
+  "bytes": 7954
+ },
+ {
+  "url": "https://hw9mzzjpe2.mkplay.zone/v/1/assets/corgi/c5/heart.webp",
+  "status": 200,
+  "bytes": 3606
+ },
+ {
+  "url": "https://hw9mzzjpe2.mkplay.zone/v/1/assets/corgi/c5/legR.webp",
+  "status": 200,
+  "bytes": 2356
+ },
+ {
+  "url": "https://hw9mzzjpe2.mkplay.zone/v/1/assets/front/c5/body.webp",
+  "status": 200,
+  "bytes": 37404
+ },
+ {
+  "url": "https://hw9mzzjpe2.mkplay.zone/v/1/assets/corgi/c5/peek.webp",
+  "status": 200,
+  "bytes": 36914
+ },
+ {
+  "url": "https://hw9mzzjpe2.mkplay.zone/v/1/assets/front/c5/earL.webp",
+  "status": 200,
+  "bytes": 9064
+ },
+ {
+  "url": "https://hw9mzzjpe2.mkplay.zone/v/1/assets/corgi/c5/legL.webp",
+  "status": 200,
+  "bytes": 2274
+ },
+ {
+  "url": "https://hw9mzzjpe2.mkplay.zone/v/1/assets/front/c5/pawL.webp",
+  "status": 200,
+  "bytes": 7264
+ },
+ {
+  "url": "https://hw9mzzjpe2.mkplay.zone/v/1/assets/front/c5/bodyH.webp",
+  "status": 200,
+  "bytes": 38350
+ },
+ {
+  "url": "https://hw9mzzjpe2.mkplay.zone/v/1/assets/front/c5/earR.webp",
+  "status": 200,
+  "bytes": 10710
+ },
+ {
+  "url": "https://hw9mzzjpe2.mkplay.zone/v/1/assets/front/c5/headH.webp",
+  "status": 200,
+  "bytes": 36232
+ },
+ {
+  "url": "https://hw9mzzjpe2.mkplay.zone/v/1/assets/front/c5/headW.webp",
+  "status": 200,
+  "bytes": 36902
+ },
+ {
+  "url": "https://hw9mzzjpe2.mkplay.zone/v/1/assets/front/c5/headB.webp",
+  "status": 200,
+  "bytes": 36174
+ },
+ {
+  "url": "https://hw9mzzjpe2.mkplay.zone/v/1/assets/front/c5/headT.webp",
+  "status": 200,
+  "bytes": 37716
+ },
+ {
+  "url": "https://hw9mzzjpe2.mkplay.zone/v/1/assets/front/c5/head.webp",
+  "status": 200,
+  "bytes": 37688
+ },
+ {
+  "url": "https://hw9mzzjpe2.mkplay.zone/v/1/assets/pup/ps/5.webp",
+  "status": 200,
+  "bytes": 23638
+ },
+ {
+  "url": "https://hw9mzzjpe2.mkplay.zone/v/1/assets/pup/pw/5.webp",
+  "status": 200,
+  "bytes": 25968
+ },
+ {
+  "url": "https://hw9mzzjpe2.mkplay.zone/v/1/assets/front/c5/headTH.webp",
+  "status": 200,
+  "bytes": 36148
+ },
+ {
+  "url": "https://hw9mzzjpe2.mkplay.zone/v/1/assets/front/c5/pawR.webp",
+  "status": 200,
+  "bytes": 7572
+ },
+ {
+  "url": "https://hw9mzzjpe2.mkplay.zone/v/1/assets/corgi/c6/body.webp",
+  "status": 200,
+  "bytes": 20346
+ },
+ {
+  "url": "https://hw9mzzjpe2.mkplay.zone/v/1/assets/audio/bgm.m4a",
+  "status": 200,
+  "bytes": 947643
+ },
+ {
+  "url": "https://hw9mzzjpe2.mkplay.zone/v/1/assets/corgi/c6/cheekL.webp",
+  "status": 200,
+  "bytes": 7386
+ },
+ {
+  "url": "https://hw9mzzjpe2.mkplay.zone/v/1/assets/corgi/c6/cheekR.webp",
+  "status": 200,
+  "bytes": 7572
+ },
+ {
+  "url": "https://hw9mzzjpe2.mkplay.zone/v/1/assets/corgi/c6/tail.webp",
+  "status": 200,
+  "bytes": 4626
+ },
+ {
+  "url": "https://hw9mzzjpe2.mkplay.zone/v/1/assets/corgi/c6/heart.webp",
+  "status": 200,
+  "bytes": 3538
+ },
+ {
+  "url": "https://hw9mzzjpe2.mkplay.zone/v/1/assets/corgi/c6/legR.webp",
+  "status": 200,
+  "bytes": 2228
+ },
+ {
+  "url": "https://hw9mzzjpe2.mkplay.zone/v/1/assets/front/c6/pawL.webp",
+  "status": 200,
+  "bytes": 7258
+ },
+ {
+  "url": "https://hw9mzzjpe2.mkplay.zone/v/1/assets/front/c6/body.webp",
+  "status": 200,
+  "bytes": 36806
+ },
+ {
+  "url": "https://hw9mzzjpe2.mkplay.zone/v/1/assets/front/c6/pawR.webp",
+  "status": 200,
+  "bytes": 7586
+ },
+ {
+  "url": "https://hw9mzzjpe2.mkplay.zone/v/1/assets/corgi/c6/peek.webp",
+  "status": 200,
+  "bytes": 37678
+ },
+ {
+  "url": "https://hw9mzzjpe2.mkplay.zone/v/1/assets/front/c6/earL.webp",
+  "status": 200,
+  "bytes": 9516
+ },
+ {
+  "url": "https://hw9mzzjpe2.mkplay.zone/v/1/assets/front/c6/earR.webp",
+  "status": 200,
+  "bytes": 10126
+ },
+ {
+  "url": "https://hw9mzzjpe2.mkplay.zone/v/1/assets/front/c6/head.webp",
+  "status": 200,
+  "bytes": 37648
+ },
+ {
+  "url": "https://hw9mzzjpe2.mkplay.zone/v/1/assets/front/c6/bodyH.webp",
+  "status": 200,
+  "bytes": 37708
+ },
+ {
+  "url": "https://hw9mzzjpe2.mkplay.zone/v/1/assets/front/c6/headW.webp",
+  "status": 200,
+  "bytes": 36682
+ },
+ {
+  "url": "https://hw9mzzjpe2.mkplay.zone/v/1/assets/corgi/c6/legL.webp",
+  "status": 200,
+  "bytes": 2168
+ },
+ {
+  "url": "https://hw9mzzjpe2.mkplay.zone/v/1/assets/front/c6/headH.webp",
+  "status": 200,
+  "bytes": 36132
+ },
+ {
+  "url": "https://hw9mzzjpe2.mkplay.zone/v/1/assets/front/c6/headB.webp",
+  "status": 200,
+  "bytes": 35898
+ },
+ {
+  "url": "https://hw9mzzjpe2.mkplay.zone/v/1/assets/front/c6/headT.webp",
+  "status": 200,
+  "bytes": 37680
+ },
+ {
+  "url": "https://hw9mzzjpe2.mkplay.zone/v/1/assets/pup/ps/6.webp",
+  "status": 200,
+  "bytes": 23890
+ },
+ {
+  "url": "https://hw9mzzjpe2.mkplay.zone/v/1/assets/pup/pw/6.webp",
+  "status": 200,
+  "bytes": 27414
+ },
+ {
+  "url": "https://hw9mzzjpe2.mkplay.zone/v/1/assets/bg-sakura.jpg",
+  "status": 200,
+  "bytes": 240084
+ },
+ {
+  "url": "https://hw9mzzjpe2.mkplay.zone/v/1/assets/bg-sea.jpg",
+  "status": 200,
+  "bytes": 176883
+ },
+ {
+  "url": "https://hw9mzzjpe2.mkplay.zone/v/1/assets/decor/0.webp",
+  "status": 200,
+  "bytes": 28858
+ },
+ {
+  "url": "https://hw9mzzjpe2.mkplay.zone/v/1/assets/bg-snow.jpg",
+  "status": 200,
+  "bytes": 179154
+ },
+ {
+  "url": "https://hw9mzzjpe2.mkplay.zone/v/1/assets/decor/4.webp",
+  "status": 200,
+  "bytes": 26896
+ },
+ {
+  "url": "https://hw9mzzjpe2.mkplay.zone/v/1/assets/decor/1.webp",
+  "status": 200,
+  "bytes": 31116
+ },
+ {
+  "url": "https://hw9mzzjpe2.mkplay.zone/v/1/assets/decor/2.webp",
+  "status": 200,
+  "bytes": 37674
+ },
+ {
+  "url": "https://hw9mzzjpe2.mkplay.zone/v/1/assets/decor/6.webp",
+  "status": 200,
+  "bytes": 27854
+ },
+ {
+  "url": "https://hw9mzzjpe2.mkplay.zone/v/1/assets/decor/5.webp",
+  "status": 200,
+  "bytes": 20310
+ },
+ {
+  "url": "https://hw9mzzjpe2.mkplay.zone/v/1/assets/cos2/4.webp",
+  "status": 200,
+  "bytes": 17874
+ },
+ {
+  "url": "https://hw9mzzjpe2.mkplay.zone/v/1/assets/cos2/6.webp",
+  "status": 200,
+  "bytes": 22862
+ },
+ {
+  "url": "https://hw9mzzjpe2.mkplay.zone/v/1/assets/wearf/8.webp",
+  "status": 200,
+  "bytes": 14218
+ },
+ {
+  "url": "https://hw9mzzjpe2.mkplay.zone/v/1/assets/cos2/5.webp",
+  "status": 200,
+  "bytes": 11998
+ },
+ {
+  "url": "https://hw9mzzjpe2.mkplay.zone/v/1/assets/wearf/9.webp",
+  "status": 200,
+  "bytes": 10308
+ },
+ {
+  "url": "https://hw9mzzjpe2.mkplay.zone/v/1/assets/decor/7.webp",
+  "status": 200,
+  "bytes": 23454
+ },
+ {
+  "url": "https://hw9mzzjpe2.mkplay.zone/v/1/assets/front/c6/headTH.webp",
+  "status": 200,
+  "bytes": 35972
+ },
+ {
+  "url": "https://hw9mzzjpe2.mkplay.zone/v/1/assets/decor/3.webp",
+  "status": 200,
+  "bytes": 23746
+ },
+ {
+  "url": "https://hw9mzzjpe2.mkplay.zone/v/1/assets/wearf/10.webp",
+  "status": 200,
+  "bytes": 2974
+ }
+]

@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<link rel="icon" href="data:,">
+<title>Duang Duang 柯基屁屁</title>
+<style>
+html,body{margin:0;height:100%;overflow:hidden;background:#b9a7e6;touch-action:none;-webkit-user-select:none;user-select:none;-webkit-tap-highlight-color:transparent}
+#bgfill{position:fixed;inset:-30px;background:url(assets/bg-garden.jpg) center/cover;filter:blur(7px) saturate(1.05);transform:scale(1.05)}
+#bgfill:after{content:"";position:absolute;inset:0;background:rgba(185,167,230,.18)}
+#game{position:fixed;inset:0;display:flex;align-items:center;justify-content:center}
+canvas{display:block;touch-action:none;box-shadow:0 0 40px rgba(60,40,100,.35)}
+</style>
+<script type="importmap">
+{
+  "imports": {
+    "@makeplay/sound": "./runtime/sound-1.js"
+  }
+}
+</script>
+<script src="./engines/phaser.min.js"></script>
+</head>
+<body>
+<div id="bgfill"></div>
+<div id="game"></div>
+<script type="module">
+// ★ 必须在这里显式调 start()：game.js 已经改成 `export async function start(opts)`，
+//   模块体**不再自执行**。忘了这一句的症状是**整页全白、canvas 0、一个错都不报**
+//   （入口压根没跑）。
+import { start } from './game.js';
+// 不传 container ⇒ 用 `#game` + 窗口尺寸，和原版行为完全一致。
+// （传了 container 会被当成插件形态：不改 document.title、不改 <html lang>。）
+start();
+</script>
+</body>
+</html>

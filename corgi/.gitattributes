@@ -1,0 +1,13 @@
+* text=auto
+# 插件包按**字节**算 SHA-256，换行符一改哈希就对不上（症状是「装不上」）
+*.mjs -text
+*.pack -text
+# ★ 引擎按字节用：`make-phaser-lazy.mjs --check` 是**逐字节**比
+#   `engines/phaser-lazy.js` 和 `phaser.min.js` 生成结果。
+#   `text=auto` 会在 checkout 时把 LF 换成 CRLF ⇒ 生成物永远「不一致」，
+#   而重跑一遍生成脚本会把它改回 LF ⇒ `git status` 又脏。
+engines/** -text
+*.webp binary
+*.png binary
+*.jpg binary
+*.mp3 binary
