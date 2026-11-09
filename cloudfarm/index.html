@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="zh-Hans">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no" />
+  <meta name="theme-color" content="#6fae3e" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <title>云边小农场</title>
+  <style>
+    /* 入场前的一层底色。游戏自己的 loading 画面在 Pixi 起来之后接管。 */
+    html, body {
+      margin: 0; padding: 0; height: 100%; overflow: hidden;
+      background: #6fae3e;
+      -webkit-tap-highlight-color: transparent;
+      overscroll-behavior: none;
+      font-family: system-ui, -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
+    }
+    #app {
+      position: fixed; inset: 0;
+      /* 竖屏手机为主。桌面宽屏时居中显示一个手机宽的框，避免画布被拉成横的。 */
+      max-width: min(100vw, calc(100vh * 0.62));
+      margin: 0 auto;
+      left: 0; right: 0;
+      overflow: hidden;
+      touch-action: none;
+    }
+    #app canvas { display: block; }
+    /* 静态兜底：脚本还没跑起来时别是纯白 */
+    #splash {
+      position: fixed; inset: 0; display: grid; place-items: center;
+      background: linear-gradient(#8fd35a, #6fae3e 60%, #5a9b31);
+      color: #fff; font-size: 22px; font-weight: 800;
+      letter-spacing: .04em;
+      text-shadow: 0 2px 8px rgba(0,0,0,.25);
+      z-index: 50;
+    }
+    #boot-error {
+      position: fixed; inset: auto 12px 12px 12px; z-index: 60;
+      background: #fff5f5; color: #a32d2d; border: 1px solid #f0b8b8;
+      border-radius: 10px; padding: 12px 14px;
+      font-size: 13px; line-height: 1.5; white-space: pre-wrap;
+    }
+  </style>
+</head>
+<body>
+  <div id="app"></div>
+  <div id="splash">云边小农场</div>
+  <div id="boot-error" hidden></div>
+  <script type="module" src="/src/main.js"></script>
+</body>
+</html>

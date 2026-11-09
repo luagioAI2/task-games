@@ -1,0 +1,7 @@
+* text=auto
+*.mjs -text
+*.pack -text
+*.webp binary
+*.png binary
+*.jpg binary
+*.mp3 binary
