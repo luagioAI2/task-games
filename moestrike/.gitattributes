@@ -1,0 +1,12 @@
+* text=auto
+# 插件包按**字节**算 SHA-256，换行符一改哈希就对不上（症状是「装不上」）
+*.mjs -text
+*.pack -text
+# 资源清单是脚本生成的（make-asset-manifest.mjs），保持逐字节一致，
+# 否则换台机器 checkout 成 CRLF 后 `git status` 会常驻一条假的「清单变了」
+assets/manifest.json -text
+sound.manifest.json -text
+*.webp binary
+*.png binary
+*.jpg binary
+*.mp3 binary
