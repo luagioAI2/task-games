@@ -1,0 +1,10 @@
+# ★ eol=lf 不能省：默认 `text=auto` 在 Windows 上 checkout 成 CRLF，
+#   而补丁脚本 / 字符串替换按 LF 写的锚点会**全部命中 0 次**（看着像「改过了其实没改」）
+* text=auto eol=lf
+# 插件包按**字节**算 SHA-256，换行符一改哈希就对不上（症状是「装不上」）
+*.mjs -text
+*.pack -text
+*.webp binary
+*.png binary
+*.jpg binary
+*.mp3 binary

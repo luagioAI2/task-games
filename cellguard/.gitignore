@@ -1,0 +1,15 @@
+# 原始镜像（未改造，可由 --source 重下）。不入库。
+_originals/
+
+# 打包产物（node scripts/build-plugin.mjs 现打）
+dist-plugin/
+
+node_modules/
+*.log
+
+# 一次性补丁 / 探针（scratch）。★ 前缀必须是 `scripts/_*` 而不是 `_*`：
+# 后者会把整个 scripts/ 目录一起忽略掉，build-plugin.mjs 就不进库了。
+scripts/_*
+
+# 走查临时图（要留的图进 screenshots/，那是详情页唯一的来源）
+shots/
