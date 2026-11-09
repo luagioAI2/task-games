@@ -18,7 +18,7 @@
 | 6 | 落库 | ✅ | 本地四处一致（`index.json` v1.0.1 / `localGames.ts` 哈希 `e363ea80e44f…` / `storefront.ts` / `build-store-shots.py` PLAN）；后端 `game.status=available points=300` / `wish_item.archived=0` / 盲盒池 25 款 / `game_release` 活跃 = 1.0.1（release#51） |
 | 7 | 商城详情 | ✅ | `public/store/inudoku/1~4.webp`（17.4 / 24.8 / 17.8 / 15.5 KB），源图 `screenshots/store-1~4*.png` 由 `scripts/store-shots.mjs` 现拍（已进 git） |
 | 8 | 五层验收 | ✅ | 独立页：`smoke.mjs` 通过（canvas 1 · 颜色 401 种 · 4xx 0 · pageerror 0）、`play-check.mjs` 14/0、`check-plugin.mjs` 通过（3 条提示）；远程 LAN+HTTPS 探针 `_probe-inudoku-remote.mjs` **23/0**；`check-remote-package.mjs` 全过（32 条资源哈希）；`tsc` / `vitest` 见步骤 9 |
-| 9 | 提交 | 🔄 | 本工程 `1.0.1` 未提交（`M game.js plugin.js scripts/patch-game.mjs scripts/build-plugin.mjs ONBOARD.md`）；宿主未提交（`M index.json build-store-shots.py localGames.ts` + `?? public/games/inudoku public/store/inudoku scripts/_probe-inudoku-remote.mjs`） |
+| 9 | 提交 | ✅ | 本工程 `2c68aec` → `a846e4a`（1.0.0）→ `acd82aa`（1.0.1 卸载修 RO）；宿主 `9a6e98e`（清单 / 哈希 / 商城 / 图标 / 截图 PLAN）；探针 `scripts/_probe-inudoku-remote.mjs` 按项目惯例不入 git（`scripts/_*` 被 ignore） |
 
 ## 决策（别重问）
 
@@ -42,6 +42,13 @@
 | BGM | 4 首 | `bgm.js`，第一首免费 |
 | 成就 | 12 项 | `gp-shim.js` 本地定义 |
 
+## 版本记录
+
+| 版本 | 改了什么 | 为什么 |
+| --- | --- | --- |
+| 1.0.0 | 首版接入 | —— |
+| 1.0.1 | teardown 里先断 `onResize` 回调、再 `display.dispose()`、最后 `p.destroy()` | 退出游戏后再拖窗口/转屏，宿主页抛 `Cannot read properties of null (reading 'screen')`（Pixi `renderer` 已为 null，RO 还活着） |
+
 ## 三个「只能这样」的改动
 
 1. **`gp.player.saves.latestSync` 必须同步可读**：原版 `game.js` 在**模块顶层**就读它（决定标题页显示
@@ -60,17 +67,11 @@
 
 ## 下次从这继续
 
-1. `ONBOARD.md` / `README.md` 写完 → `git add screenshots` 提交（`check:registry` 卡的就是这 4 张源图没进 git）。
-2. `cd kid-quest-farm-online && node scripts/check-game-registry.mjs --check` 清零。
-3. 打全量 zip + 发后端：
-   ```bash
-   python C:/Users/admin/.workbuddy-ai/skills/publish-game-to-backend/scripts/pack-game.py \
-     dist-plugin C:/tmp/inudoku-1.0.0.zip
-   node scripts/publish-game.mjs --id inudoku --version 1.0.0 \
-     --file C:/tmp/inudoku-1.0.0.zip --api http://127.0.0.1:8091 --key change-me-admin-32-chars-min
-   ```
-4. 后端四处：`game.status=available` / `wish_item.archived=0` / `game_release.active=1` / 盲盒池。
-5. 重打 LAN 客户端 → `check-remote-package.mjs --id inudoku` → 真宿主探针。
+1. 想再验一遍远端链路：`cd kid-quest-farm-online && node scripts/_probe-inudoku-remote.mjs`
+   （默认打 `https://192.168.101.12:4443`，用 `PROBE_ORIGIN` / `PROBE_OUT` 覆盖）。
+2. 改过游戏包 ⇒ 升版本 → `node scripts/build-plugin.mjs` → 同步 `public/games/inudoku`
+   → `node scripts/make-local-catalog.mjs` → `npm run check:registry` → 发布。
+3. 后台/心愿侧若有改动：`--verify-only` 一条命令就能核对三处状态。
 
 ## 环境坑
 
