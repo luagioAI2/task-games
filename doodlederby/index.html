@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<title>画马赛跑</title>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<style>
+  /* 独立网页的外壳。★ 底色跟游戏自己的 :root（现在是 #dd-app）一致：
+     原来写的 #0b0d12 是模板留下的深色，加载那一瞬间会闪一块黑。 */
+  html, body { margin: 0; width: 100%; height: 100%; overflow: hidden; background: #f5f2e9; }
+  #app { position: fixed; inset: 0; }
+  canvas { display: block; }
+</style>
+<script type="importmap">
+{
+  "imports": {
+    "three": "./engines/three.module.js",
+    "@makeplay/fx": "./runtime/makeplay-fx/game.js",
+    "@makeplay/sound": "./runtime/sound-1.js"
+  }
+}
+</script>
+</head>
+<body>
+<div id="app"></div>
+<script type="module">
+  // ★ 模块体已经改成 `export async function start()`，不再自执行 ——
+  //   这里必须真的调一次，否则整页全白、canvas 0、零报错（hoopsneak 踩过）。
+  //   插件形态走的是同一个函数，差别全在 `opts` 里（`plugin.js` 传 store / chargePlay）。
+  import { start } from './game.js'
+  start({ container: document.getElementById('app') })
+</script>
+</body>
+</html>

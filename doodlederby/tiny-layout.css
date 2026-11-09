@@ -1,0 +1,22 @@
+
+@media(max-height:380px) and (orientation:landscape){#app #leaderboard{display:grid;grid-template-columns:1fr 1fr;width:52%;gap:4px}#app #leaderboard>div{padding:4px 6px;min-height:26px;gap:4px}#app .score-strip{padding:7px 10px;gap:12px}#app .race-controls{bottom:12px}#app .boost-hint{max-width:30%}}
+#app:has(#show-results:not([hidden])) #leaderboard{display:none!important}
+@media(max-height:380px) and (orientation:landscape){#app .result-body .local-note{grid-column:2;grid-row:5;font-size:14px;margin:0}#app .result-body{gap:2px 12px}#app #result-comment{font-size:14px;line-height:1.2}#app #result-place{font-size:22px}#app #result-title{font-size:16px}#app .result-stats{padding:4px 0!important;margin:2px 0!important}#app .result-stats strong{font-size:18px}#app #results li{padding:2px;line-height:1.1}#app #world-submit{margin:0;line-height:1.15}}
+body[data-short=true][data-compact=true][data-portrait=false] #app .drawing-caption{position:static;min-height:48px;flex-shrink:0;padding:0 8px}body[data-short=true][data-compact=true][data-portrait=false] #app .paper{min-height:36px}body[data-short=true][data-compact=true][data-portrait=false] #app .empty-hint{font-size:14px;gap:2px}body[data-short=true][data-compact=true][data-portrait=false] #app .empty-hint small{display:none}
+body[data-compact=true][data-studio-tab=entry][data-tutorial=true] #app .mode-copy{display:none!important}
+body[data-compact=true][data-studio-tab=entry][data-tutorial-step="3"] #app .mode-picker,body[data-compact=true][data-studio-tab=entry][data-tutorial-step="3"] #app #traits,body[data-compact=true][data-studio-tab=entry][data-tutorial-step="3"] #app #trait-radar,body[data-compact=true][data-studio-tab=entry][data-tutorial-step="3"] #app #trait-focus{display:none!important}
+/* Tiny windows avoid showing an unrelated tutorial above another workspace tab. */
+body[data-compact=true][data-studio-tab=entry][data-tutorial-step="0"] #app #drawing-tutorial,body[data-compact=true][data-studio-tab=entry][data-tutorial-step="1"] #app #drawing-tutorial,body[data-compact=true][data-studio-tab=entry][data-tutorial-step="2"] #app #drawing-tutorial,body[data-compact=true][data-studio-tab=preview] #app #drawing-tutorial{display:none!important}
+@media(max-height:700px) and (orientation:portrait){
+ body[data-compact=true] #app .entry-panel>.eyebrow,body[data-compact=true] #app .entry-panel>label{display:none}
+ body[data-compact=true] #app .entry-panel{padding-top:0}
+ body[data-compact=true] #app .traits>span{padding:4px 5px 7px;min-height:30px}
+ body[data-compact=true] #app #traits{gap:4px;margin:4px 0!important}
+ body[data-compact=true] #app .mode-picker small{display:none}
+ body[data-compact=true] #app .mode-picker button{min-height:48px}
+ body[data-compact=true] #app .mode-copy{margin:4px 0!important;line-height:1.25}
+ body[data-compact=true] #app .trait-focus{font-size:14px;line-height:1.2;margin:3px 0}
+ body[data-compact=true] #app #drawing-tutorial{padding:6px;gap:4px}
+ body[data-compact=true] #app #tutorial-title{font-size:16px}body[data-compact=true] #app .tutorial-actions{gap:4px}
+ body[data-compact=true] #app .mobile-studio-tabs{margin:3px 0}
+}

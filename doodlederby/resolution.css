@@ -1,0 +1,88 @@
+/* Final layout authority: responsive geometry, never a stretched game buffer. */
+#app{height:var(--window-h,100dvh);width:var(--window-w,100vw);inset:0;overflow:hidden;--gap:clamp(8px,1.2vw,24px);--pad:clamp(12px,2vw,36px)}
+#app .topbar{height:clamp(56px,7vh,76px);min-height:56px;width:calc(100% - 2*var(--pad));max-width:2200px;margin:0 auto;flex:0 0 auto;gap:8px}
+#app .top-actions{gap:clamp(6px,1vw,16px);min-width:0}#app .top-actions>[data-i18n=edition]{display:none}
+#app .brand{font-size:clamp(18px,2vw,24px)!important;line-height:1.2;flex-shrink:0;white-space:nowrap}
+#app main{max-width:2260px;margin:0 auto;padding:0 var(--pad);min-height:0;flex:1;width:100%}
+#app #studio{padding:0!important;min-height:0;gap:0}#app .intro{padding:clamp(8px,1.8vh,24px) 0!important;flex-shrink:0}
+#app h1,html[lang=en] #app h1{font-size:clamp(28px,3vw,54px);margin:0 0 6px;line-height:1.12}
+#app .intro .eyebrow{margin-bottom:8px}#app .stamp{width:86px;height:86px;flex-shrink:0}
+#app .workbench{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr) clamp(280px,25vw,440px)!important;grid-template-rows:minmax(0,1fr);gap:var(--gap);flex:1;min-height:0;align-items:stretch}
+#app .drawing-panel,#app .preview-panel,#app .entry-panel{grid-row:1;grid-column:auto;height:auto;min-height:0;min-width:0;margin:0}
+#app .drawing-panel,#app .preview-panel{display:flex;flex-direction:column}
+#app .paper{width:auto;min-height:40px;max-height:none;height:auto;flex:1;margin:0 10px;aspect-ratio:auto}
+#app .empty-hint{font-size:clamp(14px,1.5vw,19px);line-height:1.25;gap:5px;padding:6px;z-index:2}#app .empty-hint small{font-size:14px}
+#app .panel-title,#app .preview-title{min-height:48px;height:auto;padding:8px 10px;font-size:clamp(18px,1.6vw,24px);line-height:1.2}
+#app .panel-title b,#app .preview-title b{font-size:inherit}
+#app .panel-title>span:first-child,#app .preview-title>span:first-child{overflow-wrap:anywhere}#app .tiny,#app .live-dot{display:none}
+#app #preview-slot{height:auto;min-height:0;flex:1}#app .preview-caption{font-size:clamp(14px,1.3vw,18px);padding:10px;gap:4px;flex-shrink:0}#app .preview-caption .tag{font-size:inherit}
+#app .entry-panel{display:flex;padding:0;gap:0}#app .entry-panel>.eyebrow{display:block;font-size:clamp(18px,1.6vw,24px);margin:0 0 8px;line-height:1.2}
+#app .entry-panel #personality{display:none}#app .name-field{flex:0 0 48px;min-height:48px;margin:0 0 6px;padding:0}
+#app .name-field input{font-size:clamp(18px,1.6vw,24px);padding:6px 0;margin:0;min-height:48px}
+#app .mode-picker{flex-shrink:0}#app .mode-picker button{padding:7px 4px;min-height:56px}#app .mode-picker strong{font-size:16px}#app .mode-picker small{font-size:14px;margin-top:3px}
+#app .mode-copy{font-size:14px;line-height:1.35;margin:8px 0!important;flex-shrink:0}#app .trait-focus{font-size:14px;line-height:1.3;margin:4px 0 6px}
+#app .entry-panel #trait-radar{height:clamp(100px,17vh,190px);min-height:90px;flex:1;max-height:220px;margin:0}
+#app .launch-area{position:static!important;inset:auto!important;margin-top:auto;padding:0 0 8px!important;border:0;background:transparent;flex-shrink:0;align-self:stretch}
+#app .launch-area #start{min-height:48px;height:auto;line-height:1.25;font-size:18px;padding:10px 12px}#app .launch-area #start>span{font-size:inherit}
+#app .entry-foot{display:none}#app .studio-bottom{padding:10px 0;margin:0;gap:10px;flex-shrink:0}#app .studio-bottom p{font-size:14px;gap:10px}#app #best{font-size:14px;max-width:33%;text-align:right}
+#app footer{display:none}#app .mobile-studio-tabs{display:none}#app #drawing-tutorial{margin:6px 0;padding:8px 10px;gap:10px}#app #tutorial-title{font-size:18px;line-height:1.2}#app #tutorial-copy{font-size:14px;line-height:1.3}
+#app .tutorial-actions button{font-size:14px;padding:6px 10px;min-height:48px}
+#app .drawing-guide{font-size:14px;padding:6px;margin:0 10px 6px}
+@media(max-height:760px){#app .intro .eyebrow,#app .subtitle,#app .stamp{display:none}#app .intro{padding:10px 0!important}#app h1{font-size:30px}#app .studio-bottom{display:none}#app .drawing-guide{display:none}#app .entry-panel>label{display:none}}
+@media(max-height:620px){#app .intro{display:none!important}#app .workbench{margin-top:6px}#app .entry-panel>.eyebrow{font-size:18px}#app .mode-picker small{font-size:14px}#app .entry-panel #trait-radar{height:90px;max-height:110px}#app .mode-copy{margin:5px 0!important}}
+/* Compact screens allocate the full work area to a single task. */
+body[data-compact=true] #app .intro,body[data-compact=true] #app .studio-bottom{display:none!important}
+body[data-compact=true] #app .mobile-studio-tabs{display:flex;flex-shrink:0;margin:4px 0;padding:3px;gap:4px;min-height:56px}
+body[data-compact=true] #app .mobile-studio-tabs{background:var(--doodle-background);border:1px solid var(--doodle-line);border-radius:9px}body[data-compact=true] #app .mobile-studio-tabs button{background:var(--doodle-background);color:var(--doodle-green);border:1px solid transparent;border-radius:6px;font-weight:700}body[data-compact=true] #app .mobile-studio-tabs button[aria-pressed=true]{background:var(--doodle-line);border-color:var(--doodle-green)}
+body[data-compact=true] #app .mobile-studio-tabs button{font-size:16px;padding:6px 2px;min-width:48px;min-height:48px;flex:1}
+body[data-compact=true] #app .workbench{display:grid;grid-template-columns:minmax(0,1fr)!important;grid-template-rows:minmax(0,1fr)!important;gap:0;margin:0 0 6px}
+body[data-compact=true] #app .drawing-panel,body[data-compact=true] #app .preview-panel,body[data-compact=true] #app .entry-panel{grid-column:1;grid-row:1}
+body[data-compact=true] #app .workbench>.drawing-panel,body[data-compact=true] #app .workbench>.preview-panel,body[data-compact=true] #app .workbench>.entry-panel{display:none!important}
+body[data-compact=true][data-studio-tab=draw] #app .workbench>.drawing-panel,body[data-compact=true][data-studio-tab=preview] #app .workbench>.preview-panel,body[data-compact=true][data-studio-tab=entry] #app .workbench>.entry-panel{display:flex!important}
+body[data-compact=true] #app .entry-panel{width:100%;max-width:640px;justify-self:center;padding:8px 4px 0}
+body[data-compact=true] #app .entry-panel>.eyebrow,body[data-compact=true] #app .entry-panel>label{display:block}
+body[data-compact=true] #app .entry-panel #traits{display:grid!important;gap:6px;margin:8px 0!important}
+body[data-compact=true][data-portrait=false] #app .entry-panel #traits{display:none!important}
+body[data-compact=true][data-portrait=false] #app .entry-panel #trait-radar{display:flex!important}
+body[data-compact=true][data-portrait=true] #app .entry-panel #traits{display:grid!important}
+body[data-compact=true] #app .entry-panel .trait-focus{display:block!important}
+body[data-compact=true] #app .traits>span{padding:9px 8px 12px;flex-direction:row;align-items:center;gap:3px}body[data-compact=true] #app .traits b{font-size:16px}body[data-compact=true] #app .traits>span>span{white-space:normal;overflow-wrap:anywhere}
+body[data-compact=true] #app .paper{width:auto;min-height:60px;margin:0 8px}
+body[data-compact=true] #app .drawing-caption{justify-content:space-between}body[data-compact=true] #app .drawing-caption>span{display:block}
+body[data-compact=true] #app #drawing-tutorial{flex-direction:row;align-items:center;max-height:none;gap:8px}body[data-compact=true] #app .tutorial-actions{align-self:auto}
+body[data-narrow=true] #app .brand>[data-i18n=brand]{display:none}body[data-narrow=true] #app .brand-icon .horse-logo{width:40px;height:40px}body[data-narrow=true] #app .brand{gap:0}
+body[data-narrow=true] #app #language-toggle{width:100px}body[data-narrow=true] #app .top-actions{gap:6px}
+body[data-narrow=true][data-portrait=true] #app #drawing-tutorial{flex-direction:column;align-items:stretch}body[data-narrow=true][data-portrait=true] #app .tutorial-actions{align-self:flex-end}
+body[data-short=true][data-compact=true] #app .panel-title,body[data-short=true][data-compact=true] #app .preview-title{display:none}
+body[data-short=true][data-compact=true][data-portrait=false] #app .toolbar{padding:0 4px;gap:4px;min-height:48px}body[data-short=true][data-compact=true][data-portrait=false] #app .toolbar .swatches{display:flex!important;width:auto;flex-wrap:nowrap}body[data-short=true][data-compact=true][data-portrait=false] #app .toolbar>div:last-child{flex-direction:row;flex:0;height:auto;flex-basis:auto}
+body[data-short=true][data-compact=true][data-portrait=false] #app .drawing-caption{position:absolute;right:8px;bottom:55px;z-index:3;background:var(--doodle-background);border-radius:6px;padding:0 4px;min-height:48px}body[data-short=true][data-compact=true][data-portrait=false] #app .drawing-caption>span{display:none}body[data-short=true][data-compact=true][data-portrait=false] #app .drawing-panel{position:relative}body[data-short=true][data-compact=true][data-portrait=false] #app .save-status{display:none}
+body[data-short=true][data-compact=true][data-portrait=false] #app .entry-panel{display:none;max-width:none;padding:0;flex-wrap:wrap;flex-direction:column;align-content:space-between;column-gap:12px}
+body[data-short=true][data-compact=true][data-portrait=false] #app .entry-panel>.eyebrow,body[data-short=true][data-compact=true][data-portrait=false] #app .entry-panel>label{display:none}
+body[data-short=true][data-compact=true][data-portrait=false] #app .entry-panel>.name-field,body[data-short=true][data-compact=true][data-portrait=false] #app .entry-panel>.mode-picker,body[data-short=true][data-compact=true][data-portrait=false] #app .entry-panel>.mode-copy{width:48%}
+body[data-short=true][data-compact=true][data-portrait=false] #app .entry-panel>#trait-radar,body[data-short=true][data-compact=true][data-portrait=false] #app .entry-panel>.trait-focus,body[data-short=true][data-compact=true][data-portrait=false] #app .entry-panel>.launch-area{width:48%;flex:0 0 auto;margin:0;max-height:none}
+body[data-short=true][data-compact=true][data-portrait=false] #app .entry-panel>#trait-radar{height:96px;min-height:80px}
+/* Race positions are separated into header, top statistics and bottom controls. */
+#app #race-screen{inset:var(--header-h,64px) 0 0}
+#app .race-top{top:8px;left:var(--pad);right:var(--pad);display:flex;align-items:start;gap:12px}
+#app .race-heading{min-width:0;flex:1;max-width:100%}body[data-portrait=true] #app .race-heading{width:100%}#app .race-heading h2{font-size:clamp(18px,2vw,26px);max-width:100%;line-height:1.25;margin:0;white-space:nowrap}#app .race-heading .eyebrow{display:block;font-size:14px;line-height:1.2;margin:0 0 3px}
+#app .race-actions{display:flex;flex-shrink:0;gap:6px;max-width:none;flex-wrap:nowrap}#app .race-actions button{font-size:14px;min-height:48px;padding:8px}
+#app .score-strip{left:var(--pad);right:auto;padding:8px 12px;gap:clamp(12px,2vw,28px);max-width:48%}
+#app .score-strip small{font-size:14px}#app .score-strip strong{font-size:clamp(20px,2vw,28px);margin-top:3px}
+#app #leaderboard{left:auto;right:var(--pad);display:flex;width:min(310px,28vw);max-width:none;gap:4px;overflow:hidden}
+#app #leaderboard>div{min-width:0;padding:5px 8px;gap:6px;font-size:14px}#app #leaderboard>div>span{white-space:nowrap;line-height:1.3;overflow:hidden;text-overflow:ellipsis}#app #leaderboard i{flex-shrink:0}
+#app .race-controls{bottom:max(12px,env(safe-area-inset-bottom));left:50%;right:auto;transform:translateX(-50%);width:min(1000px,calc(100% - 32px));padding:10px 12px}
+#app .race-progress{font-size:14px;margin-bottom:8px;gap:8px;flex-wrap:wrap}#app #obstacle-hint{font-size:14px;max-width:none;flex:1;text-align:right;overflow-wrap:anywhere}
+#app .control-row{display:flex;gap:10px;flex-wrap:nowrap}#app .rhythm{flex:1;min-width:0}#app .rhythm-header{font-size:14px;margin-bottom:6px;flex-wrap:wrap;gap:3px}#app #rhythm-copy{font-size:14px;overflow-wrap:anywhere}
+#app .boost-hint{min-width:0;max-width:32%;padding:6px 8px;min-height:48px;gap:3px}#app .boost-hint b,#app .boost-hint small{font-size:14px;line-height:1.2}
+#app .jump-button{font-size:16px;min-height:48px;padding:8px 12px;flex-shrink:0}#app .jump-button kbd{font-size:14px}
+body[data-portrait=true] #app .race-top{display:flex;flex-direction:column;gap:6px}body[data-portrait=true] #app .race-actions{width:100%}body[data-portrait=true] #app .race-actions button{flex:1}
+body[data-portrait=true] #app .score-strip{right:var(--pad);max-width:none;justify-content:space-between}
+body[data-portrait=true] #app #leaderboard{left:var(--pad);right:var(--pad);width:auto;display:grid;grid-template-columns:1fr 1fr}
+body[data-portrait=true] #app .control-row{flex-wrap:wrap}body[data-portrait=true] #app .rhythm{flex-basis:100%}body[data-portrait=true] #app .boost-hint{flex:1;max-width:none}body[data-portrait=true] #app .jump-button{flex:1}
+#app #toast{font-size:14px;line-height:1.4;max-width:calc(100% - 32px);bottom:16px;padding:10px 14px}
+#app .modal{max-width:100%;max-height:100%;padding:18px}#app .modal h2{font-size:24px;margin:8px 0}#app .modal .primary{margin-top:12px}
+#app .result-overlay{padding:12px var(--pad)}#app .result-card{width:min(440px,100%)}#app .result-buttons{position:static;bottom:auto;flex-wrap:wrap}#app .result-buttons button{font-size:14px;line-height:1.2;min-height:48px}
+#app .result-card li{gap:8px}#app .result-card li span{min-width:0;flex:1;white-space:normal;overflow-wrap:anywhere;max-width:none}#app .result-card li b{flex-shrink:0}
+#world-board-overlay{padding:12px}#world-board-dialog{height:min(700px,calc(var(--window-h,100dvh) - 24px));max-height:100%;padding:12px;gap:0}.world-board-head h2{font-size:clamp(18px,2vw,24px)}
+#world-board-scroll{min-height:40px}#world-board-rows li span{white-space:normal;overflow-wrap:anywhere}#world-board-dialog .board-modes{margin:6px 0}.world-board-rule,#world-board-status,#world-board-guest{font-size:14px;line-height:1.3;margin:6px 0}
+@media(max-height:500px){#world-board-dialog{width:min(760px,100%);display:grid;grid-template-columns:minmax(0,.9fr) minmax(0,1.1fr);grid-template-rows:48px auto minmax(0,1fr);gap:4px 12px}.world-board-head{grid-column:1;grid-row:1}#world-board-dialog .board-modes{grid-column:2;grid-row:1;margin:0}.world-board-rule{grid-column:1;grid-row:2}#world-board-status{grid-column:2;grid-row:2}#world-board-scroll{grid-column:2;grid-row:3}.world-board-bottom{grid-column:1;grid-row:3;align-content:start;margin:0}#app .result-card{width:min(780px,100%)}#app .race-heading .eyebrow{max-width:100%;font-size:14px}#app .race-controls{padding:7px 10px}#app .race-progress{margin-bottom:5px}#app .boost-hint small{display:none}#app #leaderboard{width:min(260px,32vw)}#app .countdown{font-size:clamp(48px,12vh,90px);top:35%}}
