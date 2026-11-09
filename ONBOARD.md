@@ -69,7 +69,7 @@ node scripts/e2e-sweetspin.mjs http://127.0.0.1:4395/ phone    # 老款回归（
 
 - `mkplay.zone` 必须 `--proxy http://127.0.0.1:7897`；沙箱自带代理对这个站 exit 56。
 - **node 不认 `/c/...`**：传 `C:/Users/...` 的 Windows 绝对路径，否则解析成 `E:\c\...`（MODULE_NOT_FOUND）。
-- `/tmp` 不可写 ⇒ 中间产物放仓库内（`task-games/_peek15/`）。
+- `/tmp` 不可写 ⇒ 中间产物放仓库内（`<本项目>/_scratch/`，跑完即删）。
 - **bash 的 `python -c "…\s…"` 里 `\s` 会被吃成 `/s`** ⇒ 带正则的一次性脚本写成文件再跑（`scripts/_i18n-check.py`）。
 - **webp 重编码用 `method=6` 会撞工具超时**（239 张 > 120 秒，被 SIGTERM 且一行日志都没有）⇒ `method=4`。
 
