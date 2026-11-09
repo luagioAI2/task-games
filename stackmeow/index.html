@@ -1,0 +1,24 @@
+<!doctype html><html><head>
+<title>堆呀堆</title><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>html,body,#app{margin:0;width:100%;height:100%;overflow:hidden;background:#0b0d12;}#app{position:fixed;inset:0}canvas{display:block}</style><script>
+// 録画契约 C-C：mp:moment 唯一定义（type 仅取 "level-clear" / "new-best" / "achievement" / "boss-down" / "death"）。
+// 游戏逻辑在过关/新高/run结束时经此派发。
+self.__mpMoment = function (type, score) {
+  try { self.dispatchEvent(new CustomEvent("mp:moment", { detail: { type: type, score: score } })); } catch (e) {}
+};
+</script>
+<script type="importmap">
+{
+  "imports": {
+    "pixi.js": "./engines/pixi.min.mjs",
+    "@makeplay/fx": "./runtime/makeplay-fx/game.js",
+    "@makeplay/sound": "./runtime/sound-1.js",
+    "@makeplay/display": "./runtime/display-1.js"
+  }
+}
+</script></head><body><div id="app" data-mp-stage data-mp-hud="canvas"></div><script type="module">
+  // 独立网页入口：和插件调的是**同一个** start()，只是不传 assetBase / store / chargePlay。
+  // ⚠️ 这一行不能省：`game.js` 改成 `export async function start()` 之后模块体不再自执行，
+  //    忘了调它 ⇒ 页面全白、canvas 0、**一个错都不报**（模块本身加载成功了）。
+  import { start } from './game.js'
+  start({ container: document.getElementById('app') }).catch((e) => console.error('start failed', e))
+</script></body></html>
