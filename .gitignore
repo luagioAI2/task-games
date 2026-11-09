@@ -9,3 +9,6 @@ node_modules/
 
 # smoke.mjs 的调试截图（临时，别当商城截图用）
 shots/smoke-*.png
+
+# 语法自检用的临时副本（别写 /tmp：bash 的 /tmp 和 node 的不是一个目录）
+.tmpcheck/

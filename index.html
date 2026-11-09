@@ -1,5 +1,16 @@
-<!doctype html><html><head>
-<title>犬独</title><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>html,body,#app{margin:0;width:100%;height:100%;overflow:hidden;background:#0b0d12;}#app{position:fixed;inset:0}canvas{display:block}</style><script type="importmap">
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>犬独</title>
+<style>
+  /* 底色用游戏自己的奶油纸色，别用深色：Pixi 初始化那一两百毫秒会先露底色 */
+  html,body,#app{margin:0;width:100%;height:100%;overflow:hidden;background:#eee1c4}
+  #app{position:fixed;inset:0}
+  canvas{display:block}
+</style>
+<script type="importmap">
 {
   "imports": {
     "pixi.js": "./engines/pixi.min.mjs",
@@ -8,4 +19,15 @@
     "@makeplay/display": "./runtime/display-1.js"
   }
 }
-</script></head><body><div id="app"></div><script type="module" src="./game.js"></script></body></html>
+</script>
+</head>
+<body>
+<div id="app"></div>
+<!--
+  独立页入口 = standalone.js（先装一个内存版 window.gp，再 boot）。
+  ★ 不要直接写 `<script type="module" src="./game.js">`：改造后 game.js
+    只导出 boot()、不自己跑 —— 它必须等 window.gp 装好才能启动。
+-->
+<script type="module" src="./standalone.js"></script>
+</body>
+</html>
