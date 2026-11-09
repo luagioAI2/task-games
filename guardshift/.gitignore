@@ -1,0 +1,14 @@
+# 原始镜像（未改造，可由 --source 重下）。不入库。
+_originals/
+
+# 打包产物（node scripts/build-plugin.mjs 现打）
+dist-plugin/
+
+node_modules/
+*.log
+
+# smoke.mjs / 走查脚本的调试截图（临时，别当商城截图用；商城图在 screenshots/）
+shots/
+
+# 改造期的一次性脚本（只在**原始镜像**上跑一次，跑完就废；留在库里会让人以为能重跑）
+scripts/_*
