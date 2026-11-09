@@ -10,7 +10,7 @@
 
 | # | 步骤 | 状态 | 判据 / 产物 |
 | --- | --- | --- | --- |
-| 1 | 抓镜像 | ✅ | `_peek-d337/_originals/2026-11-09`：48 文件 17 MB。`_scrape-report.json` 里 11 条 failed **全是静态扫描猜出来的假 404**（8 条 `assets/<breed>-ear/manifest.js`，实际是 `.json`）⇒ 补抓 8 个 `manifest.json` + `sound.manifest.json`（10272 B）+ `sound.pack`（3853622 B），0 个 0 字节文件 |
+| 1 | 抓镜像 | ✅ | `_originals/2026-11-09`：48 文件 17 MB。`_scrape-report.json` 里 11 条 failed **全是静态扫描猜出来的假 404**（8 条 `assets/<breed>-ear/manifest.js`，实际是 `.json`）⇒ 补抓 8 个 `manifest.json` + `sound.manifest.json`（10272 B）+ `sound.pack`（3853622 B），0 个 0 字节文件 |
 | 2 | 立工程 | ✅ | `scaffold.mjs` 立起；`index.html` 重写（去 importmap、`lang=zh`、`viewport-fit=cover`，51930 → 624 B）；`.gitattributes` = `* text=auto eol=lf`；首次提交 `2c68aec` |
 | 3 | 压资源 | ✅ | PNG 全转 WebP（`compress-assets.py` 中途被 SIGTERM，改用 Pillow 脚本补齐，`poodle.webp` 曾经 0 字节已重转）；`assets/` 1.8 M / 40 文件；`assets/manifest.json` = 32 文件 1694 KB |
 | 4 | 改造 | ✅ | `gp.pay` **整块不给**（买命 / 买皮肤 / 买 BGM 三条内购路径一起断）；`share.available=false`；`fonts.url()` 返回 `''`（不拉 CDN 字体）；自带 CSS 走 `scopeCss` 收进 `[data-inudoku-root]`；皮肤/BGM 改成**通关解锁**（`__grant()`：每 5 关一只狗、每 4 关一首曲子） |
