@@ -57,4 +57,5 @@ node C:/Users/admin/.workbuddy-ai/skills/publish-game-to-backend/scripts/publish
 - **原版镜像不入库**：`_originals/` 在 `.gitignore` 里，需要时按 `ONBOARD.md` 里的地址重抓。
 - **不提交构建产物**：`dist/`、`dist-plugin/`、`node_modules/`。
 - 改过资源必须重跑 `scripts/make-asset-manifest.mjs`，否则宿主校验会报「哈希对不上」。
-- 每款游戏的历史是**按子树并入**本仓库的（`git log -- <目录>` 能单独看）。
+- 每款游戏的历史是**按子树并入**本仓库的：`git log <并入提交>^2` 能看到它原来的提交；
+  注意 `git log -- <目录>` **看不到**（那些提交里文件还在仓库根，路径不匹配）。
