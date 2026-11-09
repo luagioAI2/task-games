@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<title>下落的2048</title>
+<style>
+  html, body { margin: 0; height: 100%; overflow: hidden; background: #d9a86a; }
+  #app { position: fixed; inset: 0; touch-action: none; user-select: none; -webkit-user-select: none; }
+  #app > canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; }
+</style>
+</head>
+<body>
+<div id="app" data-mp-stage data-mp-hud="canvas"></div>
+<script type="module">
+  import { boot } from "./game.js";
+  boot({}).catch((e) => console.error(e));
+</script>
+</body>
+</html>
