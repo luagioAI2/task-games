@@ -12,3 +12,6 @@ shots/smoke-*.png
 
 # 语法自检用的临时副本（别写 /tmp：bash 的 /tmp 和 node 的不是一个目录）
 .tmpcheck/
+
+# 提交信息临时文件（_commitmsg.txt / _m.txt 这类）
+_*.txt
