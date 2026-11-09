@@ -130,6 +130,17 @@ if (!hasMount || !hasManifest) fail.push('缺少 mount/manifest 导出')
 if (rawAsset.length) fail.push(`有 ${rawAsset.length} 处裸 "assets/" 没走 ctx.assetUrl —— blob: 下会 404`)
 if (!code.includes('WebGLRenderer') && !code.includes('PIXI')) fail.push('看起来没把 Pixi 打进去')
 
+/* ★ 时间尺度守卫（2026-11-09）：`MS_PER_FARM_MIN` 曾经为了跑测试被调成 6000
+   （10× 加速），结果正式包里小萝卜 12 秒就熟、跟 App 自带农场（2 分钟）差一个量级，
+   而 UI 上的「几分」全部变成了「几秒」。这种「测试时顺手改的常量」只有在打包那一刻
+   拦得住 —— 人眼不会去比一个 5 位数的常量。
+   要真的做加速版，得走 `?rig=` 那套查询参数，不许改这里。 */
+const CATALOG_SRC = fs.readFileSync(path.join(ROOT, 'src/data/catalog.js'), 'utf8')
+const scale = Number((CATALOG_SRC.match(/MS_PER_FARM_MIN\s*=\s*(\d+)/) ?? [])[1])
+if (scale !== 60000) {
+  fail.push(`MS_PER_FARM_MIN = ${scale ?? '(没读到)'}，必须是 60000（1 农场分钟 = 1 现实分钟）`)
+}
+
 if (fail.length) {
   console.error('\n=== 校验失败 ===')
   for (const f of fail) console.error(' -', f)

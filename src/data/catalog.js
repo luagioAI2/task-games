@@ -15,7 +15,8 @@
 //      按基础值申报等于漏报，漏报的那一刻闸门就失效了。
 export const PROFIT_RATIO = 0.53;
 export const PER_YIELD = 4;               // 单次产量恒为 4（经济文档 §5.6 硬约束）
-export const MS_PER_FARM_MIN = 6000;      // 10× 加速：1 农场分钟 = 6 现实秒
+export const MS_PER_FARM_MIN = 60000;     // 1 农场分钟 = 1 现实分钟（别为了跑测试调小：
+                                          // 6000 那版是 10× 加速，UI 上的「几分」会全变「几秒」）
 export const FARM_DAY_MIN = 1440;
 export const HUNGRY_FARM_MIN = 12 * 60;
 export const PRICE_FLOOR = 0.55;

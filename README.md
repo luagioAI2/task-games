@@ -9,7 +9,7 @@
 | --- | --- |
 | 插件 id | `cloudfarm` |
 | 商城名 | 云边小农场 |
-| 版本 | 1.1.8（`plugin.js` 的 `manifest.version`，与宿主 `public/games/index.json` 必须一致） |
+| 版本 | 1.1.9（`plugin.js` 的 `manifest.version`，与宿主 `public/games/index.json` 必须一致） |
 | 扒取来源 | https://xd6q6wqxhc.mkplay.zone/v/4/ |
 | 扒取日期 | 2026-10-24（原始镜像在 `_originals/`，不入 git） |
 | 经济形态 | **不设游戏币**：积分直接买种子 / 开地 / 领动物 / 钓鱼，收成卖出换兑换券 |
