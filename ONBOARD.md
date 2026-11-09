@@ -9,10 +9,10 @@
 | --- | --- | --- | --- |
 | 1 | 抓镜像 | ✅ | `_scrape-report.json`：22 文件 4.21 MB；`failed` 2 条均已定性（`sound.manifest.js` 用不到、`OpenHuninn.woff2` 故意不加载）；运行时补下 4 个音频（`sound.pack` + 3 条 `.m4a`） |
 | 2 | 立工程 | ✅ | `index.html` 重写（去 importmap、`lang=zh`）；`.gitattributes` = `* text=auto eol=lf`；首次提交 `79fc3e7` |
-| 3 | 压资源 | ✅（跳过） | 原包只有 22 个文件、最大两个是 2.08 MB 字体（不加载）和 1.62 MB rapier（引擎，不能动）⇒ 没有可压的图；`dist-plugin` 合计 4.7 MB，其中 2.4 MB 是三条 BGM |
+| 3 | 压资源 | ✅（跳过） | 原包只有 22 个文件、最大两个是 2.08 MB 字体（不加载）和 1.62 MB rapier（引擎，不能动）⇒ 没有可压的图；`dist-plugin` 合计 4.8 MB，其中 2.4 MB 是三条 BGM |
 | 4 | 改造（去内购/排行/云存档 + 经济） | ✅ | `gp.pay` 0 处、`gp.fonts` 0 处；`submitScore` / `openProfile` 只剩 1 处且都在 `window.gp?.pay?.available` 或 `profileAvailable===true` 守卫里；排行榜改读 `a.myScores`（本地成绩），文案改「我的成绩 / マイ記録 / My scores」 |
-| 5 | 打包 | ✅ | `=== 打包校验通过 ===`；入口 2040.4 KB；资源 4799.2 KB；裸说明符 0；动态 import 0；补丁锚点 5 条（`__fall2048Dead` / `__fall2048Teardown` / `function ie0(` / `__fall2048SoundManifest` / `__fall2048Asset`） |
-| 6 | 落库 | ✅ | `public/games/index.json` v1.0.2 + `localGames.ts` 哈希 `48777148c0c5…` + `storefront.ts` + `build-store-shots.py` PLAN 四处一致；后端 `game` / `wish_item` / 盲盒池 24 款；`game_release` 活跃 = `1.0.2` |
+| 5 | 打包 | ✅ | `=== 打包校验通过 ===`；入口 2040.4 KB；资源 4800.0 KB；裸说明符 0；动态 import 0；补丁锚点 5 条（`__fall2048Dead` / `__fall2048Teardown` / `function ie0(` / `__fall2048SoundManifest` / `__fall2048Asset`）；**构建前先 `make-asset-manifest.mjs --check`**，清单过期直接 exit 1 |
+| 6 | 落库 | ✅ | `public/games/index.json` v1.0.3 + `localGames.ts` 哈希 `605aa926d1bb…` + `storefront.ts` + `build-store-shots.py` PLAN 四处一致；后端 `game` / `wish_item` / 盲盒池 24 款；`game_release` 活跃 = `1.0.3` |
 | 7 | 商城详情 | ✅ | `public/store/fall2048/1~4.webp`（31.9 / 29.0 / 23.8 / 32.3 KB），源图 `screenshots/store-1~4*.png` 由 `scripts/store-shots.mjs` 现拍 |
 | 8 | 五层验收 | ✅ | 本地真宿主探针 42/0；远程 LAN+HTTPS 探针 22/0（下载→设当前→挂载→扣 1 分→play→`sound.pack`→退出停循环）；`tsc` / `lint` / vitest 见步骤 9 |
 | 9 | 提交 | 🔄 | 两个仓库都有未提交改动：本工程 `M game.js i18n.js index.html` + `?? assets/audio gp-shim.js plugin.js screenshots scripts sound.pack`；宿主 `M index.json build-store-shots.py GameIcon.tsx localGames.ts storefront.ts` + `?? public/games/fall2048 public/store/fall2048` |
@@ -29,6 +29,7 @@
 | 字体 | **不加载** `OpenHuninn.woff2`（2.08 MB ≈ 整包 40%），`gp-shim` 故意不提供 `fonts.use` |
 | 存档 | 走 `host.storage`（本地优先，宿主统一存档接口） |
 | 重置说明 | 1.0.2 修过一次：原文写「排行榜最高分保存在服务器上」—— 排行榜早就本地化了，那是假话。实际行为是 `sn()` 先 push 一份快照进 `a.history`（最多 10 份，设置里能翻到）⇒ 文案改成「最好成绩会先存进『重置前的记录』」 |
+| 资源清单 | 1.0.3 补的 `assets/manifest.json`（其余 21 款都有，只它和 `redbutton` 没有）。**改了资源必须重跑** `node scripts/make-asset-manifest.mjs`，否则打包会直接失败 |
 
 ## 三个「只能这样」的改动
 

@@ -31,6 +31,7 @@
  * 所以这里**逐条 grep**，缺一条就 `exit 1`。这比事后查「为什么没声音」便宜得多。
  */
 import { fileURLToPath, pathToFileURL } from 'node:url'
+import { spawnSync } from 'node:child_process'
 import path from 'node:path'
 import fs from 'node:fs'
 
@@ -92,6 +93,20 @@ if (!checkOnly) {
   })
 
   /* ---------------- 2) 资源 ---------------- */
+  /* ★ 先证明 `assets/manifest.json` 没过期：清单过期**不会在运行时报错**，
+   * 只会在宿主/发布方逐个校验时报「哈希对不上」，而人第一反应会去查打包和网络。
+   * 这里把它提前成一次构建失败，并直接给出修复命令。 */
+  {
+    const r = spawnSync(process.execPath, [path.join(ROOT, 'scripts/make-asset-manifest.mjs'), '--check'], {
+      stdio: 'inherit',
+    })
+    if (r.status !== 0) {
+      console.error('\n✗ assets/manifest.json 过期（或还没生成）')
+      console.error('  修：node scripts/make-asset-manifest.mjs')
+      process.exit(1)
+    }
+  }
+
   // `assetUrl('sound.manifest.json')` 会拼成 `<assetBase>sound.manifest.json`，
   // 而清单里的 `sound.pack` / `assets/audio/*.m4a` 都是**相对清单**解析的，
   // 所以三者必须保持原版的相对位置：清单在根、pack 在根、音乐在 assets/audio/。
