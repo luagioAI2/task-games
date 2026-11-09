@@ -44,7 +44,7 @@ export const manifest = {
    *   36 关主线 + 2 章 16 题进阶 + 8 只狗耳朵皮肤 + 4 首 BGM。
    *   去掉的是：真钱内购（买命 / 买皮肤 / 买 BGM）、平台分享、云端存档、CDN 字体。
    */
-  version: '1.0.0',
+  version: '1.0.1',
   /** 用到 `host.storage`（存档）与 `ctx.assetUrl`（资源），两者都在 API 3 落地 */
   minHostApi: 3,
 

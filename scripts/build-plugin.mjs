@@ -56,7 +56,8 @@ const uiSrc = fs.readFileSync(path.join(ROOT, 'ui.js'), 'utf8')
 const PATCHES = [
   ['export async function boot(', gameSrc, 'boot() 包裹（先装 gp 再启动）'],
   ['__addW(', gameSrc, 'window 监听改可回收'],
-  ['__inudokuTeardown', gameSrc, 'teardown（dispose 音频 / 特效 / Pixi）'],
+  ['__inudokuTeardown', gameSrc, 'teardown（断 RO → 释放 display → 销毁 Pixi）'],
+  ['window.__inudokuDisplay', gameSrc, 'display 句柄交出（卸载时断 ResizeObserver）'],
   ['__inudokuCharge', gameSrc, '开局扣分闸'],
   ['function __grant(', gameSrc, '通关解锁皮肤 / BGM'],
   ['window.__inudokuRoot', gameSrc, '根节点外部传入'],

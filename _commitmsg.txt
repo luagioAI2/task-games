@@ -1,0 +1,16 @@
+fix: 1.0.1 —— 卸载时断掉 display 的 ResizeObserver
+
+症状：退出游戏之后再拖窗口 / 转屏，宿主页面抛
+`TypeError: Cannot read properties of null (reading 'screen')`。
+
+原因：`mountDisplay` 挂了 `ResizeObserver`，它 kick 到 `onResize`，而 `onResize`
+里是 `ot()`（后来被赋成 `Te`，`Te` 读 `p.screen`）。`p.destroy()` 之后 Pixi 的
+`renderer` 变 null ⇒ 每次 resize 都抛一次。报错落在宿主页面上，看着像宿主坏了。
+
+改法（顺序不能换）：
+- `scripts/patch-game.mjs` 把 display 句柄挂到 `window.__inudokuDisplay`
+- teardown 先 `ot=()=>{}` 断回调，再 `display.dispose()`（断 RO + visualViewport），
+  最后才 `p.destroy()`
+- `build-plugin.mjs` 的补丁锚点加一条 `window.__inudokuDisplay`，丢了就打包失败
+
+顺带：ONBOARD.md 补齐 1.0.1 的落库/验收数据。

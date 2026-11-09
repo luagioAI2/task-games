@@ -3,7 +3,7 @@
 - 地址：https://d337snrctr.mkplay.zone/v/29/index.html
 - 商城名：犬独 · 底栏 `犬独`（原版标题 `犬独 ～INUDOKU～`）
 - 经济：B 只花积分、不产出兑换券 · 票价 1（`playCost: 1` / `expectedPayout: 0` / `voucherPerCoin: 0` / `capPerPrize: 1`）
-- 当前：步骤 6~9 未完成（1~5 做完，本地/独立页验收全绿）
+- 当前：**1.0.1 已上架**（后端 release#51 / 心愿商城在架 / 盲盒池 25 款），五层验收全绿
 
 > ⚠️ 和 `fall2048` **同一个 `/v/29/` 路径但是两款游戏**（那是「下落的2048」）。
 > 别按路径判断，按 `ui.js` 里的 `document.title` 认。
@@ -14,11 +14,11 @@
 | 2 | 立工程 | ✅ | `scaffold.mjs` 立起；`index.html` 重写（去 importmap、`lang=zh`、`viewport-fit=cover`，51930 → 624 B）；`.gitattributes` = `* text=auto eol=lf`；首次提交 `2c68aec` |
 | 3 | 压资源 | ✅ | PNG 全转 WebP（`compress-assets.py` 中途被 SIGTERM，改用 Pillow 脚本补齐，`poodle.webp` 曾经 0 字节已重转）；`assets/` 1.8 M / 40 文件；`assets/manifest.json` = 32 文件 1694 KB |
 | 4 | 改造 | ✅ | `gp.pay` **整块不给**（买命 / 买皮肤 / 买 BGM 三条内购路径一起断）；`share.available=false`；`fonts.url()` 返回 `''`（不拉 CDN 字体）；自带 CSS 走 `scopeCss` 收进 `[data-inudoku-root]`；皮肤/BGM 改成**通关解锁**（`__grant()`：每 5 关一只狗、每 4 关一首曲子） |
-| 5 | 打包 | ✅ | `=== 打包校验通过 ===`；入口 4241.7 KB；资源 9722.5 KB；裸说明符 0；动态 import 0；补丁锚点 7 条（`boot(` / `__addW(` / `__inudokuTeardown` / `__inudokuCharge` / `function __grant(` / `window.__inudokuRoot` / `window.__inudokuAsset`）；构建前先 `make-asset-manifest.mjs --check`，清单过期直接 exit 1 |
-| 6 | 落库 | 🔄 | 本地四处已一致（`index.json` v1.0.0 / `localGames.ts` 哈希 `70bad42e08b9…` / `storefront.ts` / `build-store-shots.py` PLAN）；**后端 `game` / `wish_item` / 盲盒池 / `game_release` 全未登记** |
-| 7 | 商城详情 | ✅ | `public/store/inudoku/1~4.webp`（17.4 / 24.8 / 17.8 / 15.5 KB），源图 `screenshots/store-1~4*.png` 由 `scripts/store-shots.mjs` 现拍（**还没进 git**） |
-| 8 | 五层验收 | 🔄 | 独立页：`smoke.mjs` 通过（canvas 1 · 颜色 401 种 · 4xx 0 · pageerror 0）、`play-check.mjs` 14/0、`check-plugin.mjs` 通过（3 条提示）；**真宿主 e2e / 远程 LAN+HTTPS 探针未跑** |
-| 9 | 提交 | ⬜ | 本工程工作区一大堆未提交（`M dogs.js game.js i18n.js index.html ui.js` + `?? css-scope.js gp-shim.js plugin.js standalone.js screenshots scripts sound.* assets/manifest.json *.webp`）；宿主 `M index.json build-store-shots.py localGames.ts storefront.ts` + `?? public/games/inudoku public/store/inudoku` |
+| 5 | 打包 | ✅ | `=== 打包校验通过 ===`；入口 4241.9 KB；资源 9722.6 KB；裸说明符 0；动态 import 0；补丁锚点 8 条（`boot(` / `window.__inudokuDisplay` / `__addW(` / `__inudokuTeardown` / `__inudokuCharge` / `function __grant(` / `window.__inudokuRoot` / `window.__inudokuAsset`）；构建前先 `make-asset-manifest.mjs --check`，清单过期直接 exit 1 |
+| 6 | 落库 | ✅ | 本地四处一致（`index.json` v1.0.1 / `localGames.ts` 哈希 `e363ea80e44f…` / `storefront.ts` / `build-store-shots.py` PLAN）；后端 `game.status=available points=300` / `wish_item.archived=0` / 盲盒池 25 款 / `game_release` 活跃 = 1.0.1（release#51） |
+| 7 | 商城详情 | ✅ | `public/store/inudoku/1~4.webp`（17.4 / 24.8 / 17.8 / 15.5 KB），源图 `screenshots/store-1~4*.png` 由 `scripts/store-shots.mjs` 现拍（已进 git） |
+| 8 | 五层验收 | ✅ | 独立页：`smoke.mjs` 通过（canvas 1 · 颜色 401 种 · 4xx 0 · pageerror 0）、`play-check.mjs` 14/0、`check-plugin.mjs` 通过（3 条提示）；远程 LAN+HTTPS 探针 `_probe-inudoku-remote.mjs` **23/0**；`check-remote-package.mjs` 全过（32 条资源哈希）；`tsc` / `vitest` 见步骤 9 |
+| 9 | 提交 | 🔄 | 本工程 `1.0.1` 未提交（`M game.js plugin.js scripts/patch-game.mjs scripts/build-plugin.mjs ONBOARD.md`）；宿主未提交（`M index.json build-store-shots.py localGames.ts` + `?? public/games/inudoku public/store/inudoku scripts/_probe-inudoku-remote.mjs`） |
 
 ## 决策（别重问）
 

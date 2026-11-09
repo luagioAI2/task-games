@@ -97,6 +97,15 @@ const G_STEPS = [
   /* ---- 1) 根节点：原版所有东西都往 `#app` 里塞 ---- */
   step(G, 'document.getElementById("app")', 'window.__inudokuRoot', 2, '舞台找不到 ⇒ 整屏空白'),
 
+  /* ---- 1b) 把 display 句柄交出来，卸载时才能断 ResizeObserver ---- */
+  step(
+    G,
+    '});Ut.attachPixi(p);',
+    '});window.__inudokuDisplay=Ut;Ut.attachPixi(p);',
+    1,
+    '卸载后 RO 还活着 ⇒ 退出游戏再转屏就抛 `reading screen`（Pixi renderer 已为 null）',
+  ),
+
   /* ---- 2) 资源绝对地址（插件在 blob: 里跑，相对路径必 404） ---- */
   step(G, 'c.Assets.load("assets/paper.webp")', 'c.Assets.load(window.__inudokuAsset("assets/paper.webp"))', 1, '纸纹背景 404'),
   step(G, 'c.Assets.load("assets/pencil-tile.webp")', 'c.Assets.load(window.__inudokuAsset("assets/pencil-tile.webp"))', 1, '格子底纹 404 ⇒ 棋盘全白'),
@@ -230,10 +239,24 @@ function __grant(){
 `
 
 /* ---- 13) teardown（追加在 boot 末尾） ---- */
+/*
+ * ★ 顺序是「先断回调、再销毁」：
+ *   `mountDisplay` 挂了一个 `ResizeObserver`，它 `kick` 到 `onResize`，
+ *   而 `onResize` 里是 `ot()`（后来被赋成 `Te`，`Te` 会读 `p.screen`）。
+ *   `p.destroy()` 之后 Pixi 的 `renderer` 变 null ⇒ `p.screen` 抛
+ *   `Cannot read properties of null (reading 'screen')`。
+ *   触发时机是「退出游戏之后再拖窗口 / 转屏」—— 这时候游戏已经不在屏幕上，
+ *   报错落在宿主页面里，看着像宿主坏了。
+ *   ⇒ ① `ot` 换回空函数 ② `display.dispose()` 断掉 RO 和 visualViewport 监听
+ *     ③ 最后才销毁 Pixi。
+ */
 const TAIL = `
 window.__inudokuTeardown=function(){
   window.__inudokuDead=!0;
   try{for(const __a of __wins)window.removeEventListener(__a[0],__a[1],__a[2])}catch(e){}
+  try{ot=()=>{}}catch(e){}
+  try{window.__inudokuDisplay?.dispose()}catch(e){}
+  try{window.__inudokuDisplay=null}catch(e){}
   try{S.dispose()}catch(e){}
   try{u.dispose()}catch(e){}
   try{p.destroy(true,{children:!0,texture:!1,textureSource:!1})}catch(e){}
