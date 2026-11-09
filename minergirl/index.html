@@ -1,0 +1,31 @@
+<!doctype html>
+<!--
+  独立网页（开发 / 截图用）。宿主里跑的是 plugin.js，不加载这个文件。
+
+  ⚠️ `#app` 已经去掉了：游戏自己会在 `<body>` 上建一块 `#mng-root`
+     （见 src/main.js 的 start()），它才是样式的作用域根。
+     这里只负责「整页没有边距、背景是游戏底色」。
+-->
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <title>挖矿少女</title>
+  <!-- 空 favicon：不给的话浏览器自动请求 /favicon.ico ⇒ 冒烟里一条假的 404 -->
+  <link rel="icon" href="data:,">
+  <style>
+    html, body { margin: 0; width: 100%; height: 100%; overflow: hidden; background: #0b0d12; }
+    canvas { display: block; }
+  </style>
+  <script type="importmap">
+  {
+    "imports": {
+      "@makeplay/sound": "./runtime/sound-1.js"
+    }
+  }
+  </script>
+</head>
+<body>
+  <script type="module" src="./game.js"></script>
+</body>
+</html>

@@ -1,0 +1,8 @@
+* text=auto
+# 插件包按**字节**算 SHA-256，换行符一改哈希就对不上（症状是「装不上」）
+*.mjs -text
+*.pack -text
+*.webp binary
+*.png binary
+*.jpg binary
+*.mp3 binary
