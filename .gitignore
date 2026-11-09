@@ -1,0 +1,17 @@
+# 依赖与构建产物
+# ⚠️ 写在仓库根，规则对**所有子目录**生效（各游戏目录里的同名目录一并覆盖）。
+node_modules/
+dist/
+dist-plugin/
+.gocache/
+.gotmp/
+
+# 镜像抓取的中间目录。抓完把要用的搬进游戏目录，这里不留（2026-11-10 清了 10 个、102MB）。
+_peek-*/
+
+# 临时目录 / 日志
+_scratch/
+.tmpcheck/
+*.log
+.DS_Store
+Thumbs.db
