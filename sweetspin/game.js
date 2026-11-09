@@ -1,0 +1,948 @@
+import { mountDisplay } from '@makeplay/display';
+import { loadSoundSystem } from '@makeplay/sound';
+                                                           
+import { t, setLang, getLang, detectLang, setDocumentSideEffects,           } from './i18n.js';
+import { makeLocalStore } from './src/host.js';
+import { generateLevel, rotMask, stepsTo, AX_DIRS,               } from './levels.js';
+
+/**
+ * 旋转灯泡 · 游戏本体（原版 Sweet Spin）
+ *
+ * ## 为什么整个文件是一个函数
+ *
+ * 原版是「一个网页」：模块顶层直接取 `#app`、建 canvas、挂监听、起 rAF。
+ * 插件形态下这套不成立 —— 宿主只 `import()` 一次这个模块，然后**反复调用 `mount()`**
+ * （切 tab / StrictMode 双挂载）。模块顶层的状态会跨挂载泄漏：第二个 canvas 挂在
+ * 已经摘掉的容器旁边、监听器翻倍（点一下转两格）、存档是上一次的内存快照。
+ *
+ * 所以：**一次挂载 = 一次 `start()` 调用**，所有状态都是这次调用的局部变量。
+ * 返回值是卸载函数，宿主会 `await` 它。
+ *
+ * ## 两种形态的差别全部从 `opts` 注入
+ *
+ * | | `index.html` | `plugin.js` |
+ * | --- | --- | --- |
+ * | 容器 | 不传（`#app`） | `mount(container)` 给的那个 |
+ * | 资源 | 不传（相对文档） | `ctx.assetUrl()` |
+ * | 音频 | 不传（默认 `./sound.manifest.json`） | `manifestUrl` + `baseUrl`（清单在**包根**） |
+ * | 存档 | 不传（`localStorage`） | `host.storage` → `makeHostStore()` |
+ * | 进关收费 | 不传（不收费） | `chargePlay()` |
+ * | `<html lang>` | 跟着语言改 | **不改**（那是宿主的） |
+ *
+ * 于是这里没有任何 `if (isPlugin)` 分支 —— 那种分支会随版本漂移，
+ * 而且两种形态的测试永远只有一种被跑到。
+ *
+ * ## 经济：C 型（纯玩），收费点在「进一关」
+ *
+ * ```
+ *   积分 ──进一关 10 分──▶ 一关 ──▶ 星星（游戏存档里，换不成任何东西）
+ * ```
+ *
+ * · 关卡盘上点一个没打过的格子 / 点「下一关」 ⇒ 扣 10
+ * · 同一关点「再玩一次」⇒ **不扣**（这一关在本局已经买过）
+ * · 从关卡盘退出来再点同一关 ⇒ 也不扣（同一个 `paidLevel`）
+ * · 通关不发兑换券（`expectedPayout: 0`）：星星是「三星/关」的评级，
+ *   硬接一条产出线会把它变成刷分工具
+ *
+ * ## 原版删掉的两块（见 `scripts/_strip.py`）
+ *
+ * 1. **提示内购**（`gp.pay.purchase`，1 平台币 = 5 次提示）：宿主没有能写正数的接口。
+ *    提示本身保留（开局 3 次 / 首次通关 +1 / 上限 9），它是纯游戏内资源。
+ * 2. **在线排行榜**（`gp.player.topScores` + 头像 + 登录）：要账号、要服务端，宿主都没有。
+ *    结算面板那一行改成「总星星 n」。
+ */
+
+export async function start(opts = {}) {
+  // ---------- 形态注入 ----------
+  /** 挂到哪儿：插件给容器，独立网页退回 `#app` */
+  const mountTo = opts.mountTo || document.getElementById('app') || document.body;
+  const isPlugin = !!opts.mountTo;
+  /** 包内相对路径 → 可加载的绝对地址（插件里是 `<包根>/assets/…`） */
+  const asset = typeof opts.asset === 'function' ? opts.asset : (p) => p;
+  /** 包根（带尾斜杠），`sound-1.js` 的 `baseUrl` 用 */
+  const assetBase = typeof opts.assetBase === 'string' ? opts.assetBase : '';
+  /** 同步接口的存档（`getItem` / `setItem` / `flush`） */
+  const store = opts.store || makeLocalStore('sweetspin');
+  /** 进一关的扣费闸门；独立网页形态直接放行 */
+  const chargePlay = typeof opts.chargePlay === 'function' ? opts.chargePlay : async () => true;
+
+  // 插件形态下不许动宿主的 <html lang>（那是宿主页面的）
+  setDocumentSideEffects(!isPlugin);
+
+  // ---------- 卸载守卫 ----------
+  let alive = true;
+  /** 扣费进行中（防连点扣两次） */
+  let charging = false;
+  /** 本次挂载挂上的监听，卸载时逐个摘 */
+  const listeners = [];
+  const on = (t2, f, o) => { t2.addEventListener(f, o); listeners.push([t2, f, o]); };
+  /** 本次挂载起的定时器（过关面板那 650ms 的延迟） */
+  const timers = new Set();
+  const later = (fn, ms) => { const id = setTimeout(() => { timers.delete(id); if (alive) fn(); }, ms); timers.add(id); return id; };
+  /** 本局已经付过钱的那一关（同一关重玩不再扣） */
+  let paidLevel = 0;
+
+
+  const TOTAL = 100;
+  const FONT = '"PingFang SC","Hiragino Maru Gothic ProN","Hiragino Sans","Microsoft YaHei","Noto Sans CJK SC","Noto Sans JP","Yu Gothic",system-ui,sans-serif';
+  const SQ3 = Math.sqrt(3);
+
+  // muted clay palette: [body, underside, sheen]
+  const PIPE_COLORS                             = [
+    ['#86b6e0', '#6390bd', '#d6ebfa'], ['#9ccf8c', '#72a866', '#e0f4d6'], ['#efa6b9', '#c97d92', '#fde0e8'], ['#b9a4dd', '#927dbd', '#ebe2fa'], ['#f2b78e', '#cc8d65', '#fde6d4'],
+  ];
+  const LIT                           = ['#ffc155', '#e5952e', '#fff1c4'];
+
+  // ---------- boot: canvas ----------
+  const host = mountTo ;
+  const canvas = document.createElement('canvas');
+  canvas.style.width = '100%';
+  canvas.style.height = '100%';
+  canvas.style.touchAction = 'none';
+  host.appendChild(canvas);
+  const ctx = canvas.getContext('2d') ;
+  let W = host.clientWidth || 390, H = host.clientHeight || 700;
+  const display = mountDisplay({ orientation: 'portrait', host, onResize: ({ width, height }     ) => { W = width; H = height; layoutDirty = true; } });
+  display.attachCanvas(canvas);
+
+  // ---------- save ----------
+  /**
+   * 存档形状：`unlocked` / `stars[100]` / `hints` / `lang` / `muted` / `cur`（未完成的一关）。
+   *
+   * ★ `store` 是**同步**接口（内存缓存 + `flush()` 落盘），所以这里到处同步调 `persist()`
+   *   不会把「点一下按钮」拆成两帧。卸载时 `await store.flush()` 一次。
+   */
+  function defaultSave()       {
+    return { v: 1, unlocked: 1, stars: new Array(TOTAL).fill(0), hints: 3, lang: null, muted: false, cur: null };
+  }
+  let save       = defaultSave();
+  try {
+    const raw = store.getItem('save');
+    const s = raw ? JSON.parse(raw) : null;
+    if (s && s.v === 1 && Array.isArray(s.stars)) save = { ...defaultSave(), ...s };
+  } catch { /* 存档坏了就当新档，不要卡住挂载 */ }
+  function persist() {
+    try { store.setItem('save', JSON.stringify(save)); } catch { /* ignore */ }
+  }
+  /** 累计星星（0~300）：结算面板与调试桥都用它 */
+  function totalStars() { return save.stars.reduce((a, b) => a + b, 0); }
+  // 语言：存档里选过就用存档，否则按宿主给的语言 / 浏览器语言猜
+  setLang(save.lang ?? detectLang(opts.locale));
+
+  // ---------- sound ----------
+  let sound                          = null;
+  let audioUnlocked = false;
+  loadSoundSystem({ manifestUrl: asset('sound.manifest.json'), baseUrl: assetBase }).then((s     ) => {
+    sound = s                    ;
+    sound.settings.setMuted(save.muted);
+    if (audioUnlocked) startMusic();
+  }).catch(() => {});
+  function startMusic() {
+    if (!sound) return;
+    sound.preload('gameplay').catch(() => {});
+    sound.setMusicState('main', { eventId: 'session' }).catch(() => {});
+  }
+  async function unlockAudio() {
+    if (audioUnlocked) return;
+    audioUnlocked = true;
+    if (sound) { await sound.unlock(); startMusic(); }
+  }
+  let sfxN = 0;
+  function sfxRotate() { sound?.playCue('sfx.rotate', { eventId: 'r' + (sfxN++), pitchSemitones: (Math.random() * 2 - 1) }).catch(() => {}); }
+  function sfxBulb(i        ) { sound?.playCue('sfx.bulb', { eventId: 'b' + (sfxN++), pitchSemitones: Math.min(12, i * 2) }).catch(() => {}); }
+  function sfxWin() { sound?.playCue('sfx.win', { eventId: 'w' + (sfxN++) }).catch(() => {}); }
+  function sfxTap() { sound?.playCue('ui.tap', { eventId: 't' + (sfxN++) }).catch(() => {}); }
+  on(window, 'pagehide', () => { void sound?.dispose(); });
+
+  // ---------- images ----------
+  const IMG_SRC = { bg: 'assets/bg_clay.webp', battery: 'assets/battery_clay.webp', bulbOff: 'assets/bulb_clay_off.webp', bulbOn: 'assets/bulb_clay_on.webp', hex: 'assets/hex_clay.webp', lock: 'assets/lock_clay.webp' };
+  const imgs                                   = {};
+  let loaded = 0;
+  const totalImgs = Object.keys(IMG_SRC).length;
+  let ready = false;
+
+  // ---------- game state ----------
+                                            
+  let screen         = 'loading';
+                
+                                                                                                                         
+                       
+ 
+  let level = 1;
+  let def                  = null;
+  let tiles         = [];
+  let tileMap = new Map              ();
+  let moves = 0;
+  let won = false;
+  let winT = 0;
+  let showWin = false;
+  let hexS = 40;
+  let layoutDirty = true;
+  let page = 0;
+  let settingsOpen = false;
+  let toast = '';
+  let toastT = 0;
+  let time = 0;
+                                                                                                                     
+  let parts             = [];
+
+  function k(q        , r        ) { return q + ',' + r; }
+
+  /**
+   * 进一关。**扣费就在这里** —— 关卡盘点格子、「下一关」、「再玩一次」都过这一个函数。
+   *
+   * `n !== paidLevel` 才扣：同一关在本局重玩不再收（`再玩一次` 走的就是这条），
+   * 换一关就重新收一次。`charging` 挡住连点（`await` 期间再点不会扣两次）。
+   */
+  async function startLevel(n        , resume = false) {
+    if (n !== paidLevel) {
+      if (charging) return;
+      charging = true;
+      let ok = false;
+      try { ok = await chargePlay(); } catch { ok = false; }
+      charging = false;
+      if (!alive || !ok) return;
+      paidLevel = n;
+    }
+    level = n;
+    def = generateLevel(n);
+    tiles = def.cells.map((c) => ({ def: c, rot: c.start, vis: c.start, pop: 0, locked: false, powered: false, litT: 0, x: 0, y: 0 }));
+    tileMap = new Map(tiles.map((tl) => [k(tl.def.q, tl.def.r), tl]));
+    moves = 0;
+    if (resume && save.cur && save.cur.level === n && save.cur.rots.length === tiles.length) {
+      tiles.forEach((tl, i) => { tl.rot = tl.vis = save.cur .rots[i]; });
+      moves = save.cur.moves;
+      for (const i of save.cur.locked) if (tiles[i]) tiles[i].locked = true;
+    }
+    won = false; showWin = false; winT = 0; parts = [];
+    computePower(false);
+    // guard: never start already solved
+    let guard = 0;
+    while (allLit() && guard++ < 20) {
+      const tl = tiles[guard % tiles.length];
+      tl.rot = tl.vis = tl.rot + 1;
+      computePower(false);
+    }
+    tiles.forEach((tl) => { tl.litT = tl.powered ? 1 : 0; });
+    layoutDirty = true;
+    screen = 'game';
+    saveCur();
+  }
+  function saveCur() {
+    save.cur = { level, rots: tiles.map((tl) => ((tl.rot % 6) + 6) % 6), moves, locked: tiles.map((tl, i) => (tl.locked ? i : -1)).filter((i) => i >= 0) };
+    persist();
+  }
+  function curMask(tl      ) { return rotMask(tl.def.mask, tl.rot); }
+  function computePower(withFx         ) {
+    const before = new Set(tiles.filter((tl) => tl.powered));
+    tiles.forEach((tl) => (tl.powered = false));
+    const src = tiles.find((tl) => tl.def.kind === 'source');
+    if (!src) return;
+    src.powered = true;
+    const stack = [src];
+    while (stack.length) {
+      const c = stack.pop() ;
+      const m = curMask(c);
+      for (let d = 0; d < 6; d++) {
+        if (!(m & (1 << d))) continue;
+        const n = tileMap.get(k(c.def.q + AX_DIRS[d][0], c.def.r + AX_DIRS[d][1]));
+        if (!n || n.powered) continue;
+        if (curMask(n) & (1 << ((d + 3) % 6))) { n.powered = true; stack.push(n); }
+      }
+    }
+    if (withFx) {
+      let i = 0;
+      for (const tl of tiles) if (tl.def.kind === 'bulb' && tl.powered && !before.has(tl)) { sfxBulb(i++); burst(tl.x, tl.y, 8, ['#ffe066', '#fff4b0', '#ffb347']); }
+    }
+  }
+  function allLit() { return tiles.every((tl) => tl.def.kind !== 'bulb' || tl.powered); }
+  function starsFor(m        ) {
+    if (!def) return 1;
+    if (m <= def.par) return 3;
+    if (m <= Math.ceil(def.par * 1.5) + 2) return 2;
+    return 1;
+  }
+
+  function rotateTile(tl      ) {
+    if (won || tl.locked) { if (tl.locked) tl.pop = 0.5; return; }
+    tl.rot += 1; tl.pop = 1; moves++;
+    sfxRotate();
+    computePower(true);
+    if (allLit()) onWin();
+    saveCur();
+  }
+  function onWin() {
+    won = true; winT = 0;
+    const st = starsFor(moves);
+    const firstClear = save.stars[level - 1] === 0;
+    save.stars[level - 1] = Math.max(save.stars[level - 1], st);
+    if (level >= save.unlocked && level < TOTAL) save.unlocked = level + 1;
+    if (level === TOTAL) save.unlocked = TOTAL;
+    if (firstClear) save.hints = Math.min(9, save.hints + 1);
+    save.cur = null;
+    persist();
+    sfxWin();
+    later(() => { showWin = true; for (let i = 0; i < 3; i++) burst(W / 2 + (i - 1) * 90, H * 0.35, 24, ['#ff8fb8', '#ffd25e', '#6ec3ff', '#8be38a', '#b896ff']); }, 650);
+  }
+  function useHint() {
+    if (won) return;
+    if (save.hints <= 0) { showToast(t('noHint')); return; }
+    const wrong = tiles.filter((tl) => !tl.locked && curMask(tl) !== tl.def.mask);
+    if (!wrong.length) return;
+    // prefer tiles near power
+    wrong.sort((a, b) => Number(b.powered) - Number(a.powered));
+    const tl = wrong[Math.floor(Math.random() * Math.min(3, wrong.length))];
+    tl.rot += stepsTo(tl.def.mask, tl.rot, tl.def.mask);
+    tl.locked = true; tl.pop = 1;
+    save.hints--;
+    sfxRotate();
+    burst(tl.x, tl.y, 10, ['#ffe066', '#ffffff']);
+    computePower(true);
+    if (allLit()) onWin();
+    saveCur();
+  }
+  function showToast(s        ) { toast = s; toastT = 2.2; }
+
+  /**
+   * 撒纸屑。★ 它原来写在「排行榜」那一段里，删榜时差点被连坐 ——
+   * 而 `computePower`（点亮灯泡）、`useHint`、过关面板都在调它。
+   * 漏了它不会在构建期报错，只在**第一次点亮灯泡**时抛 `burst is not defined`。
+   */
+  function burst(x        , y        , n        , cols          ) {
+    for (let i = 0; i < n; i++) {
+      const a = Math.random() * Math.PI * 2, sp = 80 + Math.random() * 260;
+      parts.push({ x, y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp - 120, life: 1 + Math.random() * 0.6, c: cols[i % cols.length], r: 3 + Math.random() * 4, rot: Math.random() * 6 });
+    }
+  }
+  function iconTrophy(x        , y        , s        ) {
+    ctx.lineJoin = 'round'; ctx.lineCap = 'round';
+    // handles
+    ctx.strokeStyle = OL; ctx.lineWidth = s * 0.2;
+    ctx.beginPath(); ctx.arc(x - s * 0.34, y - s * 0.18, s * 0.17, Math.PI * 0.5, Math.PI * 1.5); ctx.stroke();
+    ctx.beginPath(); ctx.arc(x + s * 0.34, y - s * 0.18, s * 0.17, -Math.PI * 0.5, Math.PI * 0.5); ctx.stroke();
+    ctx.strokeStyle = '#fff'; ctx.lineWidth = s * 0.08;
+    ctx.beginPath(); ctx.arc(x - s * 0.34, y - s * 0.18, s * 0.17, Math.PI * 0.5, Math.PI * 1.5); ctx.stroke();
+    ctx.beginPath(); ctx.arc(x + s * 0.34, y - s * 0.18, s * 0.17, -Math.PI * 0.5, Math.PI * 0.5); ctx.stroke();
+    // cup + stem + base
+    ctx.beginPath();
+    ctx.moveTo(x - s * 0.36, y - s * 0.42); ctx.lineTo(x + s * 0.36, y - s * 0.42);
+    ctx.quadraticCurveTo(x + s * 0.34, y + s * 0.08, x + s * 0.06, y + s * 0.14);
+    ctx.lineTo(x + s * 0.06, y + s * 0.28); ctx.lineTo(x + s * 0.24, y + s * 0.3); ctx.lineTo(x + s * 0.24, y + s * 0.44);
+    ctx.lineTo(x - s * 0.24, y + s * 0.44); ctx.lineTo(x - s * 0.24, y + s * 0.3); ctx.lineTo(x - s * 0.06, y + s * 0.28);
+    ctx.lineTo(x - s * 0.06, y + s * 0.14);
+    ctx.quadraticCurveTo(x - s * 0.34, y + s * 0.08, x - s * 0.36, y - s * 0.42);
+    ctx.closePath();
+    ctx.lineWidth = s * 0.12; ctx.strokeStyle = OL; ctx.stroke(); ctx.fillStyle = '#fff'; ctx.fill();
+    drawStar(x, y - s * 0.16, s * 0.15, BUTTER[0], OL);
+  }
+
+  // ---------- layout ----------
+  const topH = () => 150;
+  const botH = () => 112;
+  function layout() {
+    layoutDirty = false;
+    if (!def) return;
+    const pad = 14;
+    const colW = Math.min(W, 640);
+    const availW = colW - pad * 2, availH = H - topH() - botH() - 24;
+    // bounds in units of s
+    let minX = 1e9, maxX = -1e9, minY = 1e9, maxY = -1e9;
+    for (const tl of tiles) {
+      const ux = 1.5 * tl.def.col, uy = SQ3 * (tl.def.row + (tl.def.col & 1) / 2);
+      minX = Math.min(minX, ux - 1); maxX = Math.max(maxX, ux + 1);
+      minY = Math.min(minY, uy - SQ3 / 2); maxY = Math.max(maxY, uy + SQ3 / 2);
+    }
+    hexS = Math.min(availW / (maxX - minX), availH / (maxY - minY), 80);
+    const ox = W / 2 - ((minX + maxX) / 2) * hexS;
+    const oy = topH() + 12 + availH / 2 - ((minY + maxY) / 2) * hexS;
+    for (const tl of tiles) {
+      tl.x = ox + 1.5 * tl.def.col * hexS;
+      tl.y = oy + SQ3 * (tl.def.row + (tl.def.col & 1) / 2) * hexS;
+    }
+  }
+
+  // ---------- drawing helpers ----------
+  ;                                                                            
+  let btns        = [];
+  /** `label` 只给 e2e / 截图脚本用（整屏 canvas，没有选择器可点） */
+  function addBtn(x        , y        , w        , h        , fn            , label = '') { btns.push({ x, y, w, h, fn, label }); }
+
+  function rr(x        , y        , w        , h        , r        ) {
+    ctx.beginPath();
+    ctx.moveTo(x + r, y); ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r);
+    ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath();
+  }
+  function hexPath(cx        , cy        , s        ) {
+    ctx.beginPath();
+    for (let i = 0; i < 6; i++) {
+      const a = (Math.PI / 3) * i;
+      const px = cx + Math.cos(a) * s, py = cy + Math.sin(a) * s;
+      if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+    }
+    ctx.closePath();
+  }
+  function font(size        , weight = 800) { return `${weight} ${Math.round(size)}px ${FONT}`; }
+  function fitText(s        , maxW        , size        , weight = 800) {
+    let sz = size;
+    ctx.font = font(sz, weight);
+    while (ctx.measureText(s).width > maxW && sz > 9) { sz -= 1; ctx.font = font(sz, weight); }
+  }
+  // matte clay slab: soft drop shadow + darker underside + body + soft top sheen
+  // ---------- pastel-pop UI kit ----------
+  const OL = '#5b3a29';
+  const CORAL                   = ['#ff7a6b', '#e5574a'];
+  const BUTTER                   = ['#ffd45c', '#f0aa2e'];
+  const SKY                   = ['#66c3f2', '#3a9bd5'];
+  const MINT                   = ['#7fd68a', '#4fb162'];
+  const CREAM                   = ['#fff7e6', '#f2dfbf'];
+  function popFill(path            , bx        , by        , bw        , bh        , c                  , depth = 5, lw = 3) {
+    ctx.lineJoin = 'round';
+    ctx.save(); ctx.translate(0, depth + 2); path(); ctx.fillStyle = 'rgba(70,40,20,0.18)'; ctx.fill(); ctx.restore();
+    ctx.save(); ctx.translate(0, depth); path(); ctx.fillStyle = OL; ctx.fill(); ctx.lineWidth = lw; ctx.strokeStyle = OL; ctx.stroke(); ctx.restore();
+    path(); ctx.fillStyle = c[0]; ctx.fill();
+    ctx.save(); path(); ctx.clip();
+    ctx.fillStyle = c[1]; ctx.fillRect(bx - 2, by + bh * 0.72, bw + 4, bh * 0.3 + 2);
+    ctx.fillStyle = 'rgba(255,255,255,0.5)';
+    rr(bx + bw * 0.12, by + Math.max(3, bh * 0.1), bw * 0.76, Math.max(3, bh * 0.16), Math.max(1.5, bh * 0.08)); ctx.fill();
+    ctx.restore();
+    path(); ctx.lineWidth = lw; ctx.strokeStyle = OL; ctx.stroke();
+  }
+  function popRect(x        , y        , w        , h        , r        , c                  , depth = 5) {
+    popFill(() => rr(x, y, w, h, Math.min(r, h / 2, w / 2)), x, y, w, h, c, depth);
+  }
+  function popCircle(x        , y        , r        , c                  , depth = 5) {
+    popFill(() => { ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); }, x - r, y - r, r * 2, r * 2, c, depth);
+  }
+  function wideHexPath(x        , y        , w        , h        ) {
+    const k = h * 0.42;
+    ctx.beginPath();
+    ctx.moveTo(x - w / 2 + k, y - h / 2); ctx.lineTo(x + w / 2 - k, y - h / 2); ctx.lineTo(x + w / 2, y);
+    ctx.lineTo(x + w / 2 - k, y + h / 2); ctx.lineTo(x - w / 2 + k, y + h / 2); ctx.lineTo(x - w / 2, y); ctx.closePath();
+  }
+  function popHexBadge(x        , y        , w        , h        , c                  ) {
+    popFill(() => wideHexPath(x, y, w, h), x - w / 2, y - h / 2, w, h, c, 5, 3.5);
+  }
+  function popHex(x        , y        , s        , c                  , depth = 5) {
+    popFill(() => hexPath(x, y, s), x - s, y - s * 0.87, s * 2, s * 1.74, c, depth, 3);
+  }
+  function outlinedText(s        , x        , y        , size        , maxW        , fill = '#ffffff', weight = 900) {
+    fitText(s, maxW, size, weight);
+    const sz = parseInt(ctx.font.split(' ')[1]);
+    ctx.lineJoin = 'round'; ctx.lineWidth = Math.max(3, sz * 0.24); ctx.strokeStyle = OL;
+    ctx.strokeText(s, x, y); ctx.fillStyle = fill; ctx.fillText(s, x, y);
+  }
+  function inkText(s        , x        , y        , size        , maxW        , weight = 800) {
+    fitText(s, maxW, size, weight); ctx.fillStyle = OL; ctx.fillText(s, x, y);
+  }
+  function pill(x        , y        , w        , h        ) { popRect(x, y, w, h, h / 2, CREAM, 4); }
+  function roundBtn(x        , y        , r        , c                  ) { popCircle(x, y, r, c, Math.max(4, r * 0.16)); }
+  function drawStar(cx        , cy        , r        , fill        , stroke = OL) {
+    ctx.beginPath();
+    for (let i = 0; i < 10; i++) {
+      const rad = i % 2 ? r * 0.5 : r, a = -Math.PI / 2 + (i * Math.PI) / 5;
+      const px = cx + Math.cos(a) * rad, py = cy + Math.sin(a) * rad;
+      if (i) ctx.lineTo(px, py); else ctx.moveTo(px, py);
+    }
+    ctx.closePath(); ctx.fillStyle = fill; ctx.fill();
+    ctx.lineJoin = 'round'; ctx.lineWidth = Math.max(2, r * 0.18); ctx.strokeStyle = stroke; ctx.stroke();
+  }
+  function popStar(cx        , cy        , r        , filled         ) {
+    ctx.save(); ctx.translate(0, r * 0.14); drawStar(cx, cy, r, filled ? '#e0951f' : '#c9b79c', filled ? OL : '#a8957a'); ctx.restore();
+    drawStar(cx, cy, r, filled ? '#ffd23f' : '#efe4d0', filled ? OL : '#b9a68a');
+    if (filled) { ctx.fillStyle = 'rgba(255,255,255,0.7)'; ctx.beginPath(); ctx.ellipse(cx - r * 0.18, cy - r * 0.22, r * 0.16, r * 0.1, -0.6, 0, 7); ctx.fill(); }
+  }
+  function iconStroke(draw            , s        ) {
+    ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+    ctx.strokeStyle = OL; ctx.lineWidth = s * 0.36; draw(); ctx.stroke();
+    ctx.strokeStyle = '#fff'; ctx.lineWidth = s * 0.2; draw(); ctx.stroke();
+  }
+  function iconBack(x        , y        , s        ) {
+    iconStroke(() => { ctx.beginPath(); ctx.moveTo(x + s * 0.45, y); ctx.lineTo(x - s * 0.45, y); ctx.moveTo(x - s * 0.02, y - s * 0.42); ctx.lineTo(x - s * 0.45, y); ctx.lineTo(x - s * 0.02, y + s * 0.42); }, s);
+  }
+  function iconGear(x        , y        , s        ) {
+    ctx.beginPath();
+    for (let i = 0; i < 16; i++) {
+      const a = (i / 16) * Math.PI * 2, rad = i % 2 ? s * 0.4 : s * 0.56;
+      const a2 = a + Math.PI / 16;
+      ctx.lineTo(x + Math.cos(a) * rad, y + Math.sin(a) * rad); ctx.lineTo(x + Math.cos(a2) * rad, y + Math.sin(a2) * rad);
+    }
+    ctx.closePath();
+    ctx.lineJoin = 'round'; ctx.lineWidth = s * 0.14; ctx.strokeStyle = OL; ctx.stroke(); ctx.fillStyle = '#fff'; ctx.fill();
+    ctx.fillStyle = SKY[1]; ctx.beginPath(); ctx.arc(x, y, s * 0.17, 0, 7); ctx.fill(); ctx.lineWidth = s * 0.08; ctx.stroke();
+  }
+  function iconReset(x        , y        , s        ) {
+    iconStroke(() => { ctx.beginPath(); ctx.arc(x, y, s * 0.42, -Math.PI * 0.3, Math.PI * 1.45); }, s);
+    const a = -Math.PI * 0.3, ex = x + Math.cos(a) * s * 0.42, ey = y + Math.sin(a) * s * 0.42;
+    ctx.beginPath(); ctx.moveTo(ex + s * 0.26, ey - s * 0.16); ctx.lineTo(ex - s * 0.2, ey - s * 0.26); ctx.lineTo(ex + s * 0.0, ey + s * 0.22); ctx.closePath();
+    ctx.lineJoin = 'round'; ctx.lineWidth = s * 0.12; ctx.strokeStyle = OL; ctx.stroke(); ctx.fillStyle = '#fff'; ctx.fill();
+  }
+  function iconArrowR(x        , y        , s        ) {
+    iconStroke(() => { ctx.beginPath(); ctx.moveTo(x - s * 0.18, y - s * 0.4); ctx.lineTo(x + s * 0.22, y); ctx.lineTo(x - s * 0.18, y + s * 0.4); }, s);
+  }
+  function iconArrowL(x        , y        , s        ) {
+    iconStroke(() => { ctx.beginPath(); ctx.moveTo(x + s * 0.18, y - s * 0.4); ctx.lineTo(x - s * 0.22, y); ctx.lineTo(x + s * 0.18, y + s * 0.4); }, s);
+  }
+  function drawImgFit(img                              , cx        , cy        , h        ) {
+    if (!img || !img.complete) return;
+    const w = (h * img.width) / img.height;
+    ctx.drawImage(img, cx - w / 2, cy - h / 2, w, h);
+  }
+
+  // ---------- pipes ----------
+  function pipePath(mask        , s        ) {
+    const L = s * 0.84;
+    const ends           = [];
+    for (let d = 0; d < 6; d++) if (mask & (1 << d)) ends.push(d);
+    const pt = (d        , f = 1) => { const a = -Math.PI / 2 + (d * Math.PI) / 3; return [Math.cos(a) * L * f, Math.sin(a) * L * f]; };
+    ctx.beginPath();
+    if (ends.length === 2) {
+      const [ax, ay] = pt(ends[0]), [bx, by] = pt(ends[1]);
+      ctx.moveTo(ax, ay); ctx.quadraticCurveTo(0, 0, bx, by);
+    } else {
+      for (const d of ends) { const [x, y] = pt(d); ctx.moveTo(0, 0); ctx.lineTo(x, y); }
+    }
+    return ends;
+  }
+  // Clay rolls: each pass = path in the tile's rotated frame, offset in SCREEN space so lighting stays fixed.
+  function pipePass(mask        , s        , ang        , ox        , oy        , color        , width        ) {
+    ctx.save(); ctx.translate(ox, oy); ctx.rotate(ang); pipePath(mask, s); ctx.restore();
+    ctx.strokeStyle = color; ctx.lineWidth = width; ctx.stroke();
+  }
+  function drawPipes(tl      , s        , lit        , ang        ) {
+    const mask = tl.def.mask;
+    const c = PIPE_COLORS[tl.def.color];
+    const w = s * 0.36;
+    ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+    const col = lit > 0.5 ? LIT : c;
+    // groove pressed into the tile
+    pipePass(mask, s, ang, 0, -w * 0.04, 'rgba(150,120,80,0.22)', w * 1.12);
+    if (lit > 0) {
+      ctx.globalAlpha = lit * (0.28 + 0.08 * Math.sin(time * 4 + tl.x * 0.01));
+      pipePass(mask, s, ang, 0, 0, '#ffd36b', w * 2.0);
+      ctx.globalAlpha = 1;
+    }
+    pipePass(mask, s, ang, 0, w * 0.26, 'rgba(60,70,40,0.22)', w);
+    pipePass(mask, s, ang, 0, w * 0.1, col[1], w);
+    pipePass(mask, s, ang, 0, 0, col[0], w * 0.9);
+    ctx.globalAlpha = 0.55;
+    pipePass(mask, s, ang, -w * 0.06, -w * 0.16, col[2], w * 0.34);
+    ctx.globalAlpha = 1;
+    // hub knob for junctions
+    let deg = 0; for (let d = 0; d < 6; d++) if (mask & (1 << d)) deg++;
+    if (deg >= 3) {
+      ctx.fillStyle = col[1]; ctx.beginPath(); ctx.arc(0, w * 0.1, w * 0.7, 0, 7); ctx.fill();
+      ctx.fillStyle = col[0]; ctx.beginPath(); ctx.arc(0, 0, w * 0.64, 0, 7); ctx.fill();
+      ctx.fillStyle = col[2]; ctx.globalAlpha = 0.6; ctx.beginPath(); ctx.arc(-w * 0.18, -w * 0.2, w * 0.22, 0, 7); ctx.fill(); ctx.globalAlpha = 1;
+    }
+  }
+  function drawHexImg(s        ) {
+    const img = imgs.hex;
+    if (img && img.complete && img.width) {
+      // content box of the generated tile is ~ (100,135)-(925,870) in a 1024 canvas
+      const sx = 100, sy = 132, sw = 825, sh = 745;
+      const dw = 2 * s * 0.95, dh = (dw * sh) / sw;
+      ctx.drawImage(img, sx, sy, sw, sh, -dw / 2, -dh / 2 + s * 0.02, dw, dh);
+    } else {
+      hexPath(0, 0, s * 0.92); ctx.fillStyle = '#f1dfb8'; ctx.fill();
+    }
+  }
+
+  function drawTile(tl      ) {
+    const s = hexS;
+    const sc = 1 + tl.pop * 0.08;
+    ctx.save(); ctx.translate(tl.x, tl.y); ctx.scale(sc, sc);
+    // clay hex base with soft cast shadow
+    ctx.lineJoin = 'round';
+    hexPath(0, s * 0.14, s * 0.9); ctx.fillStyle = 'rgba(40,90,40,0.16)'; ctx.fill();
+    drawHexImg(s);
+    const lit = tl.litT;
+    if (lit > 0.05 && tl.def.kind === 'bulb') { hexPath(0, 0, s * 0.86); ctx.fillStyle = `rgba(255,220,120,${0.35 * lit})`; ctx.fill(); }
+    if (tl.locked) { hexPath(0, 0, s * 0.86); ctx.strokeStyle = 'rgba(240,170,60,0.85)'; ctx.lineWidth = Math.max(2, s * 0.06); ctx.stroke(); }
+    // pipes rotate (lighting fixed in screen space)
+    drawPipes(tl, s, lit, (tl.vis * Math.PI) / 3);
+    // centre pieces upright
+    if (tl.def.kind === 'bulb') {
+      if (lit > 0.05) {
+        const g = ctx.createRadialGradient(0, 0, 0, 0, 0, s * 0.9);
+        g.addColorStop(0, `rgba(255,230,110,${0.6 * lit})`); g.addColorStop(1, 'rgba(255,230,110,0)');
+        ctx.fillStyle = g; ctx.beginPath(); ctx.arc(0, 0, s * 0.9, 0, 7); ctx.fill();
+        // rays
+        ctx.strokeStyle = `rgba(255,200,60,${lit})`; ctx.lineWidth = s * 0.06; ctx.lineCap = 'round';
+        for (let i = 0; i < 5; i++) {
+          const a = -Math.PI / 2 + (i - 2) * 0.55;
+          ctx.beginPath(); ctx.moveTo(Math.cos(a) * s * 0.55, Math.sin(a) * s * 0.55 - s * 0.05); ctx.lineTo(Math.cos(a) * s * 0.7, Math.sin(a) * s * 0.7 - s * 0.05); ctx.stroke();
+        }
+      }
+      drawImgFit(lit > 0.5 ? imgs.bulbOn : imgs.bulbOff, 0, -s * 0.04, s * 1.18);
+    } else if (tl.def.kind === 'source') {
+      drawImgFit(imgs.battery, 0, -s * 0.04, s * 1.32);
+    }
+    ctx.restore();
+  }
+
+  // ---------- screens ----------
+  function drawBg() {
+    const img = imgs.bg;
+    ctx.fillStyle = '#bfe3b4'; ctx.fillRect(0, 0, W, H);
+    if (img && img.complete && img.width) {
+      const sc = Math.max(W / img.width, H / img.height);
+      ctx.drawImage(img, (W - img.width * sc) / 2, (H - img.height * sc) / 2, img.width * sc, img.height * sc);
+    }
+  }
+  function colBounds() { const cw = Math.min(W, 560); return { x0: (W - cw) / 2, cw }; }
+
+  function drawGame(dt        ) {
+    if (layoutDirty) layout();
+    for (const tl of tiles) {
+      tl.vis += (tl.rot - tl.vis) * Math.min(1, dt * 16);
+      if (Math.abs(tl.rot - tl.vis) < 0.002) tl.vis = tl.rot;
+      tl.pop = Math.max(0, tl.pop - dt * 5);
+      const target = tl.powered && Math.abs(tl.rot - tl.vis) < 0.3 ? 1 : tl.powered ? tl.litT : 0;
+      tl.litT += (target - tl.litT) * Math.min(1, dt * 10);
+    }
+    for (const tl of tiles) drawTile(tl);
+
+    const { x0, cw } = colBounds();
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    const th = topH();
+    const cy = 40;
+    const br = 25;
+    // back (coral) + settings (sky)
+    roundBtn(x0 + 18 + br, cy, br, CORAL); iconBack(x0 + 18 + br, cy, br * 0.95);
+    addBtn(x0 + 10, cy - br - 6, br * 2 + 16, br * 2 + 12, () => { sfxTap(); screen = 'levels'; page = Math.floor((level - 1) / 20); }, 'back');
+    roundBtn(x0 + cw - 18 - br, cy, br, SKY); iconGear(x0 + cw - 18 - br, cy, br * 0.95);
+    addBtn(x0 + cw - 26 - br * 2, cy - br - 6, br * 2 + 16, br * 2 + 12, () => { sfxTap(); settingsOpen = true; }, 'settings');
+    // level hex badge
+    const bw = Math.min(cw - 4 * br - 70, 200), bh = 50;
+    popHexBadge(W / 2, cy, bw, bh, BUTTER);
+    outlinedText(t('level', { n: level }), W / 2, cy + 1, 24, bw - 44);
+    // stars + moves bar
+    const sy = cy + 44, sh = 38, sw = Math.min(cw - 60, 280);
+    pill(W / 2 - sw / 2, sy, sw, sh);
+    const st = starsFor(moves);
+    for (let i = 0; i < 3; i++) popStar(W / 2 - sw / 2 + 28 + i * 27, sy + sh / 2, 11.5, i < st);
+    ctx.textAlign = 'right';
+    inkText(t('moves', { n: moves }) + '  ·  ' + t('par', { n: def?.par ?? 0 }), W / 2 + sw / 2 - 18, sy + sh / 2 + 1, 15, sw - 130);
+    ctx.textAlign = 'center';
+    ctx.fillStyle = 'rgba(70,90,50,0.85)'; fitText(t('tip'), cw - 40, 13, 700); ctx.fillText(t('tip'), W / 2, th - 6);
+
+    // bottom dock
+    const dockH = 84, dockW = Math.min(cw - 48, 300);
+    const dy = H - dockH - 18;
+    popRect(W / 2 - dockW / 2, dy, dockW, dockH, 28, CREAM, 5);
+    const r2 = 27, byc = dy + 34;
+    const hx = W / 2 - dockW * 0.24, rx = W / 2 + dockW * 0.24;
+    roundBtn(hx, byc, r2, BUTTER);
+    drawImgFit(imgs.bulbOn, hx, byc - 1, r2 * 1.45);
+    if (save.hints > 0) {
+      popCircle(hx + r2 * 0.82, byc - r2 * 0.72, 12, CORAL, 2);
+      outlinedText(String(save.hints), hx + r2 * 0.82, byc - r2 * 0.72 + 1, 14, 20);
+    } else {
+      popCircle(hx + r2 * 0.82, byc - r2 * 0.72, 12, CORAL, 2);
+      outlinedText('0', hx + r2 * 0.82, byc - r2 * 0.72 + 1, 14, 20);
+    }
+    inkText(t('hint'), hx, dy + dockH - 12, 13, dockW * 0.4);
+    addBtn(hx - r2 - 8, byc - r2 - 8, r2 * 2 + 16, r2 * 2 + 30, () => { sfxTap(); useHint(); }, 'hint');
+    roundBtn(rx, byc, r2, SKY); iconReset(rx, byc, r2 * 0.95);
+    inkText(t('replay'), rx, dy + dockH - 12, 13, dockW * 0.4);
+    addBtn(rx - r2 - 8, byc - r2 - 8, r2 * 2 + 16, r2 * 2 + 30, () => { sfxTap(); save.cur = null; startLevel(level); }, 'replay');
+
+    if (showWin) drawWin(dt);
+  }
+
+  function ribbon(cx        , y        , w        , h        , text        , size        ) {
+    // tails
+    const tw = h * 0.7;
+    for (const sgn of [-1, 1]) {
+      const ex = cx + sgn * (w / 2 - 4);
+      ctx.beginPath();
+      ctx.moveTo(ex, y + h * 0.25); ctx.lineTo(ex + sgn * tw, y + h * 0.25); ctx.lineTo(ex + sgn * tw * 0.6, y + h * 0.75); ctx.lineTo(ex + sgn * tw, y + h * 1.2); ctx.lineTo(ex, y + h * 1.2); ctx.closePath();
+      ctx.fillStyle = CORAL[1]; ctx.fill(); ctx.lineJoin = 'round'; ctx.lineWidth = 3; ctx.strokeStyle = OL; ctx.stroke();
+    }
+    popRect(cx - w / 2, y, w, h, 16, CORAL, 5);
+    outlinedText(text, cx, y + h / 2 + 1, size, w - 36);
+  }
+
+  function drawWin(dt        ) {
+    winT += dt;
+    const a = Math.min(1, winT * 3);
+    ctx.fillStyle = `rgba(60,35,20,${0.45 * a})`; ctx.fillRect(0, 0, W, H);
+    const pw = Math.min(W - 56, 340), ph = 330;
+    const px = W / 2 - pw / 2, py = H / 2 - ph / 2 + (1 - a) * 40;
+    ctx.globalAlpha = a;
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    popRect(px, py, pw, ph, 30, CREAM, 7);
+    ribbon(W / 2, py - 26, pw * 0.82, 56, level === TOTAL ? t('allClear') : t('cleared'), 26);
+    const st = starsFor(moves);
+    for (let i = 0; i < 3; i++) {
+      const ap = Math.max(0, Math.min(1, (winT - 0.2 - i * 0.18) * 4));
+      const sz = 30 * (i === 1 ? 1.3 : 1) * (ap < 1 ? 0.6 + ap * 0.6 : 1);
+      popStar(W / 2 + (i - 1) * 80, py + 100 - (i === 1 ? 12 : 0), sz, i < st && ap > 0);
+    }
+    inkText(t('moves', { n: moves }) + '  ·  ' + t('par', { n: def?.par ?? 0 }), W / 2, py + 168, 17, pw - 40);
+    // 总星星（本机进度；原版的在线排行榜已删，见文件头）
+    const lbw = Math.min(pw - 40, 250), lby = py + 190;
+    popRect(W / 2 - lbw / 2, lby, lbw, 36, 18, BUTTER, 4);
+    iconTrophy(W / 2 - lbw / 2 + 24, lby + 18, 24);
+    outlinedText(t('totalStars', { n: totalStars() }), W / 2 + 12, lby + 19, 15, lbw - 60);
+    const bw = (pw - 56) / 2, bh = 56, byy = py + ph - bh - 30;
+    const b1x = px + 20, b2x = px + 36 + bw;
+    popRect(b1x, byy, bw, bh, 22, SKY, 5);
+    outlinedText(t('replay'), b1x + bw / 2, byy + bh / 2 + 1, 21, bw - 18);
+    popRect(b2x, byy, bw, bh, 22, MINT, 5);
+    const nextLabel = level < TOTAL ? t('next') : t('levels');
+    outlinedText(nextLabel, b2x + bw / 2, byy + bh / 2 + 1, 21, bw - 18);
+    ctx.globalAlpha = 1;
+    btns = [];
+    addBtn(b1x, byy, bw, bh + 6, () => { sfxTap(); startLevel(level); }, 'replay-win');
+    addBtn(b2x, byy, bw, bh + 6, () => { sfxTap(); if (level < TOTAL) startLevel(level + 1); else { screen = 'levels'; } }, 'next');
+  }
+
+  let pageAnimT = 0;
+  let lastPage = -1;
+  function drawLevels() {
+    const { x0, cw } = colBounds();
+    if (page !== lastPage) { lastPage = page; pageAnimT = 0; }
+    pageAnimT += 1 / 60;
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    const cy = 40, br = 25;
+    // star counter + settings
+    const starsTotal = save.stars.reduce((a, b) => a + b, 0);
+    const pw = 132, ph = 42;
+    pill(x0 + 30, cy - ph / 2, pw, ph);
+    popStar(x0 + 34, cy, 19, true);
+    inkText(`${starsTotal} / 300`, x0 + 30 + pw / 2 + 12, cy + 1, 18, pw - 40, 900);
+    roundBtn(x0 + cw - 18 - br, cy, br, SKY); iconGear(x0 + cw - 18 - br, cy, br * 0.95);
+    addBtn(x0 + cw - 26 - br * 2, cy - br - 6, br * 2 + 16, br * 2 + 12, () => { sfxTap(); settingsOpen = true; }, 'settings2');
+
+    // title ribbon
+    const bob = Math.sin(time * 1.8) * 2;
+    const rw = Math.min(cw - 110, 300);
+    ribbon(W / 2, 82 + bob, rw, 62, t('gameTitle'), 34);
+    // subtitle
+    const subY = 162;
+    ctx.font = font(15, 900);
+    const subTxt = t('levels') + '  ' + t('page', { a: page + 1, b: TOTAL / 20 });
+    const subW = Math.min(cw - 40, ctx.measureText(subTxt).width + 44);
+    popRect(W / 2 - subW / 2, subY, subW, 32, 16, SKY, 4);
+    outlinedText(subTxt, W / 2, subY + 17, 15, subW - 20);
+
+    // honeycomb
+    const top = subY + 52, bottom = H - 104;
+    const innerW = Math.min(cw - 36, 440), innerH = bottom - top;
+    const s = Math.min(innerW / 6.6, innerH / (SQ3 * 5.6), 62);
+    const gridW = 6.5 * s, gridH = SQ3 * 5.5 * s;
+    const gx = W / 2 - gridW / 2 + s, gy = top + (innerH - gridH) / 2 + (SQ3 / 2) * s;
+    for (let i = 0; i < 20; i++) {
+      const n = page * 20 + i + 1;
+      const col = i % 4, row = Math.floor(i / 4);
+      const cx = gx + 1.5 * col * s, ccy = gy + SQ3 * (row + (col & 1) / 2) * s;
+      const unlocked = n <= save.unlocked;
+      const st = save.stars[n - 1];
+      const isCur = unlocked && n === save.unlocked && st === 0;
+      const appear = Math.max(0, Math.min(1, (pageAnimT - i * 0.025) * 5));
+      const ease = 1 - Math.pow(1 - appear, 3);
+      const sc = (0.6 + 0.4 * ease) * (isCur ? 1 + 0.05 * Math.sin(time * 4) : 1);
+      ctx.save(); ctx.translate(cx, ccy); ctx.scale(sc, sc); ctx.globalAlpha = appear;
+      const c                   = !unlocked ? ['#e3d6c4', '#cdbda6'] : isCur ? BUTTER : st === 3 ? ['#ffe9a8', '#f5cf6c'] : CREAM;
+      popHex(0, 0, s * 0.88, c, 5);
+      if (unlocked) {
+        if (isCur) outlinedText(String(n), 0, -s * 0.1, s * 0.62, s * 1.3);
+        else inkText(String(n), 0, -s * 0.1, s * 0.6, s * 1.3, 900);
+        for (let j = 0; j < 3; j++) popStar((j - 1) * s * 0.36, s * 0.42 - (j === 1 ? s * 0.06 : 0), s * 0.15, j < st);
+      } else {
+        const li = imgs.lock;
+        if (li && li.complete && li.width) { const lh = s * 0.8; ctx.globalAlpha = appear * 0.85; ctx.drawImage(li, 215, 120, 594, 790, -lh * 0.375, -lh * 0.5, lh * 0.75, lh); }
+      }
+      ctx.restore();
+      if (unlocked) addBtn(cx - s * 0.9, ccy - s * 0.8, s * 1.8, s * 1.6, () => { sfxTap(); startLevel(n, true); }, 'L' + n);
+    }
+    ctx.globalAlpha = 1;
+
+    // pager
+    const pages = TOTAL / 20;
+    const by = H - 56;
+    const r2 = 26;
+    const ax = Math.min(cw / 2 - 20 - r2, 140);
+    ctx.save(); if (page === 0) ctx.globalAlpha = 0.4;
+    roundBtn(W / 2 - ax, by, r2, CORAL); iconArrowL(W / 2 - ax, by, r2 * 0.95); ctx.restore();
+    if (page > 0) addBtn(W / 2 - ax - r2 - 8, by - r2 - 8, r2 * 2 + 16, r2 * 2 + 16, () => { sfxTap(); page--; }, 'prev');
+    ctx.save(); if (page >= pages - 1) ctx.globalAlpha = 0.4;
+    roundBtn(W / 2 + ax, by, r2, CORAL); iconArrowR(W / 2 + ax, by, r2 * 0.95); ctx.restore();
+    if (page < pages - 1) addBtn(W / 2 + ax - r2 - 8, by - r2 - 8, r2 * 2 + 16, r2 * 2 + 16, () => { sfxTap(); page++; }, 'nextpage');
+    const dotGap = 22;
+    for (let p = 0; p < pages; p++) {
+      const dx = W / 2 + (p - (pages - 1) / 2) * dotGap;
+      const on = p === page;
+      const w = on ? 22 : 12;
+      popRect(dx - w / 2, by - 7, w, 14, 7, on ? BUTTER : CREAM, 2);
+      addBtn(dx - 11, by - 24, 22, 48, () => { if (page !== p) { sfxTap(); page = p; } }, 'page:' + p);
+    }
+  }
+
+  function drawSettings() {
+    btns = [];
+    ctx.fillStyle = 'rgba(60,35,20,0.45)'; ctx.fillRect(0, 0, W, H);
+    addBtn(0, 0, W, H, () => { settingsOpen = false; }, 'scrim');
+    const pw = Math.min(W - 56, 340), ph = 320;
+    const px = W / 2 - pw / 2, py = H / 2 - ph / 2 + 10;
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    popRect(px, py, pw, ph, 30, CREAM, 7);
+    addBtn(px, py - 30, pw, ph + 30, () => {});
+    ribbon(W / 2, py - 26, pw * 0.7, 52, t('settings'), 24);
+    inkText(t('language'), W / 2, py + 52, 16, pw - 40, 900);
+    const langs                   = [['zh', '中文'], ['en', 'English'], ['ja', '日本語']];
+    const bw = (pw - 52) / 3;
+    langs.forEach(([l, label], i) => {
+      const bx = px + 18 + i * (bw + 8), byy = py + 70;
+      const on = getLang() === l;
+      popRect(bx, byy, bw, 48, 18, on ? BUTTER : CREAM, 4);
+      if (on) outlinedText(label, bx + bw / 2, byy + 25, 17, bw - 12); else inkText(label, bx + bw / 2, byy + 25, 17, bw - 12);
+      addBtn(bx, byy, bw, 52, () => { sfxTap(); setLang(l); save.lang = l; persist(); }, 'lang:' + l);
+    });
+    inkText(t('sound'), W / 2, py + 148, 16, pw - 40, 900);
+    const sw = (pw - 44) / 2;
+    ([[false, t('on')], [true, t('off')]]                       ).forEach(([m, label], i) => {
+      const bx = px + 18 + i * (sw + 8), byy = py + 166;
+      const on = save.muted === m;
+      popRect(bx, byy, sw, 48, 18, on ? SKY : CREAM, 4);
+      if (on) outlinedText(label, bx + sw / 2, byy + 25, 17, sw - 12); else inkText(label, bx + sw / 2, byy + 25, 17, sw - 12);
+      addBtn(bx, byy, sw, 52, () => { save.muted = m; sound?.settings.setMuted(save.muted); persist(); sfxTap(); }, 'sound:' + (m ? 'off' : 'on'));
+    });
+    const cbw = 170, cby = py + ph - 76;
+    popRect(W / 2 - cbw / 2, cby, cbw, 52, 22, CORAL, 5);
+    outlinedText(t('close'), W / 2, cby + 27, 20, cbw - 20);
+    addBtn(W / 2 - cbw / 2, cby, cbw, 58, () => { sfxTap(); settingsOpen = false; }, 'close');
+  }
+
+  function drawLoading() {
+    ctx.fillStyle = '#bfe3b4'; ctx.fillRect(0, 0, W, H);
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    const p = loaded / totalImgs;
+    const bw = Math.min(260, W - 80);
+    popRect(W / 2 - bw / 2, H / 2 + 40, bw, 22, 11, CREAM, 3);
+    if (p > 0) { ctx.fillStyle = BUTTER[0]; rr(W / 2 - bw / 2 + 4, H / 2 + 44, Math.max(14, (bw - 8) * p), 14, 7); ctx.fill(); }
+    ctx.save(); ctx.translate(W / 2, H / 2 - 20); ctx.rotate(time * 2);
+    popHex(0, 0, 34, BUTTER, 4);
+    ctx.restore();
+    inkText(t('loading') + ' ' + Math.round(p * 100) + '%', W / 2, H / 2 + 86, 16, W - 40);
+    outlinedText(t('gameTitle'), W / 2, H / 2 - 100, 36, W - 40);
+  }
+
+  function drawParticles(dt        ) {
+    parts = parts.filter((p) => (p.life -= dt) > 0);
+    for (const p of parts) {
+      p.vy += 600 * dt; p.x += p.vx * dt; p.y += p.vy * dt; p.rot += dt * 6;
+      ctx.globalAlpha = Math.min(1, p.life * 2);
+      ctx.save(); ctx.translate(p.x, p.y); ctx.rotate(p.rot); ctx.fillStyle = p.c; ctx.fillRect(-p.r, -p.r * 0.6, p.r * 2, p.r * 1.2); ctx.restore();
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  // ---------- frame ----------
+  let last = performance.now();
+  function frame(now        ) {
+    if (!alive) return;
+    const dt = Math.min(0.05, (now - last) / 1000); last = now; time += dt;
+    render(dt);
+    requestAnimationFrame(frame);
+  }
+  function render(dt        ) {
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    display.applyTransform(ctx);
+    btns = [];
+    if (screen === 'loading') { drawLoading(); return; }
+    drawBg();
+    if (screen === 'levels') drawLevels(); else drawGame(dt);
+    drawParticles(dt);
+    if (toastT > 0) {
+      toastT -= dt;
+      ctx.globalAlpha = Math.min(1, toastT * 3);
+      ctx.font = font(15, 700);
+      const tw = Math.min(W - 40, ctx.measureText(toast).width + 40);
+      ctx.fillStyle = 'rgba(75,90,114,0.92)'; rr(W / 2 - tw / 2, H - botH() - 64, tw, 44, 22); ctx.fill();
+      ctx.fillStyle = '#fff'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; fitText(toast, tw - 24, 15, 700); ctx.fillText(toast, W / 2, H - botH() - 41);
+      ctx.globalAlpha = 1;
+    }
+    if (settingsOpen) drawSettings();
+  }
+
+  // ---------- input ----------
+  function onPointerDown(e              ) {
+    unlockAudio();
+    const rect = canvas.getBoundingClientRect();
+    const x = e.clientX - rect.left, y = e.clientY - rect.top;
+    for (let i = btns.length - 1; i >= 0; i--) {
+      const b = btns[i];
+      if (x >= b.x && x <= b.x + b.w && y >= b.y && y <= b.y + b.h) { b.fn(); return; }
+    }
+    if (screen === 'game' && !settingsOpen && !showWin) {
+      let best              = null, bd = hexS * 0.95;
+      for (const tl of tiles) { const d = Math.hypot(tl.x - x, tl.y - y); if (d < bd) { bd = d; best = tl; } }
+      if (best) rotateTile(best);
+    }
+  }
+  on(canvas, 'pointerdown', onPointerDown);
+  on(window, 'keydown', (e) => {
+    if (e.key === 'Escape') { if (settingsOpen) settingsOpen = false; else if (screen === 'game') screen = 'levels'; }
+    if ((e.key === 'Enter' || e.key === ' ') && showWin) { if (level < TOTAL) startLevel(level + 1); }
+  });
+
+  // ---------- boot ----------
+  render(0);
+  const rafId = requestAnimationFrame(frame);
+  void ready;
+
+  // 贴图全部落地后才从「加载中」切到关卡盘（原版就是这一步，包裹时别丢）
+  Promise.all(Object.entries(IMG_SRC).map(([key, src]) => new Promise((res) => {
+    const im = new Image();
+    im.onload = im.onerror = () => { loaded++; res(); };
+    im.src = asset(src); imgs[key] = im;
+  }))).then(() => {
+    if (!alive) return;
+    ready = true;
+    // 永远从关卡盘进；没打完的那一关等孩子点它才恢复
+    const focus = save.cur && save.cur.level >= 1 && save.cur.level <= save.unlocked ? save.cur.level : Math.min(save.unlocked, TOTAL);
+    page = Math.floor((focus - 1) / 20); screen = 'levels';
+    render(0);
+  });
+
+  // ---------- 只读调试桥 ----------
+  /**
+   * e2e / 截图脚本用：整屏都是 canvas 画的，没有选择器可点。
+   * `buttons()` 给的是**容器内 CSS 像素**（`mountDisplay` 把 canvas 的样式尺寸
+   * 定成容器尺寸、绘制时再乘 resolution），所以 e2e 直接 `box.x + b.x` 就能点。
+   *
+   * ★ 卸载时必须删掉（比对对象同一性），否则第二次挂载的「已就绪」判据
+   *   会被上一次留下的对象骗过去。
+   */
+  const debugBridge = {
+    ready: true,
+    state: () => ({
+      screen, level, moves, won, showWin, hints: save.hints, unlocked: save.unlocked,
+      stars: save.stars.slice(), totalStars: totalStars(), page, muted: save.muted,
+      // `q` / `r` 是六边形坐标：截图脚本按它把「算出来的解」对回屏幕上的格子，
+      // 不依赖数组顺序（顺序变了不报错，只会点错格子、看起来像「解错了」）
+      // `need` = 这一格还要顺时针转几下才对 —— e2e 靠它打通一关，不用在测试里复制关卡数据
+      lang: getLang(), tiles: tiles.map((tl) => ({ x: tl.x, y: tl.y, q: tl.def.q, r: tl.def.r, kind: tl.def.kind, powered: !!tl.powered, need: stepsTo(tl.def.mask, tl.rot, tl.def.mask) })),
+    }),
+    buttons: () => btns.map((b) => ({ label: b.label || '', x: b.x, y: b.y, w: b.w, h: b.h })),
+    /** e2e 想直接进某一关时用（会走同一道扣费闸门） */
+    startLevel: (n) => startLevel(n, true),
+  };
+  window.__sweetspin = debugBridge;
+
+  return async function unmount() {
+    alive = false;
+    if (rafId) cancelAnimationFrame(rafId);
+    for (const id of timers) clearTimeout(id);
+    timers.clear();
+    for (const [t2, f, o] of listeners) { try { t2.removeEventListener(f, o); } catch { /* ignore */ } }
+    listeners.length = 0;
+    try { display.dispose(); } catch { /* ignore */ }
+    try { await sound?.dispose?.(); } catch { /* ignore */ }
+    if (window.__sweetspin === debugBridge) delete window.__sweetspin;
+    try { canvas.remove(); } catch { /* ignore */ }
+    await store.flush?.();
+  };
+}
