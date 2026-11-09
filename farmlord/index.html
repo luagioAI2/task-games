@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<title>Harvest Heist</title>
+<link rel="stylesheet" href="style.css?v=20">
+<script type="importmap">
+{
+  "imports": {
+    "@makeplay/sound": "./runtime/sound-1.js"
+  }
+}
+</script>
+</head>
+<body>
+<canvas id="scene"></canvas>
+<header id="hud">
+  <div class="me">
+    <div class="lvb"><img src="assets/ui_xp.webp" alt=""><b id="lv">1</b></div>
+    <div class="col"><b id="pname"></b><div class="xp"><i id="xpbar"></i></div></div>
+  </div>
+  <div class="cur"><span><img src="assets/ui_coin.webp" alt=""><b id="money">0</b></span><span><img src="assets/ui_gem.webp" alt=""><b id="gems">0</b></span></div>
+  <div class="opts"><button id="hh-gear" aria-label="Settings">⚙️</button></div>
+</header>
+<div id="visit"><b id="visit-name"></b><small id="visit-lv"></small></div>
+<div id="actions"><button id="act-all"></button><button id="act-help"></button></div>
+<div id="tools"></div>
+<nav id="dock">
+  <button id="btn-home"><img src="assets/ui_home.webp" alt=""><span></span></button>
+  <button id="btn-shop"><img src="assets/ui_shop.webp" alt=""><span></span></button>
+  <button id="btn-barn"><img src="assets/ui_barnicon.webp" alt=""><span></span></button>
+  <button id="btn-friends"><img src="assets/ui_friends.webp" alt=""><span></span></button>
+  <button id="btn-log"><img src="assets/ui_log.webp" alt=""><span></span></button>
+</nav>
+<div id="toasts"></div>
+<div id="loading"><img src="assets/ui_logo.webp" alt="Harvest Heist"></div>
+<!-- 必须排在 main.js 前面：原版第一句就 `await window.gp.player.ready`，
+     拿不到 gp 直接 TypeError，首屏停在加载态。两个都是 module，按文档顺序求值。 -->
+<script type="module" src="gp-bridge.js"></script>
+<script type="module" src="main.js?v=20"></script>
+<script type="module" src="tutorial.js?v=20"></script>
+</body>
+</html>
