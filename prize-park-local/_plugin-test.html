@@ -1,0 +1,268 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>插件包加载测试（blob URL）</title>
+<style>
+  html,body{margin:0;background:#101014;color:#cfe;font:12px/1.5 ui-monospace,monospace}
+  #host{position:relative;width:390px;height:780px;overflow:hidden;margin:8px;background:#000}
+</style>
+</head>
+<body>
+<!--
+  对照组：**宿主自己的** `.grid`。
+  游戏样式表里有 `.grid{overflow-y:auto;cursor:grab;touch-action:none;…}`，
+  没做作用域的话它会盖掉这一条（unlayered 胜 @layer）。挂载后这个元素的
+  `cursor` / `overflow-y` 必须**没变** —— 否则「切走以后农场页变形」就复现了。
+-->
+<div id="ctlGrid" class="grid" style="width:120px">对照</div>
+<div id="host"></div>
+<script type="module">
+// 故意**不**放 importmap：宿主页面也不会有。插件包必须自带一切。
+const data = {};
+
+/*
+ * 假宿主。**必须真的记账**，不能只做空壳。
+ *
+ * 游戏把 `save.coins` 删掉之后，所有余额都走钱包 → 宿主的这几扇门。
+ * 假宿主如果只是 `async spendGameCoin(){ return true }`，那么
+ * 「币到底有没有进账本」这件事就永远测不到 —— 而它正是最容易写错的地方
+ * （比如插件拿 localStorage 自己记、没走宿主，页面上看起来一切正常）。
+ *
+ * 所以这里照宿主 `db.ts` 的口径实现一份极简账本：余额 = delta 之和。
+ */
+const ledger = { points: 100, coin: [], vouchers: 0 };
+const coinBalance = () => ledger.coin.reduce((a, r) => a + r.delta, 0);
+
+/** 汇率：和插件 manifest 的 `economy.voucherPerCoin` 一致。宿主**按 manifest 算**，不由插件传。 */
+const VOUCHER_PER_COIN = 1;
+
+const host = {
+  storage: {
+    async get(k) { return data[k]; },
+    async set(k, v) { data[k] = v; },
+    async list() { return { ...data }; },
+  },
+  balance: () => ledger.points,
+  async spendPoints(n) {
+    if (ledger.points < n) return false;
+    ledger.points -= n;
+    return true;
+  },
+  async mintGameCoin(n) {
+    if (Math.round(n) <= 0) return;
+    ledger.coin.push({ delta: Math.round(n), memo: "mint", at: Date.now() });
+  },
+  async gameCoinBalance() { return coinBalance(); },
+  // 宿主 2026-10-22 新增的两扇门（HOST_API = 2）
+  async spendGameCoin(n) {
+    if (coinBalance() < n) return false;
+    ledger.coin.push({ delta: -Math.round(n), memo: "play", at: Date.now() });
+    return true;
+  },
+  async buyGameCoin(count, rate) {
+    const n = Math.round(count), cost = n * Math.round(rate);
+    if (!(n > 0) || ledger.points < cost) return false;
+    ledger.points -= cost;
+    ledger.coin.push({ delta: n, memo: "buy", at: Date.now() });
+    return true;
+  },
+  /**
+   * HOST_API 3：币 → 兑换券。
+   * ⚠️ 真宿主会在**一个事务**里烧币 + 记券；这里只保证「先扣后发」的顺序，
+   *    以及「币不够就一张不发」。
+   */
+  async redeemGameCoin(count, memo) {
+    const n = Math.round(count);
+    if (!(n > 0) || coinBalance() < n) return 0;
+    ledger.coin.push({ delta: -n, memo: memo || "redeem", at: Date.now() });
+    const got = n * VOUCHER_PER_COIN;
+    ledger.vouchers += got;
+    return got;
+  },
+  /**
+   * HOST_API 4：抓到奖品**直接发兑换券**（不经过币）。
+   * 真宿主走 `db.mintGameVouchers` → `postHarvest`（`source: 'claw_prize'`）。
+   * 这里只记一笔券，不碰币账本 —— 币是买来的入场券，娃娃不该产币。
+   */
+  async mintVoucher(count) {
+    const n = Math.round(count);
+    if (!(n > 0)) return 0;
+    ledger.vouchers += n;
+    return n;
+  },
+  pushToast() {}, haptic() {}, tone() {},
+};
+window.__hostData = data;
+window.__ledger = ledger;
+/** 这个假宿主实现了第几代契约。插件声明的 minHostApi 不能超过它 ——
+ *  否则测试会在「调了一个不存在的方法」上炸，而报错看着像产品坏了。 */
+window.__HOST_API = 4;
+
+let unmount = null;
+const hostEl = document.getElementById("host");
+const origin = location.origin + "/";
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+window.__t = {
+  async loadAndMount() {
+    // 完全照宿主 loader.ts 的路子：fetch 文本 → Blob → createObjectURL → import()
+    const res = await fetch("/dist-plugin/prizepark.plugin.mjs");
+    if (!res.ok) throw new Error("取包失败 " + res.status);
+    const code = await res.text();
+    const url = URL.createObjectURL(new Blob([code], { type: "text/javascript" }));
+    let mod;
+    try {
+      mod = await import(url);
+    } finally {
+      // 注意：不能在 import 完成前 revoke；这里已经拿到模块命名空间，可以放了
+      URL.revokeObjectURL(url);
+    }
+    if (typeof mod.mount !== "function") throw new Error("包里没有 mount");
+    if (!mod.manifest || typeof mod.manifest.id !== "string") throw new Error("包里没有 manifest");
+
+    /*
+     * ★ 照宿主 `mountBundle` 的样子调 —— **不 await 拿返回值，而是先看它是什么**。
+     *
+     * 之前这里写的是 `unmount = await mod.mount(...)`：那样无论包返回
+     * 同步函数还是 Promise 都能过，于是「宿主拿到 Promise 就当没有卸载函数」
+     * 这个真 bug 在这个测试里**结构上照不出来**（宿主侧 destroy() 永远不跑）。
+     * 现在两种都收，和 `src/games/loader.ts` 一模一样。
+     */
+    const ctx = {
+      assetBase: origin,
+      assetUrl: (rel) => origin + String(rel).replace(/^\.\//, ""),
+      locale: "zh",
+    };
+    const r = mod.mount(hostEl, host, ctx);
+    const unmountFn = typeof r === "function" ? r : await r;
+    if (typeof unmountFn !== "function") throw new Error("mount 没有返回卸载函数");
+    unmount = unmountFn;
+
+    return {
+      id: mod.manifest.id,
+      name: mod.manifest.name,
+      tabLabel: mod.manifest.tabLabel,
+      minHostApi: mod.manifest.minHostApi,
+      coin: mod.manifest.coin,
+      economy: mod.manifest.economy,
+      mountKind: typeof r === "function" ? "sync" : "promise",
+      keys: Object.keys(mod).sort(),
+    };
+  },
+  async unmountIt() {
+    if (!unmount) throw new Error("没挂载");
+    await unmount();
+    unmount = null;
+    return true;
+  },
+  /**
+   * 经济链在**宿主模式**下走一遍。
+   *
+   * 全部用真实点击（而不是调产品内部的测试钩子）：`#btnPlay` 在 0 币时会变成
+   * 「买娃娃机币」，点它弹买币面板；`#buyYes` 走 `host.buyGameCoin`。
+   * 这样验的是**玩家真的会走的那条路**，而不是一条只有测试能走的近路。
+   */
+  async buyOnce() {
+    document.getElementById("btnPlay").click();
+    await sleep(250);
+    const sheet = !document.getElementById("payModal").classList.contains("hidden");
+    if (!sheet) return { opened: false, points: ledger.points, coins: coinBalance() };
+    document.getElementById("buyYes").click();
+    await sleep(500);
+    return { opened: true, points: ledger.points, coins: coinBalance() };
+  },
+  async playOnce() {
+    const before = coinBalance();
+    document.getElementById("btnPlay").click();
+    await sleep(500);
+    return { before, after: coinBalance(), phase: window.__debug && window.__debug.phase };
+  },
+  /**
+   * 抓一只 → 在**背包里**卖掉。
+   *
+   * 2026-10-23 起没有「回收」屏了，卖娃娃是点背包里那个格子（`#colGrid .cell`
+   * 且 `data-owned > 0`）。这里刻意用 `data-owned` 过滤而不是 `:first-child` ——
+   * 背包里**没抓到的娃娃也会占一格**（图鉴），取第一个会点到 `???` 上。
+   */
+  async grabAndSell() {
+    window.__debug.forceGet(0);
+    await sleep(700);
+    const stock = { ...(window.__debug.stock || {}) };
+    window.__debug.leave();
+    await sleep(500);
+    document.getElementById("colBtn").click();
+    await sleep(450);
+    const ownSel = '#colGrid .cell[data-owned]:not([data-owned="0"])';
+    const cells = document.querySelectorAll(ownSel).length;
+    if (!cells) return { stock, cells, coins: coinBalance(), vouchers: ledger.vouchers };
+    document.querySelector(ownSel).click();
+    await sleep(250);
+    document.getElementById("rcOne").click();
+    await sleep(700);
+    return { stock, cells, coins: coinBalance(), vouchers: ledger.vouchers, after: { ...(window.__debug.stock || {}) } };
+  },
+
+  /**
+   * 组合兑换：点组合卡 → 弹层里点「一起兑换」。
+   *
+   * 返回兑换前后的券数和库存，让调用方能断言「券涨了、每样少了一个」。
+   */
+  async exchangeCombo(comboId) {
+    const before = { vouchers: ledger.vouchers, stock: { ...(window.__debug.stock || {}) } };
+    const card = document.querySelector(`#comboWrap .comboCard[data-combo="${comboId}"]`);
+    if (!card) return { found: false, before };
+    const ready = card.dataset.ready === "1";
+    card.click();
+    await sleep(300);
+    const sheetOpen = !document.getElementById("sellModal").classList.contains("hidden");
+    if (ready && sheetOpen) { document.getElementById("cbGo").click(); await sleep(800); }
+    return {
+      found: true, ready, sheetOpen,
+      before,
+      after: { vouchers: ledger.vouchers, stock: { ...(window.__debug.stock || {}) } },
+      combos: [...document.querySelectorAll("#comboWrap .comboCard")].map(c => ({ id: c.dataset.combo, ready: c.dataset.ready })),
+    };
+  },
+  ledger() { return { points: ledger.points, coins: coinBalance(), rows: ledger.coin.length, vouchers: ledger.vouchers }; },
+
+  /** 背包底部那个「换成兑换券」按钮 —— 走的是玩家真的会走的那条路。 */
+  async redeemAll() {
+    const before = { coins: coinBalance(), vouchers: ledger.vouchers };
+    document.getElementById("rcVoucher").click();
+    await sleep(700);
+    return { before, after: { coins: coinBalance(), vouchers: ledger.vouchers } };
+  },
+
+  /** 宿主自己的 `.grid` 有没有被插件的样式表污染 */
+  control() {
+    const el = document.getElementById("ctlGrid");
+    const cs = getComputedStyle(el);
+    return { cursor: cs.cursor, overflowY: cs.overflowY, display: cs.display, touchAction: cs.touchAction };
+  },
+  state() {
+    const root = hostEl.querySelector('.pp-root');
+    const cv = hostEl.querySelector('canvas');
+    const vp = hostEl.querySelector('#viewport');
+    const r = (el) => el ? { w: Math.round(el.clientWidth), h: Math.round(el.clientHeight) } : null;
+    return {
+      playable: window.__gpPlayable === true,
+      canvases: hostEl.querySelectorAll("canvas").length,
+      children: hostEl.childElementCount,
+      saveKeys: Object.keys(data),
+      coins: window.__debug ? window.__debug.coins : null,
+      // 尺寸链：容器 → 根 → 游戏内 viewport → canvas 的绘制缓冲
+      hostEl: r(hostEl),
+      root: r(root),
+      viewportEl: r(vp),
+      canvasCss: cv ? { w: Math.round(cv.getBoundingClientRect().width), h: Math.round(cv.getBoundingClientRect().height) } : null,
+      canvasBuf: cv ? { w: cv.width, h: cv.height } : null,
+      window: { w: innerWidth, h: innerHeight, dpr: devicePixelRatio },
+    };
+  },
+};
+window.__ready = true;
+</script>
+</body>
+</html>

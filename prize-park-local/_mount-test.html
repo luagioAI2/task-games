@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<title>挂载/卸载 循环测试</title>
+<style>
+  html,body{margin:0;background:#101014;color:#cfe;font:12px/1.5 ui-monospace,monospace}
+  #host{position:relative;width:390px;height:780px;overflow:hidden;margin:8px}
+  #log{padding:8px}
+</style>
+</head>
+<body>
+<div id="host"></div>
+<div id="log"></div>
+<script type="importmap">
+{
+  "imports": {
+    "three": "./engines/three.module.js",
+    "three/addons/": "./engines/three-jsm/",
+    "@makeplay/sound": "./runtime/sound-1.js",
+    "@dimforge/rapier3d-compat": "./engines/rapier3d.js"
+  }
+}
+</script>
+<script type="module">
+import { createGame } from "./game.js";
+
+// 内存宿主：形状与 kid-quest-farm-2d 的 HostApi.storage 完全一致
+const data = {};
+const host = {
+  storage: {
+    async get(k) { return data[k]; },
+    async set(k, v) { data[k] = v; },
+    async list() { return { ...data }; },
+  },
+  pushToast() {}, haptic() {}, tone() {},
+};
+window.__hostData = data;
+
+const hostEl = document.getElementById("host");
+let inst = null;
+let root = null;
+
+window.__t = {
+  async mount() {
+    if (inst) throw new Error("还没卸载就重复挂载");
+    root = document.createElement("div");
+    root.className = "pp-root";
+    root.style.cssText = "position:relative;width:100%;height:100%";
+    hostEl.appendChild(root);
+    inst = await createGame({ container: root, host, save: null });
+    return true;
+  },
+  async unmount() {
+    if (!inst) throw new Error("没挂载就卸载");
+    await inst.destroy();
+    inst = null;
+    hostEl.replaceChildren();
+    root = null;
+    return true;
+  },
+  state() {
+    return {
+      playable: window.__gpPlayable === true,
+      hasDebug: !!window.__debug,
+      // 卸载后应该一个 canvas 都不剩（renderer 自己 append 到 .pp-root 里的）
+      canvases: hostEl.querySelectorAll("canvas").length,
+      hostChildren: hostEl.childElementCount,
+      saveKeys: Object.keys(data),
+      coins: window.__debug ? window.__debug.coins : null,
+      prizes: window.__debug && window.__debug.inMachine ? window.__debug.prizes.length : null,
+    };
+  },
+};
+window.__ready = true;
+</script>
+</body>
+</html>

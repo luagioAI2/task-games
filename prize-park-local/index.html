@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Prize Park — 本地离线版</title>
+<link rel="icon" href="data:,">
+<style>html,body,#app{margin:0;width:100%;height:100%;overflow:hidden;background:#0b0d12;touch-action:none;user-select:none;-webkit-user-select:none;-webkit-touch-callout:none;overscroll-behavior:none}#app{position:fixed;inset:0}canvas{display:block}</style>
+<script type="importmap">
+{
+  "imports": {
+    "three": "./engines/three.module.js",
+    "three/addons/": "./engines/three-jsm/",
+    "@makeplay/sound": "./runtime/sound-1.js",
+    "@dimforge/rapier3d-compat": "./engines/rapier3d.js"
+  }
+}
+</script>
+</head>
+<body>
+<div id="app" class="pp-root"></div>
+<script type="module" src="./main.js"></script>
+</body>
+</html>
