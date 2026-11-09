@@ -57,7 +57,7 @@ export const manifest = {
   emoji: '🔴',
   // 底栏一格约 5 个字宽；「别按红按钮」正好 5 个，和「收租公寓」「尖叫鸡」不撞。
   tabLabel: '别按红按钮',
-  version: '1.0.0',
+  version: '1.0.1',
   minHostApi: NEED_HOST_API,
 
   // ⚠️ 宿主把 `coin` 当**必填**（`describeManifestProblem` 会拒），但本作

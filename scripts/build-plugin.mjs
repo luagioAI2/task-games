@@ -35,6 +35,7 @@
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import path from 'node:path'
 import fs from 'node:fs'
+import { spawnSync } from 'node:child_process'
 
 const HERE = path.dirname(fileURLToPath(import.meta.url))
 const ROOT = path.dirname(HERE)
@@ -161,6 +162,23 @@ if (fail.length) {
  *   假宿主把 `dist-plugin/` 当站点根，只铺 `assets/` 的话清单与音频包都看不见，
  *   症状是「假宿主全绿、真宿主报 is not valid JSON」。
  */
+/* ---------------- 资源清单（发布方逐个校验） ----------------
+ *
+ * ★★ 有 `assets/` 就必须有 `assets/manifest.json`：发布方按它逐个核 sha256。
+ *   缺了宿主 `check-plugin.mjs` **只报警告、不报错** —— 静默少一道闸。
+ *   改了资源忘了重跑 ⇒ 这里直接失败，别等装到手机上才发现「图糊了/没声」。
+ */
+{
+  const r = spawnSync(process.execPath, [path.join(HERE, 'make-asset-manifest.mjs'), '--check'], {
+    stdio: 'inherit',
+  })
+  if (r.status !== 0) {
+    console.error('\n✗ assets/manifest.json 过期（或还没生成）')
+    console.error('  修：node scripts/make-asset-manifest.mjs')
+    process.exit(1)
+  }
+}
+
 const ASSETS_OUT = path.join(OUT_DIR, 'assets')
 fs.rmSync(ASSETS_OUT, { recursive: true, force: true })
 fs.cpSync(path.join(ROOT, 'assets'), ASSETS_OUT, { recursive: true })
